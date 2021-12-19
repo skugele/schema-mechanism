@@ -1,5 +1,5 @@
-from numbers import Number
 from typing import Iterable
+from uuid import uuid4
 
 import numpy as np
 import sklearn.metrics as sk_metrics
@@ -15,3 +15,7 @@ def get_orthogonal_vector(v: np.ndarray):
     v_orth = np.random.rand(*v.shape)
     v_orth -= v_orth.dot(v) / np.linalg.norm(v) ** 2
     return v_orth
+
+
+def get_unique_id():
+    return uuid4()

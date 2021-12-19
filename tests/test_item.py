@@ -27,6 +27,37 @@ class TestDiscreteItem(TestCase):
         self.assertFalse(i.is_on(state=State(discrete_values=['123'])))
         self.assertFalse(i.is_on(state=State(discrete_values=['123', '4321'])))
 
+    def test_is_satisfied(self):
+        # not negated
+        #############
+        i = DiscreteItem(value='1234')
+
+        # item expected to be ON for these states
+        self.assertTrue(i.is_satisfied(state=State(discrete_values=['1234'])))
+        self.assertTrue(i.is_satisfied(state=State(discrete_values=['123', '1234'])))
+        self.assertTrue(i.is_satisfied(state=State(discrete_values=['123', '1234'],
+                                                   continuous_values=[np.random.rand(16)])))
+
+        # item expected to be OFF for these states
+        self.assertFalse(i.is_satisfied(state=State()))
+        self.assertFalse(i.is_satisfied(state=State(discrete_values=['123'])))
+        self.assertFalse(i.is_satisfied(state=State(discrete_values=['123', '4321'])))
+
+        # negated
+        #########
+        i = DiscreteItem(value='1234', negated=True)
+
+        # item expected to be ON for these states
+        self.assertFalse(i.is_satisfied(state=State(discrete_values=['1234'])))
+        self.assertFalse(i.is_satisfied(state=State(discrete_values=['123', '1234'])))
+        self.assertFalse(i.is_satisfied(state=State(discrete_values=['123', '1234'],
+                                                    continuous_values=[np.random.rand(16)])))
+
+        # item expected to be OFF for these states
+        self.assertTrue(i.is_satisfied(state=State()))
+        self.assertTrue(i.is_satisfied(state=State(discrete_values=['123'])))
+        self.assertTrue(i.is_satisfied(state=State(discrete_values=['123', '4321'])))
+
 
 class TestContinuousItem(TestCase):
     def test_init(self):
