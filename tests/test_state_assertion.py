@@ -2,17 +2,17 @@ from unittest import TestCase
 
 import numpy as np
 
-from schema_mechanism.data_structures import Context, DiscreteItem, ContinuousItem, State
+from schema_mechanism.data_structures import StateAssertion, DiscreteItem, ContinuousItem, State
 
 
-class TestContext(TestCase):
+class TestStateAssertion(TestCase):
     def test_init(self):
-        # Allow empty context (no items)
-        c = Context()
+        # Allow empty StateAssertion (no items)
+        c = StateAssertion()
         self.assertEqual(0, len(c))
 
         # Allow mixture of discrete and continuous items
-        c1 = Context(
+        c1 = StateAssertion(
             [
                 DiscreteItem('1'),
                 ContinuousItem(np.array([1.0, 2.0]))
@@ -28,67 +28,67 @@ class TestContext(TestCase):
         state = State(discrete_values=['1', '2'],
                       continuous_values=[v1, v2])
 
-        # an empty context should always be satisfied
-        c = Context()
+        # an empty StateAssertion should always be satisfied
+        c = StateAssertion()
         self.assertTrue(c.is_satisfied(state))
 
         # single discrete item
         #######################
 
         # expected to be satisfied
-        c = Context([DiscreteItem('1')])
+        c = StateAssertion([DiscreteItem('1')])
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = Context([DiscreteItem('3')])
+        c = StateAssertion([DiscreteItem('3')])
         self.assertFalse(c.is_satisfied(state))
 
         # multiple discrete items (all must be matched)
         ###############################################
 
         # expected to be satisfied
-        c = Context([DiscreteItem('1'), DiscreteItem('2')])
+        c = StateAssertion([DiscreteItem('1'), DiscreteItem('2')])
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = Context([DiscreteItem('1'), DiscreteItem('3')])
+        c = StateAssertion([DiscreteItem('1'), DiscreteItem('3')])
         self.assertFalse(c.is_satisfied(state))
 
-        c = Context([DiscreteItem('1'), DiscreteItem('2'), DiscreteItem('3')])
+        c = StateAssertion([DiscreteItem('1'), DiscreteItem('2'), DiscreteItem('3')])
         self.assertFalse(c.is_satisfied(state))
 
         # single continuous item
         ########################
 
         # expected to be satisfied
-        c = Context([ContinuousItem(v1)])
+        c = StateAssertion([ContinuousItem(v1)])
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = Context([ContinuousItem(v3)])
+        c = StateAssertion([ContinuousItem(v3)])
         self.assertFalse(c.is_satisfied(state))
 
         # multiple continuous items (all must be matched)
         #################################################
 
         # expected to be satisfied
-        c = Context([ContinuousItem(v1), ContinuousItem(v2)])
+        c = StateAssertion([ContinuousItem(v1), ContinuousItem(v2)])
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = Context([ContinuousItem(v1), ContinuousItem(v3)])
+        c = StateAssertion([ContinuousItem(v1), ContinuousItem(v3)])
         self.assertFalse(c.is_satisfied(state))
 
-        c = Context([ContinuousItem(v1), ContinuousItem(v2), ContinuousItem(v3)])
+        c = StateAssertion([ContinuousItem(v1), ContinuousItem(v2), ContinuousItem(v3)])
         self.assertFalse(c.is_satisfied(state))
 
         # mixed discrete and continuous
         ###############################
 
         # expected to be satisfied
-        c = Context([DiscreteItem('1'), ContinuousItem(v1)])
+        c = StateAssertion([DiscreteItem('1'), ContinuousItem(v1)])
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = Context([DiscreteItem('1'), ContinuousItem(v1), ContinuousItem(v3)])
+        c = StateAssertion([DiscreteItem('1'), ContinuousItem(v1), ContinuousItem(v3)])
         self.assertFalse(c.is_satisfied(state))

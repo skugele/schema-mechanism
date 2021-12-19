@@ -7,18 +7,18 @@ from schema_mechanism.util import cosine_sims, get_unique_id
 
 class State:
     def __init__(self,
-                 discrete_values: Iterable[str] = None,
-                 continuous_values: Iterable[np.ndarray] = None):
+                 discrete_values: Collection[str] = None,
+                 continuous_values: Collection[np.ndarray] = None):
         self._continuous_values = continuous_values
         self._discrete_values = discrete_values
 
     @property
-    def continuous_values(self):
-        return self._continuous_values
+    def discrete_values(self) -> Collection[str]:
+        return self._discrete_values
 
     @property
-    def discrete_values(self):
-        return self._discrete_values
+    def continuous_values(self) -> Collection[np.ndarray]:
+        return self._continuous_values
 
 
 class Item:
@@ -27,20 +27,20 @@ class Item:
         self._negated = negated
 
     @property
-    def value(self):
+    def value(self) -> Any:
         return self._value
 
     @property
-    def negated(self):
+    def negated(self) -> bool:
         return self._negated
 
-    def is_on(self, state: State, *args, **kwargs):
+    def is_on(self, state: State, *args, **kwargs) -> bool:
         return NotImplemented
 
-    def is_off(self, state: State, *args, **kwargs):
+    def is_off(self, state: State, *args, **kwargs) -> bool:
         return not self.is_on(state, *args, **kwargs)
 
-    def is_satisfied(self, state: State, *args, **kwargs):
+    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
         if self._negated:
             return self.is_off(state, *args, **kwargs)
         else:
@@ -65,6 +65,7 @@ class ContinuousItem(Item):
 
     DEFAULT_PRECISION = 2  # 2 decimal places of precision
     DEFAULT_ACTIVATION_THRESHOLD = 0.99
+    DEFAULT_SIMILARITY_MEASURE = cosine_sims
 
     def __init__(self,
                  value: np.ndarray,
@@ -80,14 +81,19 @@ class ContinuousItem(Item):
 
         threshold = kwargs['threshold'] if 'threshold' in kwargs else ContinuousItem.DEFAULT_ACTIVATION_THRESHOLD
         precision = kwargs['precision'] if 'precision' in kwargs else ContinuousItem.DEFAULT_PRECISION
+        similarity_measure = (
+            kwargs['similarity_measure']
+            if 'similarity_measure' in kwargs
+            else ContinuousItem.DEFAULT_SIMILARITY_MEASURE
+        )
 
-        similarities = self.similarity_measure(self.value, state.continuous_values).round(precision)
+        similarities = similarity_measure(self.value, state.continuous_values).round(precision)
         return np.any(similarities >= threshold)
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return np.array_equal(self.value, other)
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         return not self.__eq__(other)
 
 
@@ -96,24 +102,21 @@ class Action:
         self._id = id or get_unique_id()
 
     @property
-    def id(self):
+    def id(self) -> str:
         return self._id
 
 
-class Context:
+class StateAssertion:
 
     def __init__(self, items: Optional[Collection[Item]] = None):
         self._items = items or frozenset()
 
     @property
-    def items(self):
+    def items(self) -> Collection[Item]:
         return self._items
 
-    def is_satisfied(self, state: State, *args, **kwargs):
-        """ Returns whether the items in this context are satisfied by the state.
-
-            “A context is satisfied when and only when all of its non-negated items are On,
-            and all of its negated items are Off.” (see Drescher, 1991, p. 10)
+    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
+        """ Satisfied when all non-negated items are On, and all negated items are Off.
 
         :param state: the agent's current state
         :param args: optional positional arguments
@@ -126,22 +129,12 @@ class Context:
         return len(self._items)
 
 
-# FIXME: Context and Result are redundant classes. Unless there is something
-# FIXME: that differentiates them, refactor this so that the code is shared.
-class Result:
-    def __init__(self, items: Optional[Collection[Item]] = None):
-        self._items = items or frozenset()
+class Context(StateAssertion):
+    pass
 
-    @property
-    def items(self):
-        return self._items
 
-    # TODO: Is this needed for a schema's result???
-    def is_satisfied(self, state: State, *args, **kwargs):
-        return all(map(lambda i: i.is_satisfied(state, *args, **kwargs), self._items))
-
-    def __len__(self):
-        return len(self._items)
+class Result(StateAssertion):
+    pass
 
 
 class Schema:
@@ -154,7 +147,7 @@ class Schema:
     """
     INITIAL_RELIABILITY = 0.0
 
-    def __init__(self, action=Action, context: Optional[Context] = None, result: Optional[Result] = None):
+    def __init__(self, action: Action, context: Optional[Context] = None, result: Optional[Result] = None):
         self._context = context
         self._action = action
         self._result = result
@@ -170,35 +163,23 @@ class Schema:
             raise ValueError('Action cannot be None')
 
     @property
-    def context(self):
+    def context(self) -> Context:
         return self._context
 
     @property
-    def action(self):
+    def action(self) -> Action:
         return self._action
 
     @property
-    def result(self):
+    def result(self) -> Result:
         return self._result
 
     @property
-    def id(self):
+    def id(self) -> str:
         return self._id
 
-    # TODO: Should this be replaced by a current activation?
-    def is_context_satisfied(self):
-        """ “A context is satisfied when and only when all of its non-negated items are On,
-            and all of its negated items are Off.” (see Drescher, 1991, p. 10)
-
-            TODO: This needs to be relaxed to allow for fuzzy matching on sensory data. It
-            could be a more Boolean matching rule for concepts with distinct identifiers,
-            though sub-classes of things may make for interesting problems (e.g., context species
-            a fruit, and we have an apple which ISA fruit.)
-        """
-        pass
-
     # TODO: Should this be in action selection?
-    def is_applicable(self):
+    def is_applicable(self) -> bool:
         """ “A schema is said to be applicable when its context is satisfied and no
              known overriding conditions obtain.” (Drescher, 1991, p.53)
         :return:

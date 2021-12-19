@@ -63,7 +63,7 @@ class TestContinuousItem(TestCase):
     def test_init(self):
         test_value = np.random.rand(16)
 
-        i = ContinuousItem(value=test_value, similarity_measure=cosine_sims)
+        i = ContinuousItem(value=test_value)
         self.assertTrue(np.array_equal(test_value, i.value))
 
         # check default activation threshold
