@@ -160,3 +160,130 @@ class TestSchema(TestCase):
                       continuous_values=[np.array([1.0, 0.0])])
 
         self.assertFalse(schema.is_applicable(state))
+
+    def test_spin_off(self):
+        # test bare schema spin-off
+        ###########################
+
+        s1 = Schema(action=Action())
+
+        # context spin-off
+        s2 = s1.create_spin_off(mode='context',
+                                item=DiscreteItem('1'))
+
+        self.assertNotEqual(s1.id, s2.id)
+        self.assertEqual(1, len(s2.context))
+        self.assertTrue(DiscreteItem('1') in s2.context)
+        self.assertIsNone(s2.result)
+
+        # result spin-off
+        s3 = s1.create_spin_off(mode='result',
+                                item=DiscreteItem('1'))
+
+        self.assertNotEqual(s1.id, s3.id)
+        self.assertEqual(s1.action, s2.action)
+        self.assertEqual(1, len(s3.result))
+        self.assertTrue(DiscreteItem('1') in s3.result)
+        self.assertIsNone(s3.context)
+
+        # test spin-off for schema with context, no result
+        ##################################################
+        s1 = Schema(action=Action(),
+                    context=Context(
+                        items=[
+                            DiscreteItem('1'),
+                            ContinuousItem(np.array([1.0, 0.0]))
+                        ]))
+
+        # context spin-off
+        s2 = s1.create_spin_off(mode='context',
+                                item=DiscreteItem('2'))
+
+        self.assertNotEqual(s1.id, s2.id)
+        self.assertEqual(3, len(s2.context))
+        self.assertTrue(DiscreteItem('1') in s2.context)
+        self.assertTrue(DiscreteItem('2') in s2.context)
+        self.assertTrue(ContinuousItem(np.array([1.0, 0.0])) in s2.context)
+        self.assertIsNone(s2.result)
+
+        # result spin-off
+        s3 = s1.create_spin_off(mode='result',
+                                item=DiscreteItem('1'))
+
+        self.assertNotEqual(s1.id, s3.id)
+        self.assertEqual(1, len(s3.result))
+        self.assertTrue(DiscreteItem('1') in s3.result)
+        self.assertEqual(2, len(s3.context))
+        self.assertTrue(DiscreteItem('1') in s3.context)
+        self.assertTrue(ContinuousItem(np.array([1.0, 0.0])) in s3.context)
+
+        # test spin-off for schema with result, no context
+        ##################################################
+        s1 = Schema(action=Action(),
+                    result=Result(
+                        items=[
+                            DiscreteItem('1'),
+                            ContinuousItem(np.array([1.0, 0.0]))
+                        ]))
+
+        # context spin-off
+        s2 = s1.create_spin_off(mode='context',
+                                item=DiscreteItem('1'))
+
+        self.assertNotEqual(s1.id, s2.id)
+        self.assertEqual(1, len(s2.context))
+        self.assertTrue(DiscreteItem('1') in s2.context)
+        self.assertEqual(2, len(s2.result))
+        self.assertTrue(DiscreteItem('1') in s2.result)
+        self.assertTrue(ContinuousItem(np.array([1.0, 0.0])) in s2.result)
+
+        # result spin-off
+        s3 = s1.create_spin_off(mode='result',
+                                item=DiscreteItem('2'))
+
+        self.assertNotEqual(s1.id, s3.id)
+        self.assertIsNone(s3.context)
+        self.assertEqual(3, len(s3.result))
+        self.assertTrue(DiscreteItem('1') in s3.result)
+        self.assertTrue(DiscreteItem('2') in s3.result)
+        self.assertTrue(ContinuousItem(np.array([1.0, 0.0])) in s3.result)
+
+        # test spin-off for schema with both a context and a result
+        ###########################################################
+        s1 = Schema(action=Action(),
+                    context=Context(
+                        items=[
+                            DiscreteItem('1'),
+                            ContinuousItem(np.array([1.0, 0.0]))
+                        ]),
+                    result=Result(
+                        items=[
+                            DiscreteItem('1'),
+                            ContinuousItem(np.array([0.0, 1.0]))
+                        ]))
+
+        # context spin-off
+        s2 = s1.create_spin_off(mode='context',
+                                item=DiscreteItem('2'))
+
+        self.assertNotEqual(s1.id, s2.id)
+        self.assertEqual(3, len(s2.context))
+        self.assertTrue(DiscreteItem('1') in s2.context)
+        self.assertTrue(DiscreteItem('2') in s2.context)
+        self.assertTrue(ContinuousItem(np.array([1.0, 0.0])) in s2.context)
+        self.assertEqual(2, len(s2.result))
+        self.assertTrue(DiscreteItem('1') in s2.result)
+        self.assertTrue(ContinuousItem(np.array([0.0, 1.0])) in s2.result)
+
+        # result spin-off
+        s3 = s1.create_spin_off(mode='result',
+                                item=DiscreteItem('2'))
+
+        self.assertNotEqual(s1.id, s3.id)
+        self.assertEqual(3, len(s3.result))
+        self.assertTrue(DiscreteItem('1') in s3.result)
+        self.assertTrue(DiscreteItem('2') in s3.result)
+        self.assertTrue(ContinuousItem(np.array([0.0, 1.0])) in s3.result)
+        self.assertEqual(2, len(s3.context))
+        self.assertTrue(DiscreteItem('1') in s3.context)
+        self.assertTrue(ContinuousItem(np.array([1.0, 0.0])) in s3.context)

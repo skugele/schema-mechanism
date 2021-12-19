@@ -92,3 +92,28 @@ class TestStateAssertion(TestCase):
         # expected to NOT be satisfied
         c = StateAssertion([DiscreteItem('1'), ContinuousItem(v1), ContinuousItem(v3)])
         self.assertFalse(c.is_satisfied(state))
+
+    def test_is_contained(self):
+        v1 = np.array([1.0, 0.0, 0.0])
+        v2 = np.array([0.0, 1.0, 0.0])
+        v3 = np.array([0.0, 0.0, 1.0])
+
+        sa = StateAssertion(items=[
+            DiscreteItem('1'),
+            DiscreteItem('2'),
+            ContinuousItem(np.array([1.0, 0.0, 0.0])),
+            ContinuousItem(np.array([0.0, 1.0, 0.0]))
+        ])
+
+        # expected to be contained (discrete)
+        self.assertTrue(DiscreteItem('1') in sa)
+
+        # expected to be contained (continuous)
+        self.assertTrue(ContinuousItem(np.array([0.0, 1.0, 0.0])) in sa)
+
+        # expected to be NOT contained (discrete)
+        self.assertFalse(DiscreteItem('3') in sa)
+
+        # expected to be NOT contained (continuous)
+        self.assertFalse(ContinuousItem(np.array([0.0, 0.0, 1.0])) in sa)
+

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, Callable, Iterable, Collection, Optional
 
 import numpy as np
@@ -21,6 +23,7 @@ class State:
         return self._continuous_values
 
 
+# FIXME: Should be as immutable as possible
 class Item:
     def __init__(self, value: Any, negated: bool = False):
         self._value = value
@@ -47,6 +50,7 @@ class Item:
             return self.is_on(state, *args, **kwargs)
 
 
+# FIXME: Should be as immutable as possible
 class DiscreteItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
@@ -59,7 +63,16 @@ class DiscreteItem(Item):
 
         return self.value in state.discrete_values
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, DiscreteItem):
+            return self.value == other.value
+        return NotImplemented
 
+    def __ne__(self, other) -> bool:
+        return not self.__eq__(other)
+
+
+# FIXME: Should be as immutable as possible
 class ContinuousItem(Item):
     """ A state element that can be viewed as continuously comparable content. """
 
@@ -91,21 +104,34 @@ class ContinuousItem(Item):
         return np.any(similarities >= threshold)
 
     def __eq__(self, other) -> bool:
-        return np.array_equal(self.value, other)
+        return np.array_equal(self.value, other.value)
 
     def __ne__(self, other) -> bool:
         return not self.__eq__(other)
 
 
+# FIXME: Should be as immutable as possible
 class Action:
-    def __init__(self, id: Optional[str] = None):
-        self._id = id or get_unique_id()
+    def __init__(self, uid: Optional[str] = None):
+        self._uid = uid or get_unique_id()
 
     @property
-    def id(self) -> str:
-        return self._id
+    def uid(self) -> str:
+        return self._uid
+
+    def __eq__(self, other):
+        if isinstance(other, Action):
+            return self._uid == other._uid
+        return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash(self._uid)
 
 
+# FIXME: Should be as immutable as possible
 class StateAssertion:
 
     def __init__(self, items: Optional[Collection[Item]] = None):
@@ -125,8 +151,20 @@ class StateAssertion:
         """
         return all(map(lambda i: i.is_satisfied(state, *args, **kwargs), self._items))
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._items)
+
+    def __contains__(self, item: Item):
+        for i in self._items:
+            if i == item:
+                return True
+        return False
+
+    def add(self, item: Item) -> StateAssertion:
+        items = list(self._items)
+        items.append(item)
+
+        return StateAssertion(items=items)
 
 
 class Context(StateAssertion):
@@ -203,3 +241,33 @@ class Schema:
         if self.overriding_conditions is not None:
             overridden = self.overriding_conditions.is_satisfied(state, *args, **kwargs)
         return (not overridden) and self.context.is_satisfied(state, *args, **kwargs)
+
+    def create_spin_off(self, mode: str, item: Item) -> Schema:
+        """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
+
+        :param mode: "result" (see Drescher, 1991, p. 71) or "context" (see Drescher, 1991, p. 73)
+        :param item: a relevant item to add to the context or result of a spin-off schema
+        :return: a spin-off schema based on this one
+        """
+        if "context" == mode:
+            new_context = (
+                Context(items=[item])
+                if self.context is None
+                else self.context.add(item)
+            )
+            return Schema(action=self.action,
+                          context=new_context,
+                          result=self.result)
+
+        elif "result" == mode:
+            new_result = (
+                Result(items=[item])
+                if self.result is None
+                else self.result.add(item)
+            )
+            return Schema(action=self.action,
+                          context=self.context,
+                          result=new_result)
+
+        else:
+            raise ValueError(f'Unknown spin-off mode: {mode}')
