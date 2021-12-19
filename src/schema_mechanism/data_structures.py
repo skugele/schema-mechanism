@@ -155,6 +155,8 @@ class Schema:
         # A unique identifier for this schema
         self._id = get_unique_id()
 
+        self._overriding_conditions = None
+
         # A schema's reliability is the likelihood with which the schema succeeds (i.e., its
         # result obtains) when activated
         self.reliability = Schema.INITIAL_RELIABILITY
@@ -178,10 +180,26 @@ class Schema:
     def id(self) -> str:
         return self._id
 
-    # TODO: Should this be in action selection?
-    def is_applicable(self) -> bool:
-        """ “A schema is said to be applicable when its context is satisfied and no
-             known overriding conditions obtain.” (Drescher, 1991, p.53)
-        :return:
+    @property
+    def overriding_conditions(self) -> StateAssertion:
+        return self._overriding_conditions
+
+    @overriding_conditions.setter
+    def overriding_conditions(self, overriding_conditions: StateAssertion):
+        self._overriding_conditions = overriding_conditions
+
+    def is_applicable(self, state: State, *args, **kwargs) -> bool:
+        """ A schema is applicable when its context is satisfied and there are no active overriding conditions.
+
+            “A schema is said to be applicable when its context is satisfied and no
+                 known overriding conditions obtain.” (Drescher, 1991, p.53)
+
+        :param state: the agent's current state
+        :param args: optional positional arguments
+        :param kwargs: optional keyword arguments
+        :return: True if the schema is applicable in this state; False, otherwise.
         """
-        pass
+        overridden = False
+        if self.overriding_conditions is not None:
+            overridden = self.overriding_conditions.is_satisfied(state, *args, **kwargs)
+        return (not overridden) and self.context.is_satisfied(state, *args, **kwargs)
