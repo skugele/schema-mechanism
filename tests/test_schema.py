@@ -287,3 +287,12 @@ class TestSchema(TestCase):
         self.assertEqual(2, len(s3.context))
         self.assertTrue(DiscreteItem('1') in s3.context)
         self.assertTrue(ContinuousItem(np.array([1.0, 0.0])) in s3.context)
+
+        try:
+            s3.create_spin_off(mode='result',
+                               item=DiscreteItem('2'))
+        except ValueError as e:
+            self.assertEqual(str(e), 'Item already exists in StateAssertion')
+
+
+

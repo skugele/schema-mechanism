@@ -160,7 +160,10 @@ class StateAssertion:
                 return True
         return False
 
-    def add(self, item: Item) -> StateAssertion:
+    def replicate_with(self, item: Item) -> StateAssertion:
+        if self.__contains__(item):
+            raise ValueError('Item already exists in StateAssertion')
+
         items = list(self._items)
         items.append(item)
 
@@ -253,7 +256,7 @@ class Schema:
             new_context = (
                 Context(items=[item])
                 if self.context is None
-                else self.context.add(item)
+                else self.context.replicate_with(item)
             )
             return Schema(action=self.action,
                           context=new_context,
@@ -263,7 +266,7 @@ class Schema:
             new_result = (
                 Result(items=[item])
                 if self.result is None
-                else self.result.add(item)
+                else self.result.replicate_with(item)
             )
             return Schema(action=self.action,
                           context=self.context,

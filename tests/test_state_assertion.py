@@ -117,3 +117,43 @@ class TestStateAssertion(TestCase):
         # expected to be NOT contained (continuous)
         self.assertFalse(ContinuousItem(np.array([0.0, 0.0, 1.0])) in sa)
 
+    def test_replicate_with(self):
+        sa = StateAssertion()
+
+        # 1st discrete item should be added
+        sa1 = sa.replicate_with(DiscreteItem('1'))
+        self.assertIsNot(sa, sa1)
+        self.assertTrue(DiscreteItem('1') in sa1)
+        self.assertEqual(1, len(sa1))
+
+        # 2nd discrete item should be added
+        sa2 = sa1.replicate_with(DiscreteItem('2'))
+        self.assertIsNot(sa1, sa2)
+        self.assertTrue(DiscreteItem('2') in sa2)
+        self.assertEqual(2, len(sa2))
+
+        # identical discrete item should NOT be added
+        try:
+            sa2.replicate_with(DiscreteItem('2'))
+            self.fail('Did\'t raise ValueError as expected!')
+        except ValueError as e:
+            self.assertEqual(str(e), 'Item already exists in StateAssertion')
+
+        # 1st continuous item should be added
+        sa3 = sa2.replicate_with(ContinuousItem(np.array([1.0, 0.0, 0.0])))
+        self.assertIsNot(sa2, sa3)
+        self.assertTrue(ContinuousItem(np.array([1.0, 0.0, 0.0])) in sa3)
+        self.assertEqual(3, len(sa3))
+
+        # 2nd continuous item should be added
+        sa4 = sa3.replicate_with(ContinuousItem(np.array([0.0, 1.0, 0.0])))
+        self.assertIsNot(sa3, sa4)
+        self.assertTrue(ContinuousItem(np.array([0.0, 1.0, 0.0])) in sa4)
+        self.assertEqual(4, len(sa4))
+
+        # identical continuous item should NOT be added
+        try:
+            sa4.replicate_with(ContinuousItem(np.array([0.0, 1.0, 0.0])))
+            self.fail('Did\'t raise ValueError as expected!')
+        except ValueError as e:
+            self.assertEqual(str(e), 'Item already exists in StateAssertion')
