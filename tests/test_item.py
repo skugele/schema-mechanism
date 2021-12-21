@@ -1,10 +1,9 @@
-from collections import Iterable
 from unittest import TestCase
 
 import numpy as np
 
-from schema_mechanism.data_structures import DiscreteItem, ContinuousItem, Item, State
-from schema_mechanism.util import cosine_sims, get_orthogonal_vector
+from schema_mechanism.data_structures import DiscreteItem, ContinuousItem, State
+from schema_mechanism.util import get_orthogonal_vector
 
 
 class TestDiscreteItem(TestCase):

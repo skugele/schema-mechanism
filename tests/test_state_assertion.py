@@ -8,17 +8,34 @@ from schema_mechanism.data_structures import StateAssertion, DiscreteItem, Conti
 class TestStateAssertion(TestCase):
     def test_init(self):
         # Allow empty StateAssertion (no items)
-        c = StateAssertion()
-        self.assertEqual(0, len(c))
+        sa = StateAssertion()
+        self.assertEqual(0, len(sa))
 
         # Allow mixture of discrete and continuous items
-        c1 = StateAssertion(
-            [
-                DiscreteItem('1'),
-                ContinuousItem(np.array([1.0, 2.0]))
-            ])
+        sa = StateAssertion((
+            DiscreteItem('1'),
+            ContinuousItem(np.array([1.0, 2.0]))))
 
-        self.assertEqual(2, len(c1))
+        self.assertEqual(2, len(sa))
+
+    def test_immutability(self):
+        sa = StateAssertion((
+            DiscreteItem('1'),
+            ContinuousItem(np.array([1.0, 0.0]))))
+
+        # Try changing individual item
+        try:
+            sa.items[0] = DiscreteItem('5')
+            self.fail('StateAssertion\'s items are not immutable as expected!')
+        except TypeError as e:
+            pass
+
+        # Try changing the tuple referenced by items
+        try:
+            sa.items = (DiscreteItem('5'),)
+            self.fail('StateAssertion\'s items are not immutable as expected!')
+        except AttributeError as e:
+            print(type(e))
 
     def test_is_satisfied(self):
         v1 = np.array([1.0, 0.0, 0.0])
@@ -36,74 +53,70 @@ class TestStateAssertion(TestCase):
         #######################
 
         # expected to be satisfied
-        c = StateAssertion([DiscreteItem('1')])
+        c = StateAssertion((DiscreteItem('1'),))
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = StateAssertion([DiscreteItem('3')])
+        c = StateAssertion((DiscreteItem('3'),))
         self.assertFalse(c.is_satisfied(state))
 
         # multiple discrete items (all must be matched)
         ###############################################
 
         # expected to be satisfied
-        c = StateAssertion([DiscreteItem('1'), DiscreteItem('2')])
+        c = StateAssertion((DiscreteItem('1'), DiscreteItem('2')))
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = StateAssertion([DiscreteItem('1'), DiscreteItem('3')])
+        c = StateAssertion((DiscreteItem('1'), DiscreteItem('3')))
         self.assertFalse(c.is_satisfied(state))
 
-        c = StateAssertion([DiscreteItem('1'), DiscreteItem('2'), DiscreteItem('3')])
+        c = StateAssertion((DiscreteItem('1'), DiscreteItem('2'), DiscreteItem('3')))
         self.assertFalse(c.is_satisfied(state))
 
         # single continuous item
         ########################
 
         # expected to be satisfied
-        c = StateAssertion([ContinuousItem(v1)])
+        c = StateAssertion((ContinuousItem(v1),))
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = StateAssertion([ContinuousItem(v3)])
+        c = StateAssertion((ContinuousItem(v3),))
         self.assertFalse(c.is_satisfied(state))
 
         # multiple continuous items (all must be matched)
         #################################################
 
         # expected to be satisfied
-        c = StateAssertion([ContinuousItem(v1), ContinuousItem(v2)])
+        c = StateAssertion((ContinuousItem(v1), ContinuousItem(v2)))
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = StateAssertion([ContinuousItem(v1), ContinuousItem(v3)])
+        c = StateAssertion((ContinuousItem(v1), ContinuousItem(v3)))
         self.assertFalse(c.is_satisfied(state))
 
-        c = StateAssertion([ContinuousItem(v1), ContinuousItem(v2), ContinuousItem(v3)])
+        c = StateAssertion((ContinuousItem(v1), ContinuousItem(v2), ContinuousItem(v3)))
         self.assertFalse(c.is_satisfied(state))
 
         # mixed discrete and continuous
         ###############################
 
         # expected to be satisfied
-        c = StateAssertion([DiscreteItem('1'), ContinuousItem(v1)])
+        c = StateAssertion((DiscreteItem('1'), ContinuousItem(v1)))
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = StateAssertion([DiscreteItem('1'), ContinuousItem(v1), ContinuousItem(v3)])
+        c = StateAssertion((DiscreteItem('1'), ContinuousItem(v1), ContinuousItem(v3)))
         self.assertFalse(c.is_satisfied(state))
 
     def test_is_contained(self):
-        v1 = np.array([1.0, 0.0, 0.0])
-        v2 = np.array([0.0, 1.0, 0.0])
-        v3 = np.array([0.0, 0.0, 1.0])
-
-        sa = StateAssertion(items=[
+        sa = StateAssertion(items=(
             DiscreteItem('1'),
             DiscreteItem('2'),
             ContinuousItem(np.array([1.0, 0.0, 0.0])),
             ContinuousItem(np.array([0.0, 1.0, 0.0]))
-        ])
+        ))
 
         # expected to be contained (discrete)
         self.assertTrue(DiscreteItem('1') in sa)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, Collection, Optional
+from typing import Any, Callable, Iterable, Collection, Optional, Tuple
 
 import numpy as np
 
@@ -24,6 +24,7 @@ class State:
 
 
 # FIXME: Should be as immutable as possible
+# TODO: How do we add modality to this? If we do, we need to add modality to the State as well.
 class Item:
     def __init__(self, value: Any, negated: bool = False):
         self._value = value
@@ -131,14 +132,14 @@ class Action:
         return hash(self._uid)
 
 
-# FIXME: Should be as immutable as possible
+# FIXME: Should be as immutable as possible. Maybe we can use Tuples instead of Collections?
 class StateAssertion:
 
-    def __init__(self, items: Optional[Collection[Item]] = None):
-        self._items = items or frozenset()
+    def __init__(self, items: Optional[Tuple[Item, ...]] = None):
+        self._items = items or tuple()
 
     @property
-    def items(self) -> Collection[Item]:
+    def items(self) -> Tuple[Item, ...]:
         return self._items
 
     def is_satisfied(self, state: State, *args, **kwargs) -> bool:
@@ -154,26 +155,22 @@ class StateAssertion:
     def __len__(self) -> int:
         return len(self._items)
 
-    def __contains__(self, item: Item):
-        for i in self._items:
-            if i == item:
-                return True
-        return False
+    def __contains__(self, item: Item) -> bool:
+        return item in self._items
 
     def replicate_with(self, item: Item) -> StateAssertion:
         if self.__contains__(item):
             raise ValueError('Item already exists in StateAssertion')
 
-        items = list(self._items)
-        items.append(item)
-
-        return StateAssertion(items=items)
+        return StateAssertion(items=(*self._items, item))
 
 
+# TODO: This class can probably be removed. Existing Contexts can be changed to StateAssertions.
 class Context(StateAssertion):
     pass
 
 
+# TODO: This class can probably be removed. Existing Results can be changed to StateAssertions.
 class Result(StateAssertion):
     pass
 
@@ -254,7 +251,7 @@ class Schema:
         """
         if "context" == mode:
             new_context = (
-                Context(items=[item])
+                Context(items=(item,))
                 if self.context is None
                 else self.context.replicate_with(item)
             )
@@ -264,7 +261,7 @@ class Schema:
 
         elif "result" == mode:
             new_result = (
-                Result(items=[item])
+                Result(items=(item,))
                 if self.result is None
                 else self.result.replicate_with(item)
             )

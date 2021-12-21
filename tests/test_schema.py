@@ -31,9 +31,9 @@ class TestSchema(TestCase):
         self.assertEqual(Schema.INITIAL_RELIABILITY, s.reliability)
 
         # Verify immutability
-        s = Schema(context=Context([DiscreteItem('1')]),
+        s = Schema(context=Context(items=(DiscreteItem('1'),)),
                    action=Action(),
-                   result=Result([DiscreteItem('2')]))
+                   result=Result(items=(DiscreteItem('2'),)))
 
         try:
             s.context = Context()
@@ -54,12 +54,12 @@ class TestSchema(TestCase):
             pass
 
     def test_is_context_satisfied(self):
-        c = Context([
+        c = Context((
             DiscreteItem('1'),
             DiscreteItem('2', negated=True),
             ContinuousItem(np.array([1.0, 0.0])),
             ContinuousItem(np.array([0.0, 1.0]), negated=True)
-        ])
+        ))
 
         schema = Schema(context=c, action=Action(), result=None)
 
@@ -99,12 +99,13 @@ class TestSchema(TestCase):
         self.assertFalse(schema.context.is_satisfied(state))
 
     def test_is_applicable(self):
-        c = Context([
-            DiscreteItem('1'),
-            DiscreteItem('2', negated=True),
-            ContinuousItem(np.array([1.0, 0.0])),
-            ContinuousItem(np.array([0.0, 1.0]), negated=True)
-        ])
+        c = Context(
+            items=(
+                DiscreteItem('1'),
+                DiscreteItem('2', negated=True),
+                ContinuousItem(np.array([1.0, 0.0])),
+                ContinuousItem(np.array([0.0, 1.0]), negated=True)
+            ))
 
         schema = Schema(context=c, action=Action(), result=None)
 
@@ -145,9 +146,7 @@ class TestSchema(TestCase):
 
         # Tests overriding conditions
         #############################
-        schema.overriding_conditions = StateAssertion([
-            DiscreteItem('3')
-        ])
+        schema.overriding_conditions = StateAssertion((DiscreteItem('3'),))
 
         # expected to be applicable
         state = State(discrete_values=['1'],
@@ -190,10 +189,10 @@ class TestSchema(TestCase):
         ##################################################
         s1 = Schema(action=Action(),
                     context=Context(
-                        items=[
+                        items=(
                             DiscreteItem('1'),
                             ContinuousItem(np.array([1.0, 0.0]))
-                        ]))
+                        )))
 
         # context spin-off
         s2 = s1.create_spin_off(mode='context',
@@ -221,10 +220,10 @@ class TestSchema(TestCase):
         ##################################################
         s1 = Schema(action=Action(),
                     result=Result(
-                        items=[
+                        items=(
                             DiscreteItem('1'),
                             ContinuousItem(np.array([1.0, 0.0]))
-                        ]))
+                        )))
 
         # context spin-off
         s2 = s1.create_spin_off(mode='context',
@@ -252,15 +251,15 @@ class TestSchema(TestCase):
         ###########################################################
         s1 = Schema(action=Action(),
                     context=Context(
-                        items=[
+                        items=(
                             DiscreteItem('1'),
                             ContinuousItem(np.array([1.0, 0.0]))
-                        ]),
+                        )),
                     result=Result(
-                        items=[
+                        items=(
                             DiscreteItem('1'),
                             ContinuousItem(np.array([0.0, 1.0]))
-                        ]))
+                        )))
 
         # context spin-off
         s2 = s1.create_spin_off(mode='context',
@@ -293,6 +292,3 @@ class TestSchema(TestCase):
                                item=DiscreteItem('2'))
         except ValueError as e:
             self.assertEqual(str(e), 'Item already exists in StateAssertion')
-
-
-
