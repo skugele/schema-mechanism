@@ -21,7 +21,7 @@ class TestSchema(TestCase):
         except ValueError as e:
             self.assertEqual('Action cannot be None', str(e))
 
-        # Context and Action CAN be None
+        # Context and Result CAN be None
         try:
             s = Schema(action=Action('My Action'))
             self.assertIsNone(s.context)
