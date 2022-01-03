@@ -2,8 +2,14 @@ from unittest import TestCase
 
 import numpy as np
 
-from schema_mechanism.data_structures import Schema, Action, Context, Result, DiscreteItem, ContinuousItem, State, \
-    StateAssertion
+from schema_mechanism.data_structures import Action
+from schema_mechanism.data_structures import Context
+from schema_mechanism.data_structures import ContinuousItem
+from schema_mechanism.data_structures import DiscreteItem
+from schema_mechanism.data_structures import Result
+from schema_mechanism.data_structures import Schema
+from schema_mechanism.data_structures import State
+from schema_mechanism.data_structures import StateAssertion
 
 
 class TestSchema(TestCase):

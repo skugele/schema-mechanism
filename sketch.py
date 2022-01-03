@@ -301,7 +301,7 @@ class Schema:
         :return: True if this schema is explicitly activated; False otherwise.
         """
         """ """
-        return schema.id == self.id
+        return schema.uid == self.id
 
     def is_implicitly_activated(self, schema):
         """ Returns True if this schema was implicitly activated.

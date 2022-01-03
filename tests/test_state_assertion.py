@@ -2,7 +2,10 @@ from unittest import TestCase
 
 import numpy as np
 
-from schema_mechanism.data_structures import StateAssertion, DiscreteItem, ContinuousItem, State
+from schema_mechanism.data_structures import ContinuousItem
+from schema_mechanism.data_structures import DiscreteItem
+from schema_mechanism.data_structures import State
+from schema_mechanism.data_structures import StateAssertion
 
 
 class TestStateAssertion(TestCase):
@@ -27,15 +30,15 @@ class TestStateAssertion(TestCase):
         try:
             sa.items[0] = DiscreteItem('5')
             self.fail('StateAssertion\'s items are not immutable as expected!')
-        except TypeError as e:
+        except TypeError:
             pass
 
         # Try changing the tuple referenced by items
         try:
             sa.items = (DiscreteItem('5'),)
             self.fail('StateAssertion\'s items are not immutable as expected!')
-        except AttributeError as e:
-            print(type(e))
+        except AttributeError:
+            pass
 
     def test_is_satisfied(self):
         v1 = np.array([1.0, 0.0, 0.0])

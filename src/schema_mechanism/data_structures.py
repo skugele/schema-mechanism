@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, Collection, Optional, Tuple
+from typing import Any
+from typing import Collection
+from typing import Optional
+from typing import Tuple
 
 import numpy as np
 
-from schema_mechanism.util import cosine_sims, get_unique_id
+from schema_mechanism.util import cosine_sims
+from schema_mechanism.util import get_unique_id
 
 
 class State:
@@ -52,6 +56,8 @@ class Item:
 
 
 # FIXME: Should be as immutable as possible
+# TODO: This could be backed by an Object Pool to minimize the number of distinct objects.
+# TODO: See Flyweight Pattern.
 class DiscreteItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
@@ -81,13 +87,11 @@ class ContinuousItem(Item):
     DEFAULT_ACTIVATION_THRESHOLD = 0.99
     DEFAULT_SIMILARITY_MEASURE = cosine_sims
 
-    def __init__(self,
-                 value: np.ndarray,
-                 negated: bool = False,
-                 similarity_measure: Callable[[np.ndarray, Iterable[np.ndarray]], np.ndarray] = cosine_sims):
+    def __init__(self, value: np.ndarray, negated: bool = False):
         super().__init__(value, negated)
 
-        self.similarity_measure = similarity_measure
+        # prevent modification of array values
+        self.value.setflags(write=False)
 
     def is_on(self, state: State, *args, **kwargs) -> bool:
         if state is None or state.continuous_values is None:

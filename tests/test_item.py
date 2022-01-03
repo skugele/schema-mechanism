@@ -2,7 +2,9 @@ from unittest import TestCase
 
 import numpy as np
 
-from schema_mechanism.data_structures import DiscreteItem, ContinuousItem, State
+from schema_mechanism.data_structures import ContinuousItem
+from schema_mechanism.data_structures import DiscreteItem
+from schema_mechanism.data_structures import State
 from schema_mechanism.util import get_orthogonal_vector
 
 
@@ -70,6 +72,13 @@ class TestContinuousItem(TestCase):
 
         # check default precision
         self.assertEqual(2, ContinuousItem.DEFAULT_PRECISION)
+
+        # test that the value is immutable
+        try:
+            i.value[0] = 10.0
+            self.fail('ContinuousItem\'s value should be immutable')
+        except ValueError:
+            pass
 
     def test_is_on(self):
         v1 = np.array([1.0, 0.0])
