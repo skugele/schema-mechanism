@@ -9,5 +9,6 @@ setup(name='SchemaMechanism',
       author_email='seankugele@gmail.com',
       url='https://github.com/skugele/schema-mechanism',
       license='MIT',
+      python_requires='>=3.9',
       install_requires=['numpy==1.21.4', 'scikit-learn==1.0.1'],
 )
