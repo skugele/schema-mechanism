@@ -115,6 +115,118 @@ class ContinuousItem(Item):
         return not self.__eq__(other)
 
 
+class ItemStatistics:
+    def __init__(self):
+        self._n = 0
+        self._n_on = 0
+        self._n_off = 0
+        self._n_action = 0
+        self._n_not_action = 0
+
+        self._n_on_with_action = 0
+        self._n_on_without_action = 0
+        self._n_off_with_action = 0
+        self._n_off_without_action = 0
+
+    def update(self, item_on: bool, action_taken: bool, count: int = 1):
+        self._n += count
+
+        if item_on and action_taken:
+            self._n_on += count
+            self._n_action += count
+            self._n_on_with_action += count
+
+        elif item_on and not action_taken:
+            self._n_on += count
+            self._n_not_action += count
+            self._n_on_without_action += count
+
+        elif not item_on and action_taken:
+            self._n_off += count
+            self._n_action += count
+            self._n_off_with_action += count
+
+        elif not item_on and not action_taken:
+            self._n_off += count
+            self._n_not_action += count
+            self._n_off_without_action += count
+
+    @property
+    def positive_transition_corr(self) -> float:
+        """ Returns the positive-transition correlation for this item.
+
+            The positive-transition correlation is the ratio of the probability of the slot's item turning On when
+            the schema's action has just been taken to the probability of its turning On when the schema's action
+            is not being taken." (see Drescher, 1991, p. 71)
+        :return: the positive-transition correlation
+        """
+        try:
+            # calculate conditional probabilities
+            p_on_and_action = 0.0 if self._n_action == 0 else self._n_on_with_action / self._n_action
+            p_on_without_action = 0.0 if self._n_not_action == 0 else self._n_on_without_action / self._n_not_action
+
+            # calculate the ratio p(on AND action) : p(on AND NOT action)
+            positive_trans_corr = p_on_and_action / (p_on_and_action + p_on_without_action)
+            return positive_trans_corr
+        except ZeroDivisionError:
+            return np.NAN
+
+    @property
+    def negative_transition_corr(self) -> float:
+        """ Returns the negative-transition correlation for this item.
+
+            The negative-transition correlation is the ratio of the probability of the slot's item turning Off when
+            the schema's action has just been taken to the probability of its turning Off when the schema's action
+            is not being taken. (see Drescher, 1991, p. 72)
+        :return: the negative-transition correlation
+        """
+
+        try:
+            p_off_and_action = 0.0 if self._n_action == 0 else self._n_off_with_action / self._n_action
+            p_off_without_action = 0.0 if self._n_not_action == 0 else self._n_off_without_action / self._n_not_action
+
+            negative_trans_corr = p_off_and_action / (p_off_and_action + p_off_without_action)
+            return negative_trans_corr
+        except ZeroDivisionError:
+            return np.NAN
+
+    @property
+    def n(self) -> int:
+        return self._n_on + self._n_off
+
+    @property
+    def n_on(self) -> int:
+        return self._n_on
+
+    @property
+    def n_off(self) -> int:
+        return self._n_off
+
+    @property
+    def n_action(self) -> int:
+        return self._n_action
+
+    @property
+    def n_not_action(self) -> int:
+        return self._n_not_action
+
+    @property
+    def n_on_with_action(self) -> int:
+        return self._n_on_with_action
+
+    @property
+    def n_on_without_action(self) -> int:
+        return self._n_on_without_action
+
+    @property
+    def n_off_with_action(self) -> int:
+        return self._n_off_with_action
+
+    @property
+    def n_off_without_action(self) -> int:
+        return self._n_off_without_action
+
+
 # FIXME: Should be as immutable as possible
 class Action:
     def __init__(self, uid: Optional[str] = None):
@@ -176,6 +288,14 @@ class Context(StateAssertion):
 
 # TODO: This class can probably be removed. Existing Results can be changed to StateAssertions.
 class Result(StateAssertion):
+    pass
+
+
+class ExtendedContext:
+    pass
+
+
+class ExtendedResult:
     pass
 
 
