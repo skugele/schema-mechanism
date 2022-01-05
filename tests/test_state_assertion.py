@@ -35,7 +35,7 @@ class TestStateAssertion(TestCase):
 
         # Try changing the tuple referenced by items
         try:
-            sa.items = (DiscreteItem('5'),)
+            sa.items = (ItemAssertion(DiscreteItem('5')),)
             self.fail('StateAssertion\'s items are not immutable as expected!')
         except AttributeError:
             pass
