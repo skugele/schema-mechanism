@@ -27,20 +27,13 @@ class State:
         return self._continuous_values
 
 
-# FIXME: Should be as immutable as possible
-# TODO: How do we add modality to this? If we do, we need to add modality to the State as well.
 class Item:
-    def __init__(self, value: Any, negated: bool = False):
+    def __init__(self, value: Any):
         self._value = value
-        self._negated = negated
 
     @property
     def value(self) -> Any:
         return self._value
-
-    @property
-    def negated(self) -> bool:
-        return self._negated
 
     def is_on(self, state: State, *args, **kwargs) -> bool:
         return NotImplemented
@@ -48,23 +41,14 @@ class Item:
     def is_off(self, state: State, *args, **kwargs) -> bool:
         return not self.is_on(state, *args, **kwargs)
 
-    # TODO: Consider separating this off into a ItemAssertion decorator. The reason being
-    # TODO: that items and the negatable assertions about those items seem like distinct functionality.
-    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
-        if self._negated:
-            return self.is_off(state, *args, **kwargs)
-        else:
-            return self.is_on(state, *args, **kwargs)
 
-
-# FIXME: Should be as immutable as possible
 # TODO: This could be backed by an Object Pool to minimize the number of distinct objects.
 # TODO: See Flyweight Pattern.
 class DiscreteItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
-    def __init__(self, value: str, negated: bool = False):
-        super().__init__(value, negated)
+    def __init__(self, value: str):
+        super().__init__(value)
 
     def is_on(self, state: State, *args, **kwargs) -> bool:
         if state is None or state.discrete_values is None:
@@ -89,8 +73,8 @@ class ContinuousItem(Item):
     DEFAULT_ACTIVATION_THRESHOLD = 0.99
     DEFAULT_SIMILARITY_MEASURE = cosine_sims
 
-    def __init__(self, value: np.ndarray, negated: bool = False):
-        super().__init__(value, negated)
+    def __init__(self, value: np.ndarray):
+        super().__init__(value)
 
         # prevent modification of array values
         self.value.setflags(write=False)
@@ -110,10 +94,40 @@ class ContinuousItem(Item):
         similarities = similarity_measure(self.value, state.continuous_values).round(precision)
         return np.any(similarities >= threshold)
 
-    def __eq__(self, other) -> bool:
-        return np.array_equal(self.value, other.value)
+    def __eq__(self, other: ContinuousItem) -> bool:
+        if isinstance(other, ContinuousItem):
+            return np.array_equal(self.value, other.value)
+        return NotImplemented
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, other: ContinuousItem) -> bool:
+        return not self.__eq__(other)
+
+
+class ItemAssertion:
+    def __init__(self, item: Item, negated: bool = False) -> None:
+        self._item = item
+        self._negated = negated
+
+    @property
+    def item(self) -> Item:
+        return self._item
+
+    @property
+    def negated(self) -> bool:
+        return self._negated
+
+    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
+        if self._negated:
+            return self._item.is_off(state, *args, **kwargs)
+        else:
+            return self._item.is_on(state, *args, **kwargs)
+
+    def __eq__(self, other: ItemAssertion) -> bool:
+        if isinstance(other, ItemAssertion):
+            return self._item == other._item and self._negated == other._negated
+        return NotImplemented
+
+    def __ne__(self, other: ItemAssertion) -> bool:
         return not self.__eq__(other)
 
 
@@ -247,21 +261,13 @@ class ItemStatisticsDecorator(Item):
     def value(self) -> Any:
         return self._item.value
 
-    @property
-    def negated(self) -> bool:
-        return self._item.negated
-
     def is_on(self, state: State, *args, **kwargs) -> bool:
         return self._item.is_on(state, *args, **kwargs)
 
     def is_off(self, state: State, *args, **kwargs) -> bool:
         return not self.is_on(state, *args, **kwargs)
 
-    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
-        return self._item.is_satisfied(state, *args, **kwargs)
 
-
-# FIXME: Should be as immutable as possible
 class Action:
     def __init__(self, uid: Optional[str] = None):
         self._uid = uid or get_unique_id()
@@ -282,14 +288,13 @@ class Action:
         return hash(self._uid)
 
 
-# FIXME: Should be as immutable as possible. Maybe we can use Tuples instead of Collections?
 class StateAssertion:
 
-    def __init__(self, items: Optional[Tuple[Item, ...]] = None):
+    def __init__(self, items: Optional[Tuple[ItemAssertion, ...]] = None):
         self._items = items or tuple()
 
     @property
-    def items(self) -> Tuple[Item, ...]:
+    def items(self) -> Tuple[ItemAssertion, ...]:
         return self._items
 
     def is_satisfied(self, state: State, *args, **kwargs) -> bool:
@@ -305,12 +310,12 @@ class StateAssertion:
     def __len__(self) -> int:
         return len(self._items)
 
-    def __contains__(self, item: Item) -> bool:
+    def __contains__(self, item: ItemAssertion) -> bool:
         return item in self._items
 
-    def replicate_with(self, item: Item) -> StateAssertion:
+    def replicate_with(self, item: ItemAssertion) -> StateAssertion:
         if self.__contains__(item):
-            raise ValueError('Item already exists in StateAssertion')
+            raise ValueError('ItemAssertion already exists in StateAssertion')
 
         return StateAssertion(items=(*self._items, item))
 
@@ -400,7 +405,7 @@ class Schema:
             overridden = self.overriding_conditions.is_satisfied(state, *args, **kwargs)
         return (not overridden) and self.context.is_satisfied(state, *args, **kwargs)
 
-    def create_spin_off(self, mode: str, item: Item) -> Schema:
+    def create_spin_off(self, mode: str, item: ItemAssertion) -> Schema:
         """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
 
         :param mode: "result" (see Drescher, 1991, p. 71) or "context" (see Drescher, 1991, p. 73)
