@@ -19,7 +19,6 @@ class TestItemStatistics(TestCase):
         self.assertIs(item_stats.negative_transition_corr, np.NAN)
 
     def test_update(self):
-
         # Single Update - All Base Cases
         ################################
         item_stats = ItemStatistics()
@@ -112,5 +111,3 @@ class TestItemStatistics(TestCase):
 
         self.assertEqual(item_stats.positive_transition_corr, 0.8)
         self.assertEqual(item_stats.negative_transition_corr, 0.2)
-
-

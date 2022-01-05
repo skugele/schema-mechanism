@@ -48,6 +48,8 @@ class Item:
     def is_off(self, state: State, *args, **kwargs) -> bool:
         return not self.is_on(state, *args, **kwargs)
 
+    # TODO: Consider separating this off into a ItemAssertion decorator. The reason being
+    # TODO: that items and the negatable assertions about those items seem like distinct functionality.
     def is_satisfied(self, state: State, *args, **kwargs) -> bool:
         if self._negated:
             return self.is_off(state, *args, **kwargs)
@@ -128,7 +130,7 @@ class ItemStatistics:
         self._n_off_with_action = 0
         self._n_off_without_action = 0
 
-    def update(self, item_on: bool, action_taken: bool, count: int = 1):
+    def update(self, item_on: bool, action_taken: bool, count: int = 1) -> None:
         self._n += count
 
         if item_on and action_taken:
@@ -155,7 +157,7 @@ class ItemStatistics:
     def positive_transition_corr(self) -> float:
         """ Returns the positive-transition correlation for this item.
 
-            The positive-transition correlation is the ratio of the probability of the slot's item turning On when
+            "The positive-transition correlation is the ratio of the probability of the slot's item turning On when
             the schema's action has just been taken to the probability of its turning On when the schema's action
             is not being taken." (see Drescher, 1991, p. 71)
         :return: the positive-transition correlation
@@ -175,9 +177,9 @@ class ItemStatistics:
     def negative_transition_corr(self) -> float:
         """ Returns the negative-transition correlation for this item.
 
-            The negative-transition correlation is the ratio of the probability of the slot's item turning Off when
+            "The negative-transition correlation is the ratio of the probability of the slot's item turning Off when
             the schema's action has just been taken to the probability of its turning Off when the schema's action
-            is not being taken. (see Drescher, 1991, p. 72)
+            is not being taken." (see Drescher, 1991, p. 72)
         :return: the negative-transition correlation
         """
 
@@ -227,6 +229,38 @@ class ItemStatistics:
         return self._n_off_without_action
 
 
+# noinspection PyMissingConstructor
+class ItemStatisticsDecorator(Item):
+    def __init__(self, item: Item) -> None:
+        self._item = item
+        self._stats = ItemStatistics()
+
+    @property
+    def item(self) -> Item:
+        return self._item
+
+    @property
+    def stats(self) -> ItemStatistics:
+        return self._stats
+
+    @property
+    def value(self) -> Any:
+        return self._item.value
+
+    @property
+    def negated(self) -> bool:
+        return self._item.negated
+
+    def is_on(self, state: State, *args, **kwargs) -> bool:
+        return self._item.is_on(state, *args, **kwargs)
+
+    def is_off(self, state: State, *args, **kwargs) -> bool:
+        return not self.is_on(state, *args, **kwargs)
+
+    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
+        return self._item.is_satisfied(state, *args, **kwargs)
+
+
 # FIXME: Should be as immutable as possible
 class Action:
     def __init__(self, uid: Optional[str] = None):
@@ -236,15 +270,15 @@ class Action:
     def uid(self) -> str:
         return self._uid
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         if isinstance(other, Action):
             return self._uid == other._uid
         return False
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         return not self.__eq__(other)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self._uid)
 
 
