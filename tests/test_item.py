@@ -26,6 +26,13 @@ class TestDiscreteItem(TestCase):
         self.assertFalse(i.is_on(state=['123']))
         self.assertFalse(i.is_on(state=['123', '4321']))
 
+    def test_equal(self):
+        v1, v2 = '1234', '123'
+        i = DiscreteItem(state_element=v1)
+
+        self.assertEqual(i, DiscreteItem(state_element=v1))
+        self.assertNotEqual(i, DiscreteItem(state_element=v2))
+
 
 class TestContinuousItem(TestCase):
     def test_init(self):
@@ -67,6 +74,14 @@ class TestContinuousItem(TestCase):
         # check custom precision
         self.assertFalse(i.is_on(state=[np.array([0.5, 0.5])], threshold=1.0))
         self.assertTrue(i.is_on(state=[np.array([0.5, 0.5])], threshold=1.0, precision=0))
+
+    def test_equal(self):
+        v1 = np.array([1.0, 0.0])
+        v2 = np.array([0.0, 1.0])
+        i = ContinuousItem(state_element=v1)
+
+        self.assertEqual(i, ContinuousItem(state_element=v1))
+        self.assertNotEqual(i, ContinuousItem(state_element=v2))
 
 
 class TestItem(TestCase):

@@ -52,13 +52,13 @@ class DiscreteItem(Item):
     def is_on(self, state: Collection[Any], *args, **kwargs) -> bool:
         return self.state_element in filter(lambda e: isinstance(e, DiscreteStateElement), state)
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: DiscreteItem) -> bool:
         if isinstance(other, DiscreteItem):
             return self.state_element == other.state_element
+
         return NotImplemented
 
 
-# FIXME: Should be as immutable as possible
 class ContinuousItem(Item):
     """ A state element that can be viewed as continuously comparable content. """
 
@@ -92,10 +92,10 @@ class ContinuousItem(Item):
 
         return False
 
-    # TODO: Extend this to work for ContinousStateElements
     def __eq__(self, other: ContinuousItem) -> bool:
         if isinstance(other, ContinuousItem):
             return np.array_equal(self.state_element, other.state_element)
+
         return NotImplemented
 
 
