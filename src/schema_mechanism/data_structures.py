@@ -12,7 +12,14 @@ import numpy as np
 from schema_mechanism.util import cosine_sims
 from schema_mechanism.util import get_unique_id
 
+# Type Aliases
+##############
+DiscreteStateElement = str
+ContinuousStateElement = np.ndarray
 
+
+# Classes
+#########
 class Item(ABC):
     def __init__(self, state_element: Any):
         self._state_element = state_element
@@ -35,23 +42,20 @@ class Item(ABC):
 class DiscreteItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
-    def __init__(self, state_element: str):
+    def __init__(self, state_element: DiscreteStateElement):
         super().__init__(state_element)
 
     @property
-    def state_element(self) -> str:
+    def state_element(self) -> DiscreteStateElement:
         return super().state_element
 
     def is_on(self, state: Collection[Any], *args, **kwargs) -> bool:
-        return self.state_element in filter(lambda e: isinstance(e, str), state)
+        return self.state_element in filter(lambda e: isinstance(e, DiscreteStateElement), state)
 
     def __eq__(self, other) -> bool:
         if isinstance(other, DiscreteItem):
             return self.state_element == other.state_element
         return NotImplemented
-
-    def __ne__(self, other) -> bool:
-        return not self.__eq__(other)
 
 
 # FIXME: Should be as immutable as possible
@@ -62,14 +66,14 @@ class ContinuousItem(Item):
     DEFAULT_ACTIVATION_THRESHOLD = 0.99
     DEFAULT_SIMILARITY_MEASURE = cosine_sims
 
-    def __init__(self, state_element: np.ndarray):
+    def __init__(self, state_element: ContinuousStateElement):
         super().__init__(state_element)
 
         # prevent modification of array values
         self.state_element.setflags(write=False)
 
     @property
-    def state_element(self) -> np.ndarray:
+    def state_element(self) -> ContinuousStateElement:
         return super().state_element
 
     def is_on(self, state: Collection[Any], *args, **kwargs) -> bool:
@@ -81,20 +85,18 @@ class ContinuousItem(Item):
             else ContinuousItem.DEFAULT_SIMILARITY_MEASURE
         )
 
-        continuous_state_elements = tuple(filter(lambda e: isinstance(e, np.ndarray), state))
+        continuous_state_elements = tuple(filter(lambda e: isinstance(e, ContinuousStateElement), state))
         if continuous_state_elements:
             similarities = similarity_measure(self.state_element, continuous_state_elements).round(precision)
             return np.any(similarities >= threshold)
 
         return False
 
+    # TODO: Extend this to work for ContinousStateElements
     def __eq__(self, other: ContinuousItem) -> bool:
         if isinstance(other, ContinuousItem):
             return np.array_equal(self.state_element, other.state_element)
         return NotImplemented
-
-    def __ne__(self, other: ContinuousItem) -> bool:
-        return not self.__eq__(other)
 
 
 class ItemAssertion:
