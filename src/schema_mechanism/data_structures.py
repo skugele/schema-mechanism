@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from abc import ABC
+from abc import abstractmethod
 from typing import Any
 from typing import Collection
 from typing import Optional
@@ -11,34 +13,20 @@ from schema_mechanism.util import cosine_sims
 from schema_mechanism.util import get_unique_id
 
 
-class State:
-    def __init__(self,
-                 discrete_values: Collection[str] = None,
-                 continuous_values: Collection[np.ndarray] = None):
-        self._continuous_values = continuous_values
-        self._discrete_values = discrete_values
+class Item(ABC):
+    def __init__(self, state_element: Any):
+        self._state_element = state_element
 
     @property
-    def discrete_values(self) -> Collection[str]:
-        return self._discrete_values
+    @abstractmethod
+    def state_element(self) -> Any:
+        return self._state_element
 
-    @property
-    def continuous_values(self) -> Collection[np.ndarray]:
-        return self._continuous_values
-
-
-class Item:
-    def __init__(self, value: Any):
-        self._value = value
-
-    @property
-    def value(self) -> Any:
-        return self._value
-
-    def is_on(self, state: State, *args, **kwargs) -> bool:
+    @abstractmethod
+    def is_on(self, state: Collection[Any], *args, **kwargs) -> bool:
         return NotImplemented
 
-    def is_off(self, state: State, *args, **kwargs) -> bool:
+    def is_off(self, state: Collection[Any], *args, **kwargs) -> bool:
         return not self.is_on(state, *args, **kwargs)
 
 
@@ -47,18 +35,19 @@ class Item:
 class DiscreteItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
-    def __init__(self, value: str):
-        super().__init__(value)
+    def __init__(self, state_element: str):
+        super().__init__(state_element)
 
-    def is_on(self, state: State, *args, **kwargs) -> bool:
-        if state is None or state.discrete_values is None:
-            return False
+    @property
+    def state_element(self) -> str:
+        return super().state_element
 
-        return self.value in state.discrete_values
+    def is_on(self, state: Collection[Any], *args, **kwargs) -> bool:
+        return self.state_element in filter(lambda e: isinstance(e, str), state)
 
     def __eq__(self, other) -> bool:
         if isinstance(other, DiscreteItem):
-            return self.value == other.value
+            return self.state_element == other.state_element
         return NotImplemented
 
     def __ne__(self, other) -> bool:
@@ -73,16 +62,17 @@ class ContinuousItem(Item):
     DEFAULT_ACTIVATION_THRESHOLD = 0.99
     DEFAULT_SIMILARITY_MEASURE = cosine_sims
 
-    def __init__(self, value: np.ndarray):
-        super().__init__(value)
+    def __init__(self, state_element: np.ndarray):
+        super().__init__(state_element)
 
         # prevent modification of array values
-        self.value.setflags(write=False)
+        self.state_element.setflags(write=False)
 
-    def is_on(self, state: State, *args, **kwargs) -> bool:
-        if state is None or state.continuous_values is None:
-            return False
+    @property
+    def state_element(self) -> np.ndarray:
+        return super().state_element
 
+    def is_on(self, state: Collection[Any], *args, **kwargs) -> bool:
         threshold = kwargs['threshold'] if 'threshold' in kwargs else ContinuousItem.DEFAULT_ACTIVATION_THRESHOLD
         precision = kwargs['precision'] if 'precision' in kwargs else ContinuousItem.DEFAULT_PRECISION
         similarity_measure = (
@@ -91,12 +81,16 @@ class ContinuousItem(Item):
             else ContinuousItem.DEFAULT_SIMILARITY_MEASURE
         )
 
-        similarities = similarity_measure(self.value, state.continuous_values).round(precision)
-        return np.any(similarities >= threshold)
+        continuous_state_elements = tuple(filter(lambda e: isinstance(e, np.ndarray), state))
+        if continuous_state_elements:
+            similarities = similarity_measure(self.state_element, continuous_state_elements).round(precision)
+            return np.any(similarities >= threshold)
+
+        return False
 
     def __eq__(self, other: ContinuousItem) -> bool:
         if isinstance(other, ContinuousItem):
-            return np.array_equal(self.value, other.value)
+            return np.array_equal(self.state_element, other.state_element)
         return NotImplemented
 
     def __ne__(self, other: ContinuousItem) -> bool:
@@ -116,7 +110,7 @@ class ItemAssertion:
     def negated(self) -> bool:
         return self._negated
 
-    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
+    def is_satisfied(self, state: Collection[Any], *args, **kwargs) -> bool:
         if self._negated:
             return self._item.is_off(state, *args, **kwargs)
         else:
@@ -258,13 +252,13 @@ class ItemStatisticsDecorator(Item):
         return self._stats
 
     @property
-    def value(self) -> Any:
-        return self._item.value
+    def state_element(self) -> Any:
+        return self._item.state_element
 
-    def is_on(self, state: State, *args, **kwargs) -> bool:
+    def is_on(self, state: Collection[Any], *args, **kwargs) -> bool:
         return self._item.is_on(state, *args, **kwargs)
 
-    def is_off(self, state: State, *args, **kwargs) -> bool:
+    def is_off(self, state: Collection[Any], *args, **kwargs) -> bool:
         return not self.is_on(state, *args, **kwargs)
 
 
@@ -297,7 +291,7 @@ class StateAssertion:
     def items(self) -> Tuple[ItemAssertion, ...]:
         return self._items
 
-    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
+    def is_satisfied(self, state: Collection[Any], *args, **kwargs) -> bool:
         """ Satisfied when all non-negated items are On, and all negated items are Off.
 
         :param state: the agent's current state
@@ -389,7 +383,7 @@ class Schema:
     def overriding_conditions(self, overriding_conditions: StateAssertion):
         self._overriding_conditions = overriding_conditions
 
-    def is_applicable(self, state: State, *args, **kwargs) -> bool:
+    def is_applicable(self, state: Collection[Any], *args, **kwargs) -> bool:
         """ A schema is applicable when its context is satisfied and there are no active overriding conditions.
 
             “A schema is said to be applicable when its context is satisfied and no

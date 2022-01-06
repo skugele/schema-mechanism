@@ -2,13 +2,13 @@ from unittest import TestCase
 
 import numpy as np
 
-from schema_mechanism.data_structures import Action, ItemAssertion
+from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import Context
 from schema_mechanism.data_structures import ContinuousItem
 from schema_mechanism.data_structures import DiscreteItem
+from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import Result
 from schema_mechanism.data_structures import Schema
-from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import StateAssertion
 
 
@@ -71,38 +71,23 @@ class TestSchema(TestCase):
 
         # expected to be satisfied
         ##########################
-        state = State(discrete_values=['1'],
-                      continuous_values=[np.array([1.0, 0.0])])
 
-        self.assertTrue(schema.context.is_satisfied(state))
+        self.assertTrue(schema.context.is_satisfied(state=['1', np.array([1.0, 0.0])]))
 
         # expected to NOT be satisfied
         ##############################
 
         # case 1: present negated discrete item
-        state = State(discrete_values=['1', '2'],
-                      continuous_values=[np.array([1.0, 0.0])])
-
-        self.assertFalse(schema.context.is_satisfied(state))
+        self.assertFalse(schema.context.is_satisfied(state=['1', '2', np.array([1.0, 0.0])]))
 
         # case 2: present negated continuous item
-        state = State(discrete_values=['1'],
-                      continuous_values=[np.array([1.0, 0.0]),
-                                         np.array([0.0, 1.0])])
-
-        self.assertFalse(schema.context.is_satisfied(state))
+        self.assertFalse(schema.context.is_satisfied(state=['1', np.array([1.0, 0.0]), np.array([0.0, 1.0])]))
 
         # case 3: missing discrete element
-        state = State(discrete_values=['3'],
-                      continuous_values=[np.array([1.0, 0.0])])
-
-        self.assertFalse(schema.context.is_satisfied(state))
+        self.assertFalse(schema.context.is_satisfied(state=['3', np.array([1.0, 0.0])]))
 
         # case 4: missing continuous element
-        state = State(discrete_values=['1'],
-                      continuous_values=[np.array([0.5, 0.5])])
-
-        self.assertFalse(schema.context.is_satisfied(state))
+        self.assertFalse(schema.context.is_satisfied(state=['1', np.array([0.5, 0.5])]))
 
     def test_is_applicable(self):
         c = Context(
@@ -117,54 +102,32 @@ class TestSchema(TestCase):
 
         # expected to be satisfied
         ##########################
-        state = State(discrete_values=['1'],
-                      continuous_values=[np.array([1.0, 0.0])])
-
-        self.assertTrue(schema.is_applicable(state))
+        self.assertTrue(schema.is_applicable(state=['1', np.array([1.0, 0.0])]))
 
         # expected to NOT be satisfied
         ##############################
 
         # case 1: present negated discrete item
-        state = State(discrete_values=['1', '2'],
-                      continuous_values=[np.array([1.0, 0.0])])
-
-        self.assertFalse(schema.is_applicable(state))
+        self.assertFalse(schema.is_applicable(state=['1', '2', np.array([1.0, 0.0])]))
 
         # case 2: present negated continuous item
-        state = State(discrete_values=['1'],
-                      continuous_values=[np.array([1.0, 0.0]),
-                                         np.array([0.0, 1.0])])
-
-        self.assertFalse(schema.is_applicable(state))
+        self.assertFalse(schema.is_applicable(state=['1', np.array([1.0, 0.0]), np.array([0.0, 1.0])]))
 
         # case 3: missing discrete element
-        state = State(discrete_values=['3'],
-                      continuous_values=[np.array([1.0, 0.0])])
-
-        self.assertFalse(schema.is_applicable(state))
+        self.assertFalse(schema.is_applicable(state=['3', np.array([1.0, 0.0])]))
 
         # case 4: missing continuous element
-        state = State(discrete_values=['1'],
-                      continuous_values=[np.array([0.5, 0.5])])
-
-        self.assertFalse(schema.is_applicable(state))
+        self.assertFalse(schema.is_applicable(state=['1', np.array([0.5, 0.5])]))
 
         # Tests overriding conditions
         #############################
         schema.overriding_conditions = StateAssertion((ItemAssertion(DiscreteItem('3')),))
 
         # expected to be applicable
-        state = State(discrete_values=['1'],
-                      continuous_values=[np.array([1.0, 0.0])])
-
-        self.assertTrue(schema.is_applicable(state))
+        self.assertTrue(schema.is_applicable(state=['1', np.array([1.0, 0.0])]))
 
         # expected to NOT be applicable (due to overriding condition)
-        state = State(discrete_values=['1', '3'],
-                      continuous_values=[np.array([1.0, 0.0])])
-
-        self.assertFalse(schema.is_applicable(state))
+        self.assertFalse(schema.is_applicable(state=['1', '3', np.array([1.0, 0.0])]))
 
     def test_spin_off(self):
         # test bare schema spin-off

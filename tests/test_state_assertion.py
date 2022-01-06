@@ -2,9 +2,9 @@ from unittest import TestCase
 
 import numpy as np
 
-from schema_mechanism.data_structures import ContinuousItem, ItemAssertion
+from schema_mechanism.data_structures import ContinuousItem
 from schema_mechanism.data_structures import DiscreteItem
-from schema_mechanism.data_structures import State
+from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import StateAssertion
 
 
@@ -45,8 +45,7 @@ class TestStateAssertion(TestCase):
         v2 = np.array([0.0, 1.0, 0.0])
         v3 = np.array([0.0, 0.0, 1.0])
 
-        state = State(discrete_values=['1', '2'],
-                      continuous_values=[v1, v2])
+        state = ['1', '2', v1, v2]
 
         # an empty StateAssertion should always be satisfied
         c = StateAssertion()

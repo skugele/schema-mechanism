@@ -1,6 +1,7 @@
 from unittest import TestCase
 
-from schema_mechanism.data_structures import DiscreteItem, ItemAssertion, State
+from schema_mechanism.data_structures import DiscreteItem
+from schema_mechanism.data_structures import ItemAssertion
 
 
 class TestItemAssertion(TestCase):
@@ -26,28 +27,28 @@ class TestItemAssertion(TestCase):
     def test_is_satisfied(self):
         # not negated
         #############
-        i = DiscreteItem(value='1234')
+        i = DiscreteItem(state_element='1234')
         ia = ItemAssertion(item=i, negated=False)
 
         # item expected to be ON for these states
-        self.assertTrue(ia.is_satisfied(state=State(discrete_values=['1234'])))
-        self.assertTrue(ia.is_satisfied(state=State(discrete_values=['123', '1234'])))
+        self.assertTrue(ia.is_satisfied(state=['1234']))
+        self.assertTrue(ia.is_satisfied(state=['123', '1234']))
 
         # item expected to be OFF for these states
-        self.assertFalse(ia.is_satisfied(state=State()))
-        self.assertFalse(ia.is_satisfied(state=State(discrete_values=['123'])))
-        self.assertFalse(ia.is_satisfied(state=State(discrete_values=['123', '4321'])))
+        self.assertFalse(ia.is_satisfied(state=[]))
+        self.assertFalse(ia.is_satisfied(state=['123']))
+        self.assertFalse(ia.is_satisfied(state=['123', '4321']))
 
         # negated
         #########
-        i = DiscreteItem(value='1234')
+        i = DiscreteItem(state_element='1234')
         ia = ItemAssertion(item=i, negated=True)
 
         # item expected to be ON for these states
-        self.assertFalse(ia.is_satisfied(state=State(discrete_values=['1234'])))
-        self.assertFalse(ia.is_satisfied(state=State(discrete_values=['123', '1234'])))
+        self.assertFalse(ia.is_satisfied(state=['1234']))
+        self.assertFalse(ia.is_satisfied(state=['123', '1234']))
 
         # item expected to be OFF for these states
-        self.assertTrue(ia.is_satisfied(state=State()))
-        self.assertTrue(ia.is_satisfied(state=State(discrete_values=['123'])))
-        self.assertTrue(ia.is_satisfied(state=State(discrete_values=['123', '4321'])))
+        self.assertTrue(ia.is_satisfied(state=[]))
+        self.assertTrue(ia.is_satisfied(state=['123']))
+        self.assertTrue(ia.is_satisfied(state=['123', '4321']))

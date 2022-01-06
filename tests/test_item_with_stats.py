@@ -1,6 +1,9 @@
 from unittest import TestCase
 
-from schema_mechanism.data_structures import ItemStatisticsDecorator, DiscreteItem, State, Item, ItemStatistics
+from schema_mechanism.data_structures import DiscreteItem
+from schema_mechanism.data_structures import Item
+from schema_mechanism.data_structures import ItemStatistics
+from schema_mechanism.data_structures import ItemStatisticsDecorator
 
 
 class TestItemWithStats(TestCase):
@@ -8,9 +11,9 @@ class TestItemWithStats(TestCase):
         item = ItemStatisticsDecorator(item=DiscreteItem('1234'))
 
         # verify class is properly wrapped
-        self.assertEqual('1234', item.value)
-        self.assertTrue(item.is_on(state=State(discrete_values=['1234'])))
-        self.assertTrue(item.is_off(state=State(discrete_values=['4321'])))
+        self.assertEqual('1234', item.state_element)
+        self.assertTrue(item.is_on(state=['1234']))
+        self.assertTrue(item.is_off(state=['4321']))
         self.assertTrue(isinstance(item, Item))
 
         # verify an associated statistics object exists

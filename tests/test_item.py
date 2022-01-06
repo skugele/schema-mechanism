@@ -4,37 +4,35 @@ import numpy as np
 
 from schema_mechanism.data_structures import ContinuousItem
 from schema_mechanism.data_structures import DiscreteItem
-from schema_mechanism.data_structures import State
 from schema_mechanism.util import get_orthogonal_vector
 
 
 class TestDiscreteItem(TestCase):
 
     def test_init(self):
-        i = DiscreteItem(value='1234')
-        self.assertEqual('1234', i.value)
+        i = DiscreteItem(state_element='1234')
+        self.assertEqual('1234', i.state_element)
 
     def test_is_on(self):
-        i = DiscreteItem(value='1234')
+        i = DiscreteItem(state_element='1234')
 
         # item expected to be ON for these states
-        self.assertTrue(i.is_on(state=State(discrete_values=['1234'])))
-        self.assertTrue(i.is_on(state=State(discrete_values=['123', '1234'])))
-        self.assertTrue(i.is_on(state=State(discrete_values=['123', '1234'],
-                                            continuous_values=[np.random.rand(16)])))
+        self.assertTrue(i.is_on(state=['1234']))
+        self.assertTrue(i.is_on(state=['123', '1234']))
+        self.assertTrue(i.is_on(state=['123', '1234', np.random.rand(16)]))
 
         # item expected to be OFF for these states
-        self.assertFalse(i.is_on(state=State()))
-        self.assertFalse(i.is_on(state=State(discrete_values=['123'])))
-        self.assertFalse(i.is_on(state=State(discrete_values=['123', '4321'])))
+        self.assertFalse(i.is_on(state=[]))
+        self.assertFalse(i.is_on(state=['123']))
+        self.assertFalse(i.is_on(state=['123', '4321']))
 
 
 class TestContinuousItem(TestCase):
     def test_init(self):
         test_value = np.random.rand(16)
 
-        i = ContinuousItem(value=test_value)
-        self.assertTrue(np.array_equal(test_value, i.value))
+        i = ContinuousItem(state_element=test_value)
+        self.assertTrue(np.array_equal(test_value, i.state_element))
 
         # check default activation threshold
         self.assertEqual(0.99, ContinuousItem.DEFAULT_ACTIVATION_THRESHOLD)
@@ -44,7 +42,7 @@ class TestContinuousItem(TestCase):
 
         # test that the value is immutable
         try:
-            i.value[0] = 10.0
+            i.state_element[0] = 10.0
             self.fail('ContinuousItem\'s value should be immutable')
         except ValueError:
             pass
@@ -53,22 +51,22 @@ class TestContinuousItem(TestCase):
         v1 = np.array([1.0, 0.0])
         v2 = np.array([0.0, 1.0])
 
-        i = ContinuousItem(value=v1)
+        i = ContinuousItem(state_element=v1)
 
         # item expected to be ON for these states
-        self.assertTrue(i.is_on(state=State(continuous_values=[v1]), threshold=1.0))
-        self.assertTrue(i.is_on(state=State(continuous_values=[v1, v2]), threshold=1.0))
+        self.assertTrue(i.is_on(state=[v1], threshold=1.0))
+        self.assertTrue(i.is_on(state=[v1, v2], threshold=1.0))
 
         # item expected to be OFF for these states
-        self.assertFalse(i.is_on(state=State(continuous_values=[v2]), threshold=1.0))
-        self.assertFalse(i.is_on(state=State(), threshold=1.0))
+        self.assertFalse(i.is_on(state=[v2], threshold=1.0))
+        self.assertFalse(i.is_on(state=[], threshold=1.0))
 
         # check custom threshold
-        self.assertTrue(i.is_on(state=State(continuous_values=[v2]), threshold=0.0))
+        self.assertTrue(i.is_on([v2], threshold=0.0))
 
         # check custom precision
-        self.assertFalse(i.is_on(state=State(continuous_values=[np.array([0.5, 0.5])]), threshold=1.0))
-        self.assertTrue(i.is_on(state=State(continuous_values=[np.array([0.5, 0.5])]), threshold=1.0, precision=0))
+        self.assertFalse(i.is_on(state=[np.array([0.5, 0.5])], threshold=1.0))
+        self.assertTrue(i.is_on(state=[np.array([0.5, 0.5])], threshold=1.0, precision=0))
 
 
 class TestItem(TestCase):
@@ -77,7 +75,7 @@ class TestItem(TestCase):
         v1 = np.random.randn(16)
         v2 = get_orthogonal_vector(v1)
 
-        state = State(discrete_values=['1234', '4321'], continuous_values=[v1, v2])
+        state = ['1234', '4321', v1, v2]
 
         items = [
             DiscreteItem('1234'),
