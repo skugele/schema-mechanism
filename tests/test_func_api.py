@@ -27,4 +27,4 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertEqual(True, ia.negated)
 
         # invalid item assertions
-        self.assertRaises(TypeError, lambda x: gen_assert(state_element=1.0, negated=False))
+        self.assertRaises(TypeError, lambda x: gen_assert(state_element=1.0))
