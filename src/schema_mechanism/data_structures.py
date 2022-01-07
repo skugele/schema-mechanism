@@ -4,99 +4,98 @@ from abc import ABC
 from abc import abstractmethod
 from typing import Any
 from typing import Collection
+from typing import Dict
+from typing import Hashable
 from typing import Optional
 from typing import Tuple
+from typing import Type
 
 import numpy as np
 
-from schema_mechanism.util import cosine_sims
+from schema_mechanism.util import Singleton
 from schema_mechanism.util import get_unique_id
 
 # Type Aliases
 ##############
-DiscreteStateElement = str
-ContinuousStateElement = np.ndarray
+StateElement = Hashable
 
 
 # Classes
 #########
 class Item(ABC):
-    def __init__(self, state_element: Any):
+    def __init__(self, state_element: StateElement):
         self._state_element = state_element
 
     @property
-    @abstractmethod
-    def state_element(self) -> Any:
+    def state_element(self) -> StateElement:
         return self._state_element
 
     @abstractmethod
-    def is_on(self, state: Collection[Any], *args, **kwargs) -> bool:
+    def is_on(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         return NotImplemented
 
-    def is_off(self, state: Collection[Any], *args, **kwargs) -> bool:
+    def is_off(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         return not self.is_on(state, *args, **kwargs)
 
+    @abstractmethod
+    def __eq__(self, other: Any):
+        pass
 
-# TODO: This could be backed by an Object Pool to minimize the number of distinct objects.
-# TODO: See Flyweight Pattern.
-class DiscreteItem(Item):
+    def __ne__(self, other: Any):
+        return not self.__eq__(other)
+
+    # TODO: Need to be really careful with the default hash implementations which produce different values between
+    # TODO: runs. This will kill and direct serialization/deserialization of data structures that rely on hashes.
+    @abstractmethod
+    def __hash__(self):
+        pass
+
+
+class ItemPool(metaclass=Singleton):
+    _items: Dict[StateElement, Item] = dict()
+
+    def __contains__(self, state_element: StateElement):
+        return state_element in self._items
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def items(self) -> Collection[Item]:
+        return self._items.values()
+
+    def clear(self):
+        self._items.clear()
+
+    def get(self, state_element: StateElement, item_type: Type[Item]) -> Item:
+        obj = self._items.get(state_element)
+        if obj is None:
+            self._items[state_element] = obj = item_type(state_element)
+        return obj
+
+
+class ReadOnlyItemPool(ItemPool):
+    def get(self, *args, **kwargs):
+        raise NotImplementedError
+
+
+class SymbolicItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
-    def __init__(self, state_element: DiscreteStateElement):
+    def __init__(self, state_element: StateElement):
         super().__init__(state_element)
 
     @property
-    def state_element(self) -> DiscreteStateElement:
+    def state_element(self) -> StateElement:
         return super().state_element
 
-    def is_on(self, state: Collection[Any], *args, **kwargs) -> bool:
-        return self.state_element in filter(lambda e: isinstance(e, DiscreteStateElement), state)
+    def is_on(self, state: Collection[StateElement], *args, **kwargs) -> bool:
+        return self.state_element in state
 
-    def __eq__(self, other: DiscreteItem) -> bool:
-        if isinstance(other, DiscreteItem):
-            return self.state_element == other.state_element
+    def __eq__(self, other: Any) -> bool:
+        return self.state_element == other.state_element if isinstance(other, SymbolicItem) else NotImplemented
 
-        return NotImplemented
-
-
-class ContinuousItem(Item):
-    """ A state element that can be viewed as continuously comparable content. """
-
-    DEFAULT_PRECISION = 2  # 2 decimal places of precision
-    DEFAULT_ACTIVATION_THRESHOLD = 0.99
-    DEFAULT_SIMILARITY_MEASURE = cosine_sims
-
-    def __init__(self, state_element: ContinuousStateElement):
-        super().__init__(state_element)
-
-        # prevent modification of array values
-        self.state_element.setflags(write=False)
-
-    @property
-    def state_element(self) -> ContinuousStateElement:
-        return super().state_element
-
-    def is_on(self, state: Collection[Any], *args, **kwargs) -> bool:
-        threshold = kwargs['threshold'] if 'threshold' in kwargs else ContinuousItem.DEFAULT_ACTIVATION_THRESHOLD
-        precision = kwargs['precision'] if 'precision' in kwargs else ContinuousItem.DEFAULT_PRECISION
-        similarity_measure = (
-            kwargs['similarity_measure']
-            if 'similarity_measure' in kwargs
-            else ContinuousItem.DEFAULT_SIMILARITY_MEASURE
-        )
-
-        continuous_state_elements = tuple(filter(lambda e: isinstance(e, ContinuousStateElement), state))
-        if continuous_state_elements:
-            similarities = similarity_measure(self.state_element, continuous_state_elements).round(precision)
-            return np.any(similarities >= threshold)
-
-        return False
-
-    def __eq__(self, other: ContinuousItem) -> bool:
-        if isinstance(other, ContinuousItem):
-            return np.array_equal(self.state_element, other.state_element)
-
-        return NotImplemented
+    def __hash__(self) -> int:
+        return hash(self.state_element)
 
 
 class ItemAssertion:
@@ -112,21 +111,22 @@ class ItemAssertion:
     def negated(self) -> bool:
         return self._negated
 
-    def is_satisfied(self, state: Collection[Any], *args, **kwargs) -> bool:
+    def is_satisfied(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         if self._negated:
             return self._item.is_off(state, *args, **kwargs)
         else:
             return self._item.is_on(state, *args, **kwargs)
 
-    def __eq__(self, other: ItemAssertion) -> bool:
+    def __eq__(self, other: Any) -> bool:
         if isinstance(other, ItemAssertion):
             return self._item == other._item and self._negated == other._negated
         return NotImplemented
 
-    def __ne__(self, other: ItemAssertion) -> bool:
+    def __ne__(self, other: Any) -> bool:
         return not self.__eq__(other)
 
 
+# TODO: Memory usage can be reduced by using complementary relationships
 class ItemStatistics:
     def __init__(self):
         self._n = 0
@@ -140,6 +140,13 @@ class ItemStatistics:
         self._n_off_with_action = 0
         self._n_off_without_action = 0
 
+    # TODO: An external function is needed that will compare the corresponding item's state element
+    # TODO: to the state before and after an action is taken. If the item assertion is satisfied before
+    # TODO: the action is executed then NO UPDATE.
+
+    # "a trial for which the result was already satisfied before the action was taken does not count as a
+    # positive-transition trial; and one for which the result was already unsatisfied does not count
+    # as a negative-transition trial" (see Drescher, 1991, p. 72)
     def update(self, item_on: bool, action_taken: bool, count: int = 1) -> None:
         self._n += count
 
@@ -197,6 +204,7 @@ class ItemStatistics:
             p_off_and_action = 0.0 if self._n_action == 0 else self._n_off_with_action / self._n_action
             p_off_without_action = 0.0 if self._n_not_action == 0 else self._n_off_without_action / self._n_not_action
 
+            # calculate the ratio p(off AND action) : p(off AND NOT action)
             negative_trans_corr = p_off_and_action / (p_off_and_action + p_off_without_action)
             return negative_trans_corr
         except ZeroDivisionError:
@@ -263,6 +271,12 @@ class ItemStatisticsDecorator(Item):
     def is_off(self, state: Collection[Any], *args, **kwargs) -> bool:
         return not self.is_on(state, *args, **kwargs)
 
+    def __eq__(self, other: Item) -> bool:
+        return self._item.__eq__(other)
+
+    def __hash__(self) -> int:
+        return hash(self._item)
+
 
 class Action:
     def __init__(self, uid: Optional[str] = None):
@@ -286,14 +300,14 @@ class Action:
 
 class StateAssertion:
 
-    def __init__(self, items: Optional[Tuple[ItemAssertion, ...]] = None):
-        self._items = items or tuple()
+    def __init__(self, item_asserts: Optional[Tuple[ItemAssertion, ...]] = None):
+        self._item_asserts = item_asserts or tuple()
 
     @property
     def items(self) -> Tuple[ItemAssertion, ...]:
-        return self._items
+        return self._item_asserts
 
-    def is_satisfied(self, state: Collection[Any], *args, **kwargs) -> bool:
+    def is_satisfied(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         """ Satisfied when all non-negated items are On, and all negated items are Off.
 
         :param state: the agent's current state
@@ -301,19 +315,19 @@ class StateAssertion:
         :param kwargs: optional keyword arguments
         :return: True if the context is satisfied given the current state; False otherwise.
         """
-        return all(map(lambda i: i.is_satisfied(state, *args, **kwargs), self._items))
+        return all(map(lambda i: i.is_satisfied(state, *args, **kwargs), self._item_asserts))
 
     def __len__(self) -> int:
-        return len(self._items)
+        return len(self._item_asserts)
 
-    def __contains__(self, item: ItemAssertion) -> bool:
-        return item in self._items
+    def __contains__(self, item_assert: ItemAssertion) -> bool:
+        return item_assert in self._item_asserts
 
-    def replicate_with(self, item: ItemAssertion) -> StateAssertion:
-        if self.__contains__(item):
+    def replicate_with(self, item_assert: ItemAssertion) -> StateAssertion:
+        if self.__contains__(item_assert):
             raise ValueError('ItemAssertion already exists in StateAssertion')
 
-        return StateAssertion(items=(*self._items, item))
+        return StateAssertion(item_asserts=(*self._item_asserts, item_assert))
 
 
 # TODO: This class can probably be removed. Existing Contexts can be changed to StateAssertions.
@@ -401,18 +415,18 @@ class Schema:
             overridden = self.overriding_conditions.is_satisfied(state, *args, **kwargs)
         return (not overridden) and self.context.is_satisfied(state, *args, **kwargs)
 
-    def create_spin_off(self, mode: str, item: ItemAssertion) -> Schema:
+    def create_spin_off(self, mode: str, item_assert: ItemAssertion) -> Schema:
         """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
 
         :param mode: "result" (see Drescher, 1991, p. 71) or "context" (see Drescher, 1991, p. 73)
-        :param item: a relevant item to add to the context or result of a spin-off schema
+        :param item_assert: the item assertion to add to the context or result of a spin-off schema
         :return: a spin-off schema based on this one
         """
         if "context" == mode:
             new_context = (
-                Context(items=(item,))
+                Context(item_asserts=(item_assert,))
                 if self.context is None
-                else self.context.replicate_with(item)
+                else self.context.replicate_with(item_assert)
             )
             return Schema(action=self.action,
                           context=new_context,
@@ -420,9 +434,9 @@ class Schema:
 
         elif "result" == mode:
             new_result = (
-                Result(items=(item,))
+                Result(item_asserts=(item_assert,))
                 if self.result is None
-                else self.result.replicate_with(item)
+                else self.result.replicate_with(item_assert)
             )
             return Schema(action=self.action,
                           context=self.context,

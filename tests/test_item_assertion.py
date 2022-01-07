@@ -1,12 +1,12 @@
 from unittest import TestCase
 
-from schema_mechanism.data_structures import DiscreteItem
+from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.data_structures import ItemAssertion
 
 
 class TestItemAssertion(TestCase):
     def test_init(self):
-        i = DiscreteItem('1234')
+        i = SymbolicItem('1234')
         ia = ItemAssertion(item=i)
         self.assertEqual(i, ia.item)
 
@@ -27,7 +27,7 @@ class TestItemAssertion(TestCase):
     def test_is_satisfied(self):
         # not negated
         #############
-        i = DiscreteItem(state_element='1234')
+        i = SymbolicItem(state_element='1234')
         ia = ItemAssertion(item=i, negated=False)
 
         # item expected to be ON for these states
@@ -41,7 +41,7 @@ class TestItemAssertion(TestCase):
 
         # negated
         #########
-        i = DiscreteItem(state_element='1234')
+        i = SymbolicItem(state_element='1234')
         ia = ItemAssertion(item=i, negated=True)
 
         # item expected to be ON for these states

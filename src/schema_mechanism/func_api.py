@@ -1,17 +1,14 @@
 from typing import Union
 
-from schema_mechanism.data_structures import ContinuousItem
-from schema_mechanism.data_structures import ContinuousStateElement
-from schema_mechanism.data_structures import DiscreteItem
-from schema_mechanism.data_structures import DiscreteStateElement
+from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.data_structures import StateElement
+from schema_mechanism.data_structures import Item
 from schema_mechanism.data_structures import ItemAssertion
 
 
-def gen_assert(state_element: Union[DiscreteStateElement, ContinuousStateElement],
-               negated: bool = False) -> ItemAssertion:
-    if isinstance(state_element, DiscreteStateElement):
-        return ItemAssertion(item=DiscreteItem(state_element), negated=negated)
-    elif isinstance(state_element, ContinuousStateElement):
-        return ItemAssertion(item=ContinuousItem(state_element), negated=negated)
+def create_item(state_element: StateElement) -> Item:
+    return SymbolicItem(state_element)
 
-    raise TypeError(f'State element type is invalid. Supported types: {DiscreteStateElement, ContinuousStateElement}')
+
+def make_assertion(state_element: StateElement, negated: bool = False) -> ItemAssertion:
+    return ItemAssertion(item=create_item(state_element), negated=negated)

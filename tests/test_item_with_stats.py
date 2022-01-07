@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from schema_mechanism.data_structures import DiscreteItem
+from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.data_structures import Item
 from schema_mechanism.data_structures import ItemStatistics
 from schema_mechanism.data_structures import ItemStatisticsDecorator
@@ -8,7 +8,7 @@ from schema_mechanism.data_structures import ItemStatisticsDecorator
 
 class TestItemWithStats(TestCase):
     def test(self):
-        item = ItemStatisticsDecorator(item=DiscreteItem('1234'))
+        item = ItemStatisticsDecorator(item=SymbolicItem('1234'))
 
         # verify class is properly wrapped
         self.assertEqual('1234', item.state_element)

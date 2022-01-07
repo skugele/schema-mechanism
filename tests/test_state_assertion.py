@@ -1,11 +1,8 @@
 from unittest import TestCase
 
-import numpy as np
-
-from schema_mechanism.data_structures import ContinuousItem
-from schema_mechanism.data_structures import DiscreteItem
-from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import StateAssertion
+from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.func_api import make_assertion
 
 
 class TestStateAssertion(TestCase):
@@ -14,38 +11,32 @@ class TestStateAssertion(TestCase):
         sa = StateAssertion()
         self.assertEqual(0, len(sa))
 
-        # Allow mixture of discrete and continuous items
-        sa = StateAssertion((
-            ItemAssertion(DiscreteItem('1')),
-            ItemAssertion(ContinuousItem(np.array([1.0, 2.0])))))
+        # Support multiple assertions
+        sa = StateAssertion((make_assertion('1'),
+                             make_assertion('2', negated=True),
+                             make_assertion('3')))
 
-        self.assertEqual(2, len(sa))
+        self.assertEqual(3, len(sa))
 
     def test_immutability(self):
-        sa = StateAssertion((
-            ItemAssertion(DiscreteItem('1')),
-            ItemAssertion(ContinuousItem(np.array([1.0, 0.0])))))
+        sa = StateAssertion((make_assertion('1'),))
 
         # Try changing individual item
         try:
-            sa.items[0] = DiscreteItem('5')
+            sa.items[0] = SymbolicItem('5')
             self.fail('StateAssertion\'s items are not immutable as expected!')
         except TypeError:
             pass
 
         # Try changing the tuple referenced by items
         try:
-            sa.items = (ItemAssertion(DiscreteItem('5')),)
+            sa.items = (make_assertion('5'),)
             self.fail('StateAssertion\'s items are not immutable as expected!')
         except AttributeError:
             pass
 
     def test_is_satisfied(self):
-        v1 = np.array([1.0, 0.0, 0.0])
-        v2 = np.array([0.0, 1.0, 0.0])
-        v3 = np.array([0.0, 0.0, 1.0])
-
-        state = ['1', '2', v1, v2]
+        state = ['1', '2']
 
         # an empty StateAssertion should always be satisfied
         c = StateAssertion()
@@ -55,123 +46,59 @@ class TestStateAssertion(TestCase):
         #######################
 
         # expected to be satisfied
-        c = StateAssertion((ItemAssertion(DiscreteItem('1')),))
+        c = StateAssertion((make_assertion('1'),))
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = StateAssertion((ItemAssertion(DiscreteItem('3')),))
+        c = StateAssertion((make_assertion('3'),))
         self.assertFalse(c.is_satisfied(state))
 
         # multiple discrete items (all must be matched)
         ###############################################
 
         # expected to be satisfied
-        c = StateAssertion((ItemAssertion(DiscreteItem('1')), ItemAssertion(DiscreteItem('2'))))
+        c = StateAssertion((make_assertion('1'),
+                            make_assertion('2')))
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = StateAssertion((ItemAssertion(DiscreteItem('1')), ItemAssertion(DiscreteItem('3'))))
+        c = StateAssertion((make_assertion('1'),
+                            make_assertion('3')))
         self.assertFalse(c.is_satisfied(state))
 
-        c = StateAssertion(
-            (ItemAssertion(DiscreteItem('1')), ItemAssertion(DiscreteItem('2')), ItemAssertion(DiscreteItem('3'))))
-        self.assertFalse(c.is_satisfied(state))
-
-        # single continuous item
-        ########################
-
-        # expected to be satisfied
-        c = StateAssertion((ItemAssertion(ContinuousItem(v1)),))
-        self.assertTrue(c.is_satisfied(state))
-
-        # expected to NOT be satisfied
-        c = StateAssertion((ItemAssertion(ContinuousItem(v3)),))
-        self.assertFalse(c.is_satisfied(state))
-
-        # multiple continuous items (all must be matched)
-        #################################################
-
-        # expected to be satisfied
-        c = StateAssertion((ItemAssertion(ContinuousItem(v1)), ItemAssertion(ContinuousItem(v2))))
-        self.assertTrue(c.is_satisfied(state))
-
-        # expected to NOT be satisfied
-        c = StateAssertion((ItemAssertion(ContinuousItem(v1)), ItemAssertion(ContinuousItem(v3))))
-        self.assertFalse(c.is_satisfied(state))
-
-        c = StateAssertion(
-            (ItemAssertion(ContinuousItem(v1)), ItemAssertion(ContinuousItem(v2)), ItemAssertion(ContinuousItem(v3))))
-        self.assertFalse(c.is_satisfied(state))
-
-        # mixed discrete and continuous
-        ###############################
-
-        # expected to be satisfied
-        c = StateAssertion((ItemAssertion(DiscreteItem('1')), ItemAssertion(ContinuousItem(v1))))
-        self.assertTrue(c.is_satisfied(state))
-
-        # expected to NOT be satisfied
-        c = StateAssertion(
-            (ItemAssertion(DiscreteItem('1')), ItemAssertion(ContinuousItem(v1)), ItemAssertion(ContinuousItem(v3))))
+        c = StateAssertion((make_assertion('1'),
+                            make_assertion('2'),
+                            make_assertion('3')))
         self.assertFalse(c.is_satisfied(state))
 
     def test_is_contained(self):
-        sa = StateAssertion(items=(
-            ItemAssertion(DiscreteItem('1')),
-            ItemAssertion(DiscreteItem('2')),
-            ItemAssertion(ContinuousItem(np.array([1.0, 0.0, 0.0]))),
-            ItemAssertion(ContinuousItem(np.array([0.0, 1.0, 0.0])))
-        ))
+        sa = StateAssertion((make_assertion('1'),
+                             make_assertion('2')))
 
         # expected to be contained (discrete)
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in sa)
-
-        # expected to be contained (continuous)
-        self.assertTrue(ItemAssertion(ContinuousItem(np.array([0.0, 1.0, 0.0]))) in sa)
+        self.assertTrue(make_assertion('1') in sa)
 
         # expected to be NOT contained (discrete)
-        self.assertFalse(ItemAssertion(DiscreteItem('3')) in sa)
-
-        # expected to be NOT contained (continuous)
-        self.assertFalse(ItemAssertion(ContinuousItem(np.array([0.0, 0.0, 1.0]))) in sa)
+        self.assertFalse(make_assertion('3') in sa)
 
     def test_replicate_with(self):
         sa = StateAssertion()
 
         # 1st discrete item should be added
-        sa1 = sa.replicate_with(ItemAssertion(DiscreteItem('1')))
+        sa1 = sa.replicate_with(make_assertion('1'))
         self.assertIsNot(sa, sa1)
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in sa1)
+        self.assertTrue(make_assertion('1') in sa1)
         self.assertEqual(1, len(sa1))
 
         # 2nd discrete item should be added
-        sa2 = sa1.replicate_with(ItemAssertion(DiscreteItem('2')))
+        sa2 = sa1.replicate_with(make_assertion('2'))
         self.assertIsNot(sa1, sa2)
-        self.assertTrue(ItemAssertion(DiscreteItem('2')) in sa2)
+        self.assertTrue(make_assertion('2') in sa2)
         self.assertEqual(2, len(sa2))
 
         # identical discrete item should NOT be added
         try:
-            sa2.replicate_with(ItemAssertion(DiscreteItem('2')))
-            self.fail('Did\'t raise ValueError as expected!')
-        except ValueError as e:
-            self.assertEqual(str(e), 'ItemAssertion already exists in StateAssertion')
-
-        # 1st continuous item should be added
-        sa3 = sa2.replicate_with(ItemAssertion(ContinuousItem(np.array([1.0, 0.0, 0.0]))))
-        self.assertIsNot(sa2, sa3)
-        self.assertTrue(ItemAssertion(ContinuousItem(np.array([1.0, 0.0, 0.0]))) in sa3)
-        self.assertEqual(3, len(sa3))
-
-        # 2nd continuous item should be added
-        sa4 = sa3.replicate_with(ItemAssertion(ContinuousItem(np.array([0.0, 1.0, 0.0]))))
-        self.assertIsNot(sa3, sa4)
-        self.assertTrue(ItemAssertion(ContinuousItem(np.array([0.0, 1.0, 0.0]))) in sa4)
-        self.assertEqual(4, len(sa4))
-
-        # identical continuous item should NOT be added
-        try:
-            sa4.replicate_with(ItemAssertion(ContinuousItem(np.array([0.0, 1.0, 0.0]))))
+            sa2.replicate_with(make_assertion('2'))
             self.fail('Did\'t raise ValueError as expected!')
         except ValueError as e:
             self.assertEqual(str(e), 'ItemAssertion already exists in StateAssertion')

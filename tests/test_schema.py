@@ -4,12 +4,10 @@ import numpy as np
 
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import Context
-from schema_mechanism.data_structures import ContinuousItem
-from schema_mechanism.data_structures import DiscreteItem
-from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import Result
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import StateAssertion
+from schema_mechanism.func_api import make_assertion
 
 
 class TestSchema(TestCase):
@@ -37,9 +35,9 @@ class TestSchema(TestCase):
         self.assertEqual(Schema.INITIAL_RELIABILITY, s.reliability)
 
         # Verify immutability
-        s = Schema(context=Context(items=(ItemAssertion(DiscreteItem('1')),)),
+        s = Schema(context=Context(item_asserts=(make_assertion('1'),)),
                    action=Action(),
-                   result=Result(items=(ItemAssertion(DiscreteItem('2')),)))
+                   result=Result(item_asserts=(make_assertion('2'),)))
 
         try:
             s.context = Context()
@@ -61,73 +59,69 @@ class TestSchema(TestCase):
 
     def test_is_context_satisfied(self):
         c = Context((
-            ItemAssertion(DiscreteItem('1')),
-            ItemAssertion(DiscreteItem('2'), negated=True),
-            ItemAssertion(ContinuousItem(np.array([1.0, 0.0]))),
-            ItemAssertion(ContinuousItem(np.array([0.0, 1.0])), negated=True)
+            make_assertion('1'),
+            make_assertion('2', negated=True),
+            make_assertion('3')
         ))
 
         schema = Schema(context=c, action=Action(), result=None)
 
         # expected to be satisfied
         ##########################
-
-        self.assertTrue(schema.context.is_satisfied(state=['1', np.array([1.0, 0.0])]))
+        self.assertTrue(schema.context.is_satisfied(state=['1', '3']))
+        self.assertTrue(schema.context.is_satisfied(state=['1', '3', '4']))
 
         # expected to NOT be satisfied
         ##############################
+        # case 1: present negated item
+        self.assertFalse(schema.context.is_satisfied(state=['1', '2', '3']))
 
-        # case 1: present negated discrete item
-        self.assertFalse(schema.context.is_satisfied(state=['1', '2', np.array([1.0, 0.0])]))
+        # case 2: missing non-negated item
+        self.assertFalse(schema.context.is_satisfied(state=['1']))
+        self.assertFalse(schema.context.is_satisfied(state=['3']))
 
-        # case 2: present negated continuous item
-        self.assertFalse(schema.context.is_satisfied(state=['1', np.array([1.0, 0.0]), np.array([0.0, 1.0])]))
-
-        # case 3: missing discrete element
-        self.assertFalse(schema.context.is_satisfied(state=['3', np.array([1.0, 0.0])]))
-
-        # case 4: missing continuous element
-        self.assertFalse(schema.context.is_satisfied(state=['1', np.array([0.5, 0.5])]))
+        # case 3 : both present negated item and missing non-negated item
+        self.assertFalse(schema.context.is_satisfied(state=['1', '2']))
+        self.assertFalse(schema.context.is_satisfied(state=['2', '3']))
 
     def test_is_applicable(self):
         c = Context(
-            items=(
-                ItemAssertion(DiscreteItem('1')),
-                ItemAssertion(DiscreteItem('2'), negated=True),
-                ItemAssertion(ContinuousItem(np.array([1.0, 0.0]))),
-                ItemAssertion(ContinuousItem(np.array([0.0, 1.0])), negated=True)
+            item_asserts=(
+                make_assertion('1'),
+                make_assertion('2', negated=True),
+                make_assertion('3'),
             ))
 
         schema = Schema(context=c, action=Action(), result=None)
 
-        # expected to be satisfied
+        # expected to be applicable
         ##########################
-        self.assertTrue(schema.is_applicable(state=['1', np.array([1.0, 0.0])]))
+        self.assertTrue(schema.is_applicable(state=['1', '3']))
+        self.assertTrue(schema.is_applicable(state=['1', '3', '4']))
 
-        # expected to NOT be satisfied
-        ##############################
+        # expected to NOT be applicable
+        ###############################
 
-        # case 1: present negated discrete item
-        self.assertFalse(schema.is_applicable(state=['1', '2', np.array([1.0, 0.0])]))
+        # case 1: present negated item
+        self.assertFalse(schema.is_applicable(state=['1', '2', '3']))
 
-        # case 2: present negated continuous item
-        self.assertFalse(schema.is_applicable(state=['1', np.array([1.0, 0.0]), np.array([0.0, 1.0])]))
+        # case 2: missing non-negated item
+        self.assertFalse(schema.is_applicable(state=['1']))
+        self.assertFalse(schema.is_applicable(state=['3']))
 
-        # case 3: missing discrete element
-        self.assertFalse(schema.is_applicable(state=['3', np.array([1.0, 0.0])]))
-
-        # case 4: missing continuous element
-        self.assertFalse(schema.is_applicable(state=['1', np.array([0.5, 0.5])]))
+        # case 3 : both present negated item and missing non-negated item
+        self.assertFalse(schema.is_applicable(state=['1', '2']))
+        self.assertFalse(schema.is_applicable(state=['2', '3']))
 
         # Tests overriding conditions
         #############################
-        schema.overriding_conditions = StateAssertion((ItemAssertion(DiscreteItem('3')),))
+        schema.overriding_conditions = StateAssertion((make_assertion('5'),))
 
         # expected to be applicable
-        self.assertTrue(schema.is_applicable(state=['1', np.array([1.0, 0.0])]))
+        self.assertTrue(schema.is_applicable(state=['1', '3', '4']))
 
         # expected to NOT be applicable (due to overriding condition)
-        self.assertFalse(schema.is_applicable(state=['1', '3', np.array([1.0, 0.0])]))
+        self.assertFalse(schema.is_applicable(state=['1', '3', '4', '5']))
 
     def test_spin_off(self):
         # test bare schema spin-off
@@ -136,128 +130,97 @@ class TestSchema(TestCase):
         s1 = Schema(action=Action())
 
         # context spin-off
-        s2 = s1.create_spin_off(mode='context',
-                                item=ItemAssertion(DiscreteItem('1')))
+        s2 = s1.create_spin_off(mode='context', item_assert=make_assertion('1'))
 
         self.assertNotEqual(s1.id, s2.id)
         self.assertEqual(1, len(s2.context))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s2.context)
+        self.assertTrue(make_assertion('1') in s2.context)
         self.assertIsNone(s2.result)
 
         # result spin-off
-        s3 = s1.create_spin_off(mode='result',
-                                item=ItemAssertion(DiscreteItem('1')))
+        s3 = s1.create_spin_off(mode='result', item_assert=make_assertion('1'))
 
         self.assertNotEqual(s1.id, s3.id)
         self.assertEqual(s1.action, s2.action)
         self.assertEqual(1, len(s3.result))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s3.result)
+        self.assertTrue(make_assertion('1') in s3.result)
         self.assertIsNone(s3.context)
 
         # test spin-off for schema with context, no result
         ##################################################
         s1 = Schema(action=Action(),
-                    context=Context(
-                        items=(
-                            ItemAssertion(DiscreteItem('1')),
-                            ItemAssertion(ContinuousItem(np.array([1.0, 0.0])))
-                        )))
+                    context=Context(item_asserts=(make_assertion('1'),)))
 
         # context spin-off
-        s2 = s1.create_spin_off(mode='context',
-                                item=ItemAssertion(DiscreteItem('2')))
+        s2 = s1.create_spin_off(mode='context', item_assert=make_assertion('2'))
 
         self.assertNotEqual(s1.id, s2.id)
-        self.assertEqual(3, len(s2.context))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s2.context)
-        self.assertTrue(ItemAssertion(DiscreteItem('2')) in s2.context)
-        self.assertTrue(ItemAssertion(ContinuousItem(np.array([1.0, 0.0]))) in s2.context)
+        self.assertEqual(2, len(s2.context))
+        self.assertTrue(make_assertion('1') in s2.context)
+        self.assertTrue(make_assertion('2') in s2.context)
         self.assertIsNone(s2.result)
 
         # result spin-off
-        s3 = s1.create_spin_off(mode='result',
-                                item=ItemAssertion(DiscreteItem('1')))
+        s3 = s1.create_spin_off(mode='result', item_assert=make_assertion('1'))
 
         self.assertNotEqual(s1.id, s3.id)
         self.assertEqual(1, len(s3.result))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s3.result)
-        self.assertEqual(2, len(s3.context))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s3.context)
-        self.assertTrue(ItemAssertion(ContinuousItem(np.array([1.0, 0.0]))) in s3.context)
+        self.assertTrue(make_assertion('1') in s3.result)
+        self.assertEqual(1, len(s3.context))
+        self.assertTrue(make_assertion('1') in s3.context)
 
         # test spin-off for schema with result, no context
         ##################################################
         s1 = Schema(action=Action(),
                     result=Result(
-                        items=(
-                            ItemAssertion(DiscreteItem('1')),
-                            ItemAssertion(ContinuousItem(np.array([1.0, 0.0])))
-                        )))
+                        item_asserts=(make_assertion('1'),)))
 
         # context spin-off
-        s2 = s1.create_spin_off(mode='context',
-                                item=ItemAssertion(DiscreteItem('1')))
+        s2 = s1.create_spin_off(mode='context', item_assert=make_assertion('1'))
 
         self.assertNotEqual(s1.id, s2.id)
         self.assertEqual(1, len(s2.context))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s2.context)
-        self.assertEqual(2, len(s2.result))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s2.result)
-        self.assertTrue(ItemAssertion(ContinuousItem(np.array([1.0, 0.0]))) in s2.result)
+        self.assertTrue(make_assertion('1') in s2.context)
+        self.assertEqual(1, len(s2.result))
+        self.assertTrue(make_assertion('1') in s2.result)
 
         # result spin-off
         s3 = s1.create_spin_off(mode='result',
-                                item=ItemAssertion(DiscreteItem('2')))
+                                item_assert=make_assertion('2'))
 
         self.assertNotEqual(s1.id, s3.id)
         self.assertIsNone(s3.context)
-        self.assertEqual(3, len(s3.result))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s3.result)
-        self.assertTrue(ItemAssertion(DiscreteItem('2')) in s3.result)
-        self.assertTrue(ItemAssertion(ContinuousItem(np.array([1.0, 0.0]))) in s3.result)
+        self.assertEqual(2, len(s3.result))
+        self.assertTrue(make_assertion('1') in s3.result)
+        self.assertTrue(make_assertion('2') in s3.result)
 
         # test spin-off for schema with both a context and a result
         ###########################################################
         s1 = Schema(action=Action(),
-                    context=Context(
-                        items=(
-                            ItemAssertion(DiscreteItem('1')),
-                            ItemAssertion(ContinuousItem(np.array([1.0, 0.0])))
-                        )),
-                    result=Result(
-                        items=(
-                            ItemAssertion(DiscreteItem('1')),
-                            ItemAssertion(ContinuousItem(np.array([0.0, 1.0])))
-                        )))
+                    context=Context(item_asserts=(make_assertion('1'),)),
+                    result=Result(item_asserts=(make_assertion('1'),)))
 
         # context spin-off
-        s2 = s1.create_spin_off(mode='context',
-                                item=ItemAssertion(DiscreteItem('2')))
+        s2 = s1.create_spin_off(mode='context', item_assert=make_assertion('2'))
 
         self.assertNotEqual(s1.id, s2.id)
-        self.assertEqual(3, len(s2.context))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s2.context)
-        self.assertTrue(ItemAssertion(DiscreteItem('2')) in s2.context)
-        self.assertTrue(ItemAssertion(ContinuousItem(np.array([1.0, 0.0]))) in s2.context)
-        self.assertEqual(2, len(s2.result))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s2.result)
-        self.assertTrue(ItemAssertion(ContinuousItem(np.array([0.0, 1.0]))) in s2.result)
+        self.assertEqual(2, len(s2.context))
+        self.assertTrue(make_assertion('1') in s2.context)
+        self.assertTrue(make_assertion('2') in s2.context)
+        self.assertEqual(1, len(s2.result))
+        self.assertTrue(make_assertion('1') in s2.result)
 
         # result spin-off
-        s3 = s1.create_spin_off(mode='result',
-                                item=ItemAssertion(DiscreteItem('2')))
+        s3 = s1.create_spin_off(mode='result', item_assert=make_assertion('2'))
 
         self.assertNotEqual(s1.id, s3.id)
-        self.assertEqual(3, len(s3.result))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s3.result)
-        self.assertTrue(ItemAssertion(DiscreteItem('2')) in s3.result)
-        self.assertTrue(ItemAssertion(ContinuousItem(np.array([0.0, 1.0]))) in s3.result)
-        self.assertEqual(2, len(s3.context))
-        self.assertTrue(ItemAssertion(DiscreteItem('1')) in s3.context)
-        self.assertTrue(ItemAssertion(ContinuousItem(np.array([1.0, 0.0]))) in s3.context)
+        self.assertEqual(2, len(s3.result))
+        self.assertTrue(make_assertion('1') in s3.result)
+        self.assertTrue(make_assertion('2') in s3.result)
+        self.assertEqual(1, len(s3.context))
+        self.assertTrue(make_assertion('1') in s3.context)
 
         try:
-            s3.create_spin_off(mode='result',
-                               item=ItemAssertion(DiscreteItem('2')))
+            s3.create_spin_off(mode='result', item_assert=make_assertion('2'))
         except ValueError as e:
             self.assertEqual(str(e), 'ItemAssertion already exists in StateAssertion')
