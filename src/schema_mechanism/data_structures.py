@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from functools import cache
+from functools import lru_cache
 from typing import Any
 from typing import Collection
 from typing import Dict
@@ -66,6 +68,10 @@ class ItemPool(metaclass=Singleton):
     def clear(self):
         self._items.clear()
 
+        # clears the lru cache on get method
+        self.get.cache_clear()
+
+    @lru_cache
     def get(self, state_element: StateElement, item_type: Type[Item]) -> Item:
         obj = self._items.get(state_element)
         if obj is None:

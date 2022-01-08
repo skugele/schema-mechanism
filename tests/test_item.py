@@ -34,12 +34,12 @@ class TestDiscreteItem(TestCase):
         self.assertNotEqual(i, SymbolicItem(state_element=v2))
 
     def test_performance(self):
-        n_items = 1_000
+        n_items = 100_000
         n_runs = 100_000
         n_distinct_states = 100_000_000_000
         n_state_elements = 25
 
-        items = [SymbolicItem(randint(0, n_distinct_states)) for _ in range(n_items)]
+        items = [SymbolicItem(value) for value in range(n_items)]
         state = sample(range(n_distinct_states), k=n_state_elements)
 
         start = time()
@@ -48,4 +48,4 @@ class TestDiscreteItem(TestCase):
         end = time()
 
         # TODO: Need to add a test that includes an upper bound on the elapsed time
-        print(f'Elapsed time for {n_runs * n_items} SymbolicItem.is_on calls: {end - start}')
+        print(f'Elapsed time for {n_runs * n_items:,} SymbolicItem.is_on calls: {end - start}s')
