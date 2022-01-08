@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from collections import defaultdict
 from functools import cache
 from functools import lru_cache
 from typing import Any
@@ -72,16 +73,20 @@ class ItemPool(metaclass=Singleton):
         self.get.cache_clear()
 
     @lru_cache
-    def get(self, state_element: StateElement, item_type: Type[Item]) -> Item:
+    def get(self, state_element: StateElement, item_type: Type[Item], **kwargs) -> Item:
         obj = self._items.get(state_element)
-        if obj is None:
+        if obj is None and not kwargs.get('read_only', False):
             self._items[state_element] = obj = item_type(state_element)
         return obj
 
 
 class ReadOnlyItemPool(ItemPool):
-    def get(self, *args, **kwargs):
-        raise NotImplementedError
+    def __init__(self, pool: ItemPool):
+        self._pool = pool
+
+    def get(self, state_element: StateElement, item_type: Type[Item], **kwargs) -> Item:
+        kwargs['read_only'] = True
+        return self._pool.get(state_element, item_type, **kwargs)
 
 
 class SymbolicItem(Item):
@@ -253,6 +258,60 @@ class ItemStatistics:
 
 
 # noinspection PyMissingConstructor
+class FrozenItemStatisticsDecorator(ItemStatistics):
+    def __init__(self, stats: ItemStatistics):
+        self._stats = stats
+
+    def update(self, item_on: bool, action_taken: bool, count: int = 1) -> None:
+        raise NotImplementedError('Updates not supported on frozen object')
+    
+    def negative_transition_corr(self) -> float:
+        return self._stats.negative_transition_corr
+        
+    def positive_transition_corr(self) -> float:
+        return self._stats.positive_transition_corr
+    
+    @property
+    def n(self) -> int:
+        return self._stats.n
+
+    @property
+    def n_on(self) -> int:
+        return self._stats.n_on
+
+    @property
+    def n_off(self) -> int:
+        return self._stats.n_off
+
+    @property
+    def n_action(self) -> int:
+        return self._stats.n_action
+
+    @property
+    def n_not_action(self) -> int:
+        return self._stats.n_not_action
+
+    @property
+    def n_on_with_action(self) -> int:
+        return self._stats.n_on_with_action
+
+    @property
+    def n_on_without_action(self) -> int:
+        return self._stats.n_on_without_action
+
+    @property
+    def n_off_with_action(self) -> int:
+        return self._stats.n_off_with_action
+
+    @property
+    def n_off_without_action(self) -> int:
+        return self._stats.n_off_without_action
+
+
+_NULL_STATS = FrozenItemStatisticsDecorator(ItemStatistics())
+
+
+# noinspection PyMissingConstructor
 class ItemStatisticsDecorator(Item):
     def __init__(self, item: Item) -> None:
         self._item = item
@@ -346,7 +405,9 @@ class Result(StateAssertion):
 
 
 class ExtendedContext:
-    pass
+    def __init__(self, item_pool: ItemPool):
+        self._item_pool = item_pool
+        self._stats = defaultdict(lambda: _NULL_STATS)
 
 
 class ExtendedResult:

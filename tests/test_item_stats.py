@@ -1,7 +1,9 @@
 from unittest import TestCase
+from unittest import TestCase
 
 import numpy as np
 
+from schema_mechanism.data_structures import FrozenItemStatisticsDecorator
 from schema_mechanism.data_structures import ItemStatistics
 
 
@@ -111,3 +113,20 @@ class TestItemStatistics(TestCase):
 
         self.assertEqual(item_stats.positive_transition_corr, 0.8)
         self.assertEqual(item_stats.negative_transition_corr, 0.2)
+
+
+class TestFrozenItemStatisticsDecorator(TestCase):
+    def test_update(self):
+        stats = ItemStatistics()
+        stats.update(item_on=False, action_taken=False)
+        stats.update(item_on=False, action_taken=True)
+        stats.update(item_on=True, action_taken=False)
+        stats.update(item_on=True, action_taken=True)
+
+        frozen_stats = FrozenItemStatisticsDecorator(stats)
+        self.assertEqual(frozen_stats.n_on, 2)
+        self.assertEqual(frozen_stats.n_off, 2)
+        self.assertEqual(frozen_stats.n_action, 2)
+        self.assertEqual(frozen_stats.n_not_action, 2)
+
+        self.assertRaises(NotImplementedError, lambda: frozen_stats.update(True, True))
