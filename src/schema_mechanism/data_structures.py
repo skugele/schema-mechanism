@@ -199,7 +199,6 @@ class ItemStatistics:
             is not being taken." (see Drescher, 1991, p. 72)
         :return: the negative-transition correlation
         """
-
         try:
             p_off_and_action = 0.0 if self._n_action == 0 else self._n_off_with_action / self._n_action
             p_off_without_action = 0.0 if self._n_not_action == 0 else self._n_off_without_action / self._n_not_action
