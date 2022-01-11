@@ -3,7 +3,6 @@ from __future__ import annotations
 from abc import ABC
 from abc import abstractmethod
 from collections import defaultdict
-from functools import cache
 from functools import lru_cache
 from typing import Any
 from typing import Collection
@@ -63,6 +62,7 @@ class ItemPool(metaclass=Singleton):
     def __len__(self) -> int:
         return len(self._items)
 
+    @property
     def items(self) -> Collection[Item]:
         return self._items.values()
 
@@ -81,12 +81,24 @@ class ItemPool(metaclass=Singleton):
 
 
 class ReadOnlyItemPool(ItemPool):
-    def __init__(self, pool: ItemPool):
-        self._pool = pool
+    def __init__(self):
+        self._pool = ItemPool()
 
     def get(self, state_element: StateElement, item_type: Type[Item], **kwargs) -> Item:
         kwargs['read_only'] = True
         return self._pool.get(state_element, item_type, **kwargs)
+
+    def clear(self):
+        raise NotImplementedError('ReadOnlyItemPool does not support clear operation.')
+
+
+# TODO: What to do if the underlying item pool changes?
+class ItemPoolStateView:
+    def __init__(self, pool: ReadOnlyItemPool, state: Collection[StateElement]):
+        self._on_items = set([item.state_element for item in pool.items if item.is_on(state)])
+
+    def is_on(self, state_element: StateElement) -> bool:
+        return state_element in self._on_items
 
 
 class SymbolicItem(Item):
@@ -137,14 +149,28 @@ class ItemAssertion:
         return not self.__eq__(other)
 
 
-# TODO: Memory usage can be reduced by using complementary relationships
-class ItemStatistics:
+class GlobalStatistics(metaclass=Singleton):
     def __init__(self):
         self._n = 0
+
+    @property
+    def n(self):
+        return self._n
+
+    @n.setter
+    def n(self, value):
+        self._n = value
+
+    def reset(self):
+        self._n = 0
+
+
+class ItemStatistics:
+    def __init__(self):
+        self._global_stats = GlobalStatistics()
+
         self._n_on = 0
-        self._n_off = 0
         self._n_action = 0
-        self._n_not_action = 0
 
         self._n_on_with_action = 0
         self._n_on_without_action = 0
@@ -159,8 +185,6 @@ class ItemStatistics:
     # positive-transition trial; and one for which the result was already unsatisfied does not count
     # as a negative-transition trial" (see Drescher, 1991, p. 72)
     def update(self, item_on: bool, action_taken: bool, count: int = 1) -> None:
-        self._n += count
-
         if item_on and action_taken:
             self._n_on += count
             self._n_action += count
@@ -168,17 +192,13 @@ class ItemStatistics:
 
         elif item_on and not action_taken:
             self._n_on += count
-            self._n_not_action += count
             self._n_on_without_action += count
 
         elif not item_on and action_taken:
-            self._n_off += count
             self._n_action += count
             self._n_off_with_action += count
 
         elif not item_on and not action_taken:
-            self._n_off += count
-            self._n_not_action += count
             self._n_off_without_action += count
 
     @property
@@ -192,8 +212,8 @@ class ItemStatistics:
         """
         try:
             # calculate conditional probabilities
-            p_on_and_action = 0.0 if self._n_action == 0 else self._n_on_with_action / self._n_action
-            p_on_without_action = 0.0 if self._n_not_action == 0 else self._n_on_without_action / self._n_not_action
+            p_on_and_action = 0.0 if self.n_action == 0 else self.n_on_with_action / self.n_action
+            p_on_without_action = 0.0 if self.n_not_action == 0 else self.n_on_without_action / self.n_not_action
 
             # calculate the ratio p(on AND action) : p(on AND NOT action)
             positive_trans_corr = p_on_and_action / (p_on_and_action + p_on_without_action)
@@ -211,8 +231,8 @@ class ItemStatistics:
         :return: the negative-transition correlation
         """
         try:
-            p_off_and_action = 0.0 if self._n_action == 0 else self._n_off_with_action / self._n_action
-            p_off_without_action = 0.0 if self._n_not_action == 0 else self._n_off_without_action / self._n_not_action
+            p_off_and_action = 0.0 if self.n_action == 0 else self.n_off_with_action / self.n_action
+            p_off_without_action = 0.0 if self.n_not_action == 0 else self.n_off_without_action / self.n_not_action
 
             # calculate the ratio p(off AND action) : p(off AND NOT action)
             negative_trans_corr = p_off_and_action / (p_off_and_action + p_off_without_action)
@@ -221,16 +241,12 @@ class ItemStatistics:
             return np.NAN
 
     @property
-    def n(self) -> int:
-        return self._n_on + self._n_off
-
-    @property
     def n_on(self) -> int:
         return self._n_on
 
     @property
     def n_off(self) -> int:
-        return self._n_off
+        return self._global_stats.n - self._n_on
 
     @property
     def n_action(self) -> int:
@@ -238,7 +254,7 @@ class ItemStatistics:
 
     @property
     def n_not_action(self) -> int:
-        return self._n_not_action
+        return self._global_stats.n - self._n_action
 
     @property
     def n_on_with_action(self) -> int:
@@ -264,16 +280,12 @@ class FrozenItemStatisticsDecorator(ItemStatistics):
 
     def update(self, item_on: bool, action_taken: bool, count: int = 1) -> None:
         raise NotImplementedError('Updates not supported on frozen object')
-    
+
     def negative_transition_corr(self) -> float:
         return self._stats.negative_transition_corr
-        
+
     def positive_transition_corr(self) -> float:
         return self._stats.positive_transition_corr
-    
-    @property
-    def n(self) -> int:
-        return self._stats.n
 
     @property
     def n_on(self) -> int:
@@ -308,6 +320,7 @@ class FrozenItemStatisticsDecorator(ItemStatistics):
         return self._stats.n_off_without_action
 
 
+# A single immutable object that is meant to be used for all item instances that have never had stats updates
 _NULL_STATS = FrozenItemStatisticsDecorator(ItemStatistics())
 
 
@@ -329,10 +342,10 @@ class ItemStatisticsDecorator(Item):
     def state_element(self) -> Any:
         return self._item.state_element
 
-    def is_on(self, state: Collection[Any], *args, **kwargs) -> bool:
+    def is_on(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         return self._item.is_on(state, *args, **kwargs)
 
-    def is_off(self, state: Collection[Any], *args, **kwargs) -> bool:
+    def is_off(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         return not self.is_on(state, *args, **kwargs)
 
     def __eq__(self, other: Item) -> bool:
@@ -404,10 +417,25 @@ class Result(StateAssertion):
     pass
 
 
+# TODO: Need a mechanism to alert the associated schema when an item becomes relevant
 class ExtendedContext:
     def __init__(self, item_pool: ItemPool):
         self._item_pool = item_pool
-        self._stats = defaultdict(lambda: _NULL_STATS)
+        self._stats: Dict[StateElement, ItemStatistics] = defaultdict(lambda: _NULL_STATS)
+
+    def update(self, state: Collection[StateElement], item: Item, action_taken=False):
+        item_stats = self._stats[item.state_element]
+        if item_stats is _NULL_STATS:
+            self._stats[item.state_element] = item_stats = ItemStatistics()
+
+        # TODO: Need a method that returns all on items
+        # TODO: Need a method that returns all off items
+        # TODO: Need a method that determines item relevance
+        item_stats.update(item.is_on(state), action_taken)
+
+    def update_all(self, changes: Dict[StateElement, bool], action_taken=False):
+        for state_element, is_on in changes:
+            self._stats[state_element].update(is_on, action_taken)
 
 
 class ExtendedResult:
@@ -465,7 +493,7 @@ class Schema:
     def overriding_conditions(self, overriding_conditions: StateAssertion):
         self._overriding_conditions = overriding_conditions
 
-    def is_applicable(self, state: Collection[Any], *args, **kwargs) -> bool:
+    def is_applicable(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         """ A schema is applicable when its context is satisfied and there are no active overriding conditions.
 
             “A schema is said to be applicable when its context is satisfied and no

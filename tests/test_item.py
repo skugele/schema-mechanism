@@ -48,4 +48,4 @@ class TestDiscreteItem(TestCase):
         end = time()
 
         # TODO: Need to add a test that includes an upper bound on the elapsed time
-        print(f'Elapsed time for {n_runs * n_items:,} SymbolicItem.is_on calls: {end - start}s')
+        print(f'Time for {n_runs * n_items:,} SymbolicItem.is_on calls: {end - start}s')

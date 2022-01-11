@@ -1,11 +1,12 @@
 from collections import defaultdict
-from random import randint
 from random import sample
 from time import time
 from unittest import TestCase
 
-from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.data_structures import ItemPool
+from schema_mechanism.data_structures import ItemPoolStateView
+from schema_mechanism.data_structures import ReadOnlyItemPool
+from schema_mechanism.data_structures import SymbolicItem
 
 
 class TestSharedItemPool(TestCase):
@@ -73,7 +74,7 @@ class TestSharedItemPool(TestCase):
             _ = pool.get(value, SymbolicItem)
 
         encountered = defaultdict(lambda: 0)
-        for item in pool.items():
+        for item in pool.items:
             self.assertIsInstance(item, SymbolicItem)
             encountered[item.state_element] += 1
 
@@ -81,7 +82,7 @@ class TestSharedItemPool(TestCase):
         self.assertTrue(all(encountered[i] == 1 for i in range(100)))
 
     def test_performance(self):
-        n_items = 100_000
+        n_items = 1_000_000
 
         pool = ItemPool()
 
@@ -94,19 +95,18 @@ class TestSharedItemPool(TestCase):
             elapsed_time += end - start
 
         self.assertEqual(n_items, len(pool))
-        print(f'Elapsed time for creating {n_items:,} new items in pool: {elapsed_time}s')
+        print(f'Time creating {n_items:,} new items in pool: {elapsed_time}s')
 
         elapsed_time = 0
-        for element in range(n_items):
-            start = time()
-            pool.get(element, SymbolicItem)
-            end = time()
-            elapsed_time += end - start
+        start = time()
+        for item in pool.items:
+            pass
+        end = time()
+        elapsed_time += end - start
 
-        print(f'Elapsed time for retrieving {n_items:,} existing items in pool: {elapsed_time}s')
+        print(f'Time iterating over {n_items:,} items in pool: {elapsed_time}s')
 
-        n_runs = 10_000
-        n_repeats = 100
+        n_repeats = 10_000
         n_distinct_states = n_items
         n_state_elements = 10
         elapsed_time = 0
@@ -115,13 +115,89 @@ class TestSharedItemPool(TestCase):
         pool.get.cache_clear()
 
         for _ in range(n_repeats):
-            for _ in range(n_runs):
-                for element in state:
-                    start = time()
-                    pool.get(element, SymbolicItem)
-                    end = time()
-                    elapsed_time += end - start
+            for element in state:
+                start = time()
+                pool.get(element, SymbolicItem)
+                end = time()
+                elapsed_time += end - start
 
-        n_invocations = n_state_elements * n_runs
-        avg_elapsed_time = elapsed_time / n_repeats
-        print(f'Elapsed time for retrieving {n_invocations:,} items (using cache): {avg_elapsed_time}s ')
+        n_iters = n_repeats * n_state_elements
+        print(f'Time retrieving {n_iters:,} items randomly from pool of {n_items:,} items : {elapsed_time}s ')
+
+
+class TestReadOnlyItemPool(TestCase):
+    def setUp(self) -> None:
+        ItemPool().clear()
+
+    def test(self):
+        n_items = 10
+
+        pool = ItemPool()
+        for i in range(n_items):
+            pool.get(i, SymbolicItem)
+
+        self.assertEqual(n_items, len(pool))
+
+        ro_pool = ReadOnlyItemPool()
+
+        # test that read only view shows all items
+        self.assertEqual(n_items, len(ro_pool))
+
+        # test that all items exist in read-only view
+        for i in range(n_items):
+            item = pool.get(i, SymbolicItem)
+            self.assertIsNotNone(item)
+            self.assertEqual(i, item.state_element)
+
+        # test non-existent element returns None and DOES NOT add any new elements
+        self.assertIsNone(ro_pool.get('nope', SymbolicItem))
+        self.assertEqual(n_items, len(ro_pool))
+
+        self.assertRaises(NotImplementedError, lambda: ro_pool.clear())
+
+
+class TestItemPoolStateView(TestCase):
+    def setUp(self) -> None:
+        ItemPool().clear()
+
+    def test(self):
+        pool = ItemPool()
+        for i in range(100):
+            _ = pool.get(i, SymbolicItem)
+
+        state = [1, 2, 3]
+        view = ItemPoolStateView(pool=ReadOnlyItemPool(), state=state)
+
+        for i in pool.items:
+            if i.state_element in state:
+                self.assertTrue(view.is_on(i.state_element))
+            else:
+                self.assertFalse(view.is_on(i.state_element))
+
+    def test_performance(self):
+        n_items = 100_000
+
+        pool = ItemPool()
+        for i in range(n_items):
+            _ = pool.get(i, SymbolicItem)
+
+        n_distinct_states = n_items
+        n_state_elements = 10
+
+        state = sample(range(n_distinct_states), k=n_state_elements)
+
+        # test view creation time
+        start = time()
+        view = ItemPoolStateView(pool=ReadOnlyItemPool(), state=state)
+        end = time()
+        elapsed_time = end - start
+        print(f'Time creating item pool view for {n_items:,} {elapsed_time}s')
+
+        elapsed_time = 0
+        for item in pool.items:
+            start = time()
+            view.is_on(item.state_element)
+            end = time()
+            elapsed_time += end - start
+
+        print(f'Time retrieving state for {n_items:,} in view: {elapsed_time}s')
