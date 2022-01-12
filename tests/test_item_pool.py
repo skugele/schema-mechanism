@@ -99,7 +99,7 @@ class TestSharedItemPool(TestCase):
 
         elapsed_time = 0
         start = time()
-        for item in pool.items:
+        for _ in pool.items:
             pass
         end = time()
         elapsed_time += end - start
@@ -170,9 +170,9 @@ class TestItemPoolStateView(TestCase):
 
         for i in pool.items:
             if i.state_element in state:
-                self.assertTrue(view.is_on(i.state_element))
+                self.assertTrue(view.is_on(i))
             else:
-                self.assertFalse(view.is_on(i.state_element))
+                self.assertFalse(view.is_on(i))
 
     def test_performance(self):
         n_items = 100_000
@@ -194,9 +194,9 @@ class TestItemPoolStateView(TestCase):
         print(f'Time creating item pool view for {n_items:,} {elapsed_time}s')
 
         elapsed_time = 0
-        for item in pool.items:
+        for i in pool.items:
             start = time()
-            view.is_on(item.state_element)
+            view.is_on(i)
             end = time()
             elapsed_time += end - start
 

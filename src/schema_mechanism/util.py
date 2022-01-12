@@ -6,6 +6,9 @@ import numpy as np
 import sklearn.metrics as sk_metrics
 
 
+# TODO: Add Observer pattern mixins
+
+
 class Singleton(type, metaclass=ABCMeta):
     _instances = {}
 

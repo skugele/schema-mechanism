@@ -95,10 +95,16 @@ class ReadOnlyItemPool(ItemPool):
 # TODO: What to do if the underlying item pool changes?
 class ItemPoolStateView:
     def __init__(self, pool: ReadOnlyItemPool, state: Collection[StateElement]):
-        self._on_items = set([item.state_element for item in pool.items if item.is_on(state)])
+        # The state to which this view corresponds
+        self._state = state
+        self._on_items = set([item for item in pool.items if item.is_on(state)])
 
-    def is_on(self, state_element: StateElement) -> bool:
-        return state_element in self._on_items
+    @property
+    def state(self):
+        return self._state
+
+    def is_on(self, item: Item) -> bool:
+        return item in self._on_items
 
 
 class SymbolicItem(Item):
@@ -149,28 +155,133 @@ class ItemAssertion:
         return not self.__eq__(other)
 
 
-class GlobalStatistics(metaclass=Singleton):
+class SchemaStats:
     def __init__(self):
-        self._n = 0
+        self._n_activated = 0
+        self._n_action = 0
+
+    def update(self, action_taken: bool, count: int = 1):
+        self._n_activated += count
+
+        if action_taken:
+            self._n_action += count
 
     @property
-    def n(self):
-        return self._n
+    def n_activated(self):
+        """ Returns the number of times this schema was activated (explicitly or implicitly) """
+        return self._n_activated
 
-    @n.setter
-    def n(self, value):
-        self._n = value
+    @property
+    def n_action(self) -> int:
+        """ Returns the number of times this schema's action was taken """
+        return self._n_action
 
-    def reset(self):
-        self._n = 0
+    @property
+    def n_not_action(self) -> int:
+        return self._n_activated - self._n_action
 
 
-class ItemStatistics:
-    def __init__(self):
-        self._global_stats = GlobalStatistics()
+class ECItemStats:
+    """ Extended context item-level statistics
 
-        self._n_on = 0
-        self._n_action = 0
+        "each extended-context slot records the ratio of the probability that the schema will succeed (i.e., that
+        its result will obtain) if the schema is activated when the slot's item is On, to the probability
+        of success if that item is Off when the schema is activated." (Drescher, 1991, p. 73)
+    """
+
+    def __init__(self, schema_stats: SchemaStats):
+        self._schema_stats = schema_stats
+
+        self._n_success_when_on = 0
+        self._n_success_when_off = 0
+        self._n_failure_when_on = 0
+        self._n_failure_when_off = 0
+
+    def update(self, item_on: bool, success: bool, count: int = 1) -> None:
+        if item_on and success:
+            self._n_success_when_on += count
+
+        elif item_on and not success:
+            self._n_failure_when_on += count
+
+        elif not item_on and success:
+            self._n_success_when_off += count
+
+        elif not item_on and not success:
+            self._n_failure_when_off += count
+
+    @property
+    def success_corr(self) -> float:
+        """ Returns the ratio p(success | item on) : p(success | item off)
+
+        :return: the ratio as a float, or numpy.NAN if division by zero
+        """
+        try:
+            # calculate conditional probabilities
+            p_success_when_on = (0.0
+                                 if self.n_on == 0
+                                 else self._n_success_when_on / self.n_on)
+            p_success_when_off = (0.0
+                                  if self.n_off == 0
+                                  else self._n_success_when_off / self.n_off)
+
+            # calculate the ratio p(success | on) : p(success | off)
+            positive_success_corr = p_success_when_on / (p_success_when_on + p_success_when_off)
+            return positive_success_corr
+        except ZeroDivisionError:
+            return np.NAN
+
+    @property
+    def failure_corr(self) -> float:
+        """ Returns the ratio p(failure | item on) : p(failure | item off)
+
+        :return: the ratio as a float, or numpy.NAN if division by zero
+        """
+        try:
+            # calculate conditional probabilities
+            p_failure_when_on = (0.0
+                                 if self.n_on == 0
+                                 else self._n_failure_when_on / self.n_on)
+            p_failure_when_off = (0.0
+                                  if self.n_off == 0
+                                  else self._n_failure_when_off / self.n_off)
+
+            # calculate the ratio p(failure | on) : p(failure | off)
+            positive_failure_corr = p_failure_when_on / (p_failure_when_on + p_failure_when_off)
+            return positive_failure_corr
+        except ZeroDivisionError:
+            return np.NAN
+
+    @property
+    def n_on(self) -> int:
+        return self.n_success_when_on + self.n_failure_when_on
+
+    @property
+    def n_off(self) -> int:
+        return self.n_success_when_off + self.n_failure_when_off
+
+    @property
+    def n_success_when_on(self) -> int:
+        return self._n_success_when_on
+
+    @property
+    def n_success_when_off(self) -> int:
+        return self._n_success_when_off
+
+    @property
+    def n_failure_when_on(self) -> int:
+        return self._n_failure_when_on
+
+    @property
+    def n_failure_when_off(self) -> int:
+        return self._n_failure_when_off
+
+
+class ERItemStats:
+    """ Extended result item-level statistics """
+
+    def __init__(self, schema_stats: SchemaStats):
+        self._schema_stats = schema_stats
 
         self._n_on_with_action = 0
         self._n_on_without_action = 0
@@ -186,16 +297,12 @@ class ItemStatistics:
     # as a negative-transition trial" (see Drescher, 1991, p. 72)
     def update(self, item_on: bool, action_taken: bool, count: int = 1) -> None:
         if item_on and action_taken:
-            self._n_on += count
-            self._n_action += count
             self._n_on_with_action += count
 
         elif item_on and not action_taken:
-            self._n_on += count
             self._n_on_without_action += count
 
         elif not item_on and action_taken:
-            self._n_action += count
             self._n_off_with_action += count
 
         elif not item_on and not action_taken:
@@ -212,11 +319,15 @@ class ItemStatistics:
         """
         try:
             # calculate conditional probabilities
-            p_on_and_action = 0.0 if self.n_action == 0 else self.n_on_with_action / self.n_action
-            p_on_without_action = 0.0 if self.n_not_action == 0 else self.n_on_without_action / self.n_not_action
+            p_on_with_action = (0.0
+                                if self._schema_stats.n_action == 0
+                                else self.n_on_with_action / self._schema_stats.n_action)
+            p_on_without_action = (0.0
+                                   if self._schema_stats.n_not_action == 0
+                                   else self.n_on_without_action / self._schema_stats.n_not_action)
 
             # calculate the ratio p(on AND action) : p(on AND NOT action)
-            positive_trans_corr = p_on_and_action / (p_on_and_action + p_on_without_action)
+            positive_trans_corr = p_on_with_action / (p_on_with_action + p_on_without_action)
             return positive_trans_corr
         except ZeroDivisionError:
             return np.NAN
@@ -231,30 +342,26 @@ class ItemStatistics:
         :return: the negative-transition correlation
         """
         try:
-            p_off_and_action = 0.0 if self.n_action == 0 else self.n_off_with_action / self.n_action
-            p_off_without_action = 0.0 if self.n_not_action == 0 else self.n_off_without_action / self.n_not_action
+            p_off_with_action = (0.0
+                                 if self._schema_stats.n_action == 0
+                                 else self.n_off_with_action / self._schema_stats.n_action)
+            p_off_without_action = (0.0
+                                    if self._schema_stats.n_not_action == 0
+                                    else self.n_off_without_action / self._schema_stats.n_not_action)
 
             # calculate the ratio p(off AND action) : p(off AND NOT action)
-            negative_trans_corr = p_off_and_action / (p_off_and_action + p_off_without_action)
+            negative_trans_corr = p_off_with_action / (p_off_with_action + p_off_without_action)
             return negative_trans_corr
         except ZeroDivisionError:
             return np.NAN
 
     @property
     def n_on(self) -> int:
-        return self._n_on
+        return self._n_on_with_action + self._n_on_without_action
 
     @property
     def n_off(self) -> int:
-        return self._global_stats.n - self._n_on
-
-    @property
-    def n_action(self) -> int:
-        return self._n_action
-
-    @property
-    def n_not_action(self) -> int:
-        return self._global_stats.n - self._n_action
+        return self._n_off_with_action + self._n_off_without_action
 
     @property
     def n_on_with_action(self) -> int:
@@ -273,86 +380,25 @@ class ItemStatistics:
         return self._n_off_without_action
 
 
-# noinspection PyMissingConstructor
-class FrozenItemStatisticsDecorator(ItemStatistics):
-    def __init__(self, stats: ItemStatistics):
-        self._stats = stats
+class ReadOnlySchemaStats(SchemaStats):
+    def update(self, *args, **kwargs):
+        raise NotImplementedError('Update not implemented for readonly view.')
 
-    def update(self, item_on: bool, action_taken: bool, count: int = 1) -> None:
-        raise NotImplementedError('Updates not supported on frozen object')
 
-    def negative_transition_corr(self) -> float:
-        return self._stats.negative_transition_corr
+class ReadOnlyECItemStats(ECItemStats):
+    def update(self, *args, **kwargs):
+        raise NotImplementedError('Update not implemented for readonly view.')
 
-    def positive_transition_corr(self) -> float:
-        return self._stats.positive_transition_corr
 
-    @property
-    def n_on(self) -> int:
-        return self._stats.n_on
-
-    @property
-    def n_off(self) -> int:
-        return self._stats.n_off
-
-    @property
-    def n_action(self) -> int:
-        return self._stats.n_action
-
-    @property
-    def n_not_action(self) -> int:
-        return self._stats.n_not_action
-
-    @property
-    def n_on_with_action(self) -> int:
-        return self._stats.n_on_with_action
-
-    @property
-    def n_on_without_action(self) -> int:
-        return self._stats.n_on_without_action
-
-    @property
-    def n_off_with_action(self) -> int:
-        return self._stats.n_off_with_action
-
-    @property
-    def n_off_without_action(self) -> int:
-        return self._stats.n_off_without_action
+class ReadOnlyERItemStats(ERItemStats):
+    def update(self, *args, **kwargs):
+        raise NotImplementedError('Update not implemented for readonly view.')
 
 
 # A single immutable object that is meant to be used for all item instances that have never had stats updates
-_NULL_STATS = FrozenItemStatisticsDecorator(ItemStatistics())
-
-
-# noinspection PyMissingConstructor
-class ItemStatisticsDecorator(Item):
-    def __init__(self, item: Item) -> None:
-        self._item = item
-        self._stats = ItemStatistics()
-
-    @property
-    def item(self) -> Item:
-        return self._item
-
-    @property
-    def stats(self) -> ItemStatistics:
-        return self._stats
-
-    @property
-    def state_element(self) -> Any:
-        return self._item.state_element
-
-    def is_on(self, state: Collection[StateElement], *args, **kwargs) -> bool:
-        return self._item.is_on(state, *args, **kwargs)
-
-    def is_off(self, state: Collection[StateElement], *args, **kwargs) -> bool:
-        return not self.is_on(state, *args, **kwargs)
-
-    def __eq__(self, other: Item) -> bool:
-        return self._item.__eq__(other)
-
-    def __hash__(self) -> int:
-        return hash(self._item)
+NULL_SCHEMA_STATS = ReadOnlySchemaStats()
+NULL_EC_ITEM_STATS = ReadOnlyECItemStats(NULL_SCHEMA_STATS)
+NULL_ER_ITEM_STATS = ReadOnlyERItemStats(NULL_SCHEMA_STATS)
 
 
 class Action:
@@ -417,28 +463,33 @@ class Result(StateAssertion):
     pass
 
 
-# TODO: Need a mechanism to alert the associated schema when an item becomes relevant
-class ExtendedContext:
-    def __init__(self, item_pool: ItemPool):
-        self._item_pool = item_pool
-        self._stats: Dict[StateElement, ItemStatistics] = defaultdict(lambda: _NULL_STATS)
-
-    def update(self, state: Collection[StateElement], item: Item, action_taken=False):
-        item_stats = self._stats[item.state_element]
-        if item_stats is _NULL_STATS:
-            self._stats[item.state_element] = item_stats = ItemStatistics()
-
-        # TODO: Need a method that returns all on items
-        # TODO: Need a method that returns all off items
-        # TODO: Need a method that determines item relevance
-        item_stats.update(item.is_on(state), action_taken)
-
-    def update_all(self, changes: Dict[StateElement, bool], action_taken=False):
-        for state_element, is_on in changes:
-            self._stats[state_element].update(is_on, action_taken)
-
-
+# TODO: Need a mechanism to alert the associated schema when an item becomes relevant (AN OBSERVER)
 class ExtendedResult:
+    def __init__(self, schema_stats: SchemaStats) -> None:
+        self._schema_stats = schema_stats
+
+        self._item_pool = ReadOnlyItemPool()
+        self._stats: Dict[Item, ERItemStats] = defaultdict(lambda: NULL_ER_ITEM_STATS)
+
+    @property
+    def stats(self) -> Dict[Item, ERItemStats]:
+        return self._stats
+
+    def update(self, item: Item, is_on: bool, action_taken=False) -> None:
+        item_stats = self._stats[item]
+        if item_stats is NULL_ER_ITEM_STATS:
+            self._stats[item] = item_stats = ERItemStats(schema_stats=self._schema_stats)
+
+        item_stats.update(is_on, action_taken)
+
+    # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
+    # TODO: statistics.
+    def update_all(self, view: ItemPoolStateView, action_taken=False) -> None:
+        for item in self._item_pool.items:
+            self.update(item, view.is_on(item), action_taken)
+
+
+class ExtendedContext:
     pass
 
 
@@ -457,6 +508,9 @@ class Schema:
         self._action = action
         self._result = result
 
+        if self.action is None:
+            raise ValueError('Action cannot be None')
+
         # A unique identifier for this schema
         self._id = get_unique_id()
 
@@ -466,8 +520,7 @@ class Schema:
         # result obtains) when activated
         self.reliability = Schema.INITIAL_RELIABILITY
 
-        if self.action is None:
-            raise ValueError('Action cannot be None')
+        self._stats = SchemaStats()
 
     @property
     def context(self) -> Context:
