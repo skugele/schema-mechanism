@@ -490,7 +490,28 @@ class ExtendedResult:
 
 
 class ExtendedContext:
-    pass
+    def __init__(self, schema_stats: SchemaStats) -> None:
+        self._schema_stats = schema_stats
+
+        self._item_pool = ReadOnlyItemPool()
+        self._stats: Dict[Item, ECItemStats] = defaultdict(lambda: NULL_EC_ITEM_STATS)
+
+    @property
+    def stats(self) -> Dict[Item, ECItemStats]:
+        return self._stats
+
+    def update(self, item: Item, is_on: bool, success: bool) -> None:
+        item_stats = self._stats[item]
+        if item_stats is NULL_EC_ITEM_STATS:
+            self._stats[item] = item_stats = ECItemStats(schema_stats=self._schema_stats)
+
+        item_stats.update(is_on, success)
+
+    # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
+    # TODO: statistics.
+    def update_all(self, view: ItemPoolStateView, success: bool) -> None:
+        for item in self._item_pool.items:
+            self.update(item, view.is_on(item), success)
 
 
 class Schema:
