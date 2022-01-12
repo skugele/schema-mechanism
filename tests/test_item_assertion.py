@@ -1,8 +1,10 @@
 from unittest import TestCase
 
-from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.data_structures import ItemAssertion
+from schema_mechanism.data_structures import SymbolicItem
 
+
+# TODO: Add test cases for ItemAssertion as Item
 
 class TestItemAssertion(TestCase):
     def test_init(self):

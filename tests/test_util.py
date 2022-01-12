@@ -1,8 +1,8 @@
 from unittest import TestCase
 
-from schema_mechanism.util import Observable
-from schema_mechanism.util import Observer
 from schema_mechanism.util import get_unique_id
+from test_share.test_classes import MockObservable
+from test_share.test_classes import MockObserver
 
 
 class Test(TestCase):
@@ -16,25 +16,12 @@ class Test(TestCase):
 
 
 class TestObserverAndObservables(TestCase):
-    class ConcreteObserver(Observer):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.n_received = 0
-            self.last_message = None
-
-        def receive(self, *args, **kwargs) -> None:
-            self.n_received += 1
-            self.last_message = {'args': args, 'kwargs': kwargs}
-
-    class ConcreteObservable(Observable):
-        pass
-
     def test(self):
-        observable = self.ConcreteObservable()
+        observable = MockObservable()
 
         # test register
         n_observers = 10
-        observers = [self.ConcreteObserver() for _ in range(n_observers)]
+        observers = [MockObserver() for _ in range(n_observers)]
 
         n_registered = 0
         for obs in observers:
@@ -57,3 +44,6 @@ class TestObserverAndObservables(TestCase):
 
         self.assertEqual(len(observers), len(observable.observers))
         self.assertNotIn(removed_obs, observable.observers)
+
+    def ConcreteObserver(self):
+        pass

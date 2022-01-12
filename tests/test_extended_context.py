@@ -8,6 +8,8 @@ from schema_mechanism.data_structures import NULL_EC_ITEM_STATS
 from schema_mechanism.data_structures import ReadOnlyItemPool
 from schema_mechanism.data_structures import SchemaStats
 from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.func_api import create_item
+from test_share.test_classes import MockObserver
 
 
 class TestExtendedContext(TestCase):
@@ -20,6 +22,12 @@ class TestExtendedContext(TestCase):
         for i in range(self.N_ITEMS):
             pool.get(i, SymbolicItem)
 
+        self.schema_stats = SchemaStats()
+        self.ec = ExtendedContext(self.schema_stats)
+
+        self.obs = MockObserver()
+        self.ec.register(self.obs)
+
     def test_init(self):
         ec = ExtendedContext(SchemaStats())
         for i in ItemPool().items:
@@ -28,21 +36,17 @@ class TestExtendedContext(TestCase):
     def test_update(self):
         state = sample(range(self.N_ITEMS), k=10)
 
-        # in practice, this would be supplied from the schema containing this ExtendedResult
-        schema_stats = SchemaStats()
-
         # simulate schema being activated with action taken
-        schema_stats.update(activated=True, success=True)
-
-        ec = ExtendedContext(schema_stats)
+        self.schema_stats.update(activated=True, success=True)
 
         # update an item from this state assuming the action was taken
-        ec.update(state[0], is_on=True, success=True)
+        new_item = create_item(state[0])
+        self.ec.update(new_item, on=True, success=True)
 
-        item_stats = ec.stats[state[0]]
+        item_stats = self.ec.stats[new_item]
         for i in ItemPool().items:
             if i.state_element != state[0]:
-                self.assertIs(NULL_EC_ITEM_STATS, ec.stats[i])
+                self.assertIs(NULL_EC_ITEM_STATS, self.ec.stats[i])
             else:
                 self.assertIsNot(NULL_EC_ITEM_STATS, item_stats)
 
@@ -60,20 +64,15 @@ class TestExtendedContext(TestCase):
         state = sample(range(self.N_ITEMS), k=10)
         view = ItemPoolStateView(pool=ReadOnlyItemPool(), state=state)
 
-        # in practice, this would be supplied from the schema containing this ExtendedResult
-        schema_stats = SchemaStats()
-
         # simulate schema being activated with action taken
-        schema_stats.update(activated=True, success=True)
-
-        ec = ExtendedContext(schema_stats)
+        self.schema_stats.update(activated=True, success=True)
 
         # update all items in this state simulating case of action taken
-        ec.update_all(view, success=True)
+        self.ec.update_all(view, success=True)
 
         # test that all items in the state have been updated
         for i in ItemPool().items:
-            item_stats = ec.stats[i]
+            item_stats = self.ec.stats[i]
             if i.state_element in state:
                 self.assertEqual(1, item_stats.n_on)
                 self.assertEqual(1, item_stats.n_success_and_on)
@@ -92,3 +91,57 @@ class TestExtendedContext(TestCase):
 
                 self.assertEqual(0, item_stats.n_fail_and_on)
                 self.assertEqual(0, item_stats.n_fail_and_off)
+
+    def test_register_and_unregister(self):
+        observer = MockObserver()
+        self.ec.register(observer)
+        self.assertIn(observer, self.ec.observers)
+
+        self.ec.unregister(observer)
+        self.assertNotIn(observer, self.ec.observers)
+
+    def test_relevant_items(self):
+        items = [create_item(i) for i in range(5)]
+
+        i1 = items[0]
+
+        # test updates that SHOULD NOT result in relevant item determination
+        self.ec.update(i1, on=False, success=True)
+        self.assertFalse(self.ec.new_relevant_items())
+
+        self.ec.update(i1, on=False, success=False, count=2)
+        self.assertFalse(self.ec.new_relevant_items())
+
+        self.ec.update(i1, on=True, success=False)
+        self.assertFalse(self.ec.new_relevant_items())
+
+        self.ec.update(i1, on=True, success=True)
+        self.assertFalse(self.ec.new_relevant_items())
+
+        # test update that SHOULD result is a relevant item
+        self.ec.update(i1, on=True, success=True)
+        self.assertTrue(self.ec.new_relevant_items())
+
+        i1_stats = self.ec.stats[i1]
+        self.assertTrue(i1_stats.success_corr > self.ec.POS_CORR_RELEVANCE_THRESHOLD)
+        self.assertTrue(i1_stats.failure_corr <= self.ec.NEG_CORR_RELEVANCE_THRESHOLD)
+
+        # verify only one relevant item
+        self.assertEqual(1, len(self.ec.relevant_items))
+        self.assertIn(i1, self.ec.relevant_items)
+
+        # should add a 2nd relevant item
+        i2 = items[1]
+
+        self.ec.update(i2, on=True, success=True)
+        self.ec.update(i2, on=False, success=False)
+
+        self.assertEqual(2, len(self.ec.relevant_items))
+        self.assertIn(i2, self.ec.relevant_items)
+
+        # number of new relevant items SHOULD be reset to zero after notifying observers
+        self.ec.notify_all()
+        self.assertFalse(self.ec.new_relevant_items())
+
+        # test that observer received the correct count of new relevant items
+        self.assertEqual(2, self.obs.last_message['kwargs']['n'])

@@ -142,7 +142,7 @@ class TestERItemStatistics(TestCase):
         item_stats = ERItemStats(schema_stats)
 
         schema_stats.update(activated=True)
-        item_stats.update(item_on=True, activated=True)
+        item_stats.update(on=True, activated=True)
 
         self.assertEqual(item_stats.n_on, 1)
         self.assertEqual(item_stats.n_off, 0)
@@ -159,7 +159,7 @@ class TestERItemStatistics(TestCase):
         item_stats = ERItemStats(schema_stats)
 
         schema_stats.update(activated=False)
-        item_stats.update(item_on=True, activated=False)
+        item_stats.update(on=True, activated=False)
 
         self.assertEqual(item_stats.n_on, 1)
         self.assertEqual(item_stats.n_off, 0)
@@ -177,7 +177,7 @@ class TestERItemStatistics(TestCase):
         item_stats = ERItemStats(schema_stats)
 
         schema_stats.update(activated=True)
-        item_stats.update(item_on=False, activated=True)
+        item_stats.update(on=False, activated=True)
 
         self.assertEqual(item_stats.n_on, 0)
         self.assertEqual(item_stats.n_off, 1)
@@ -195,7 +195,7 @@ class TestERItemStatistics(TestCase):
         item_stats = ERItemStats(schema_stats)
 
         schema_stats.update(activated=False)
-        item_stats.update(item_on=False, activated=False)
+        item_stats.update(on=False, activated=False)
 
         self.assertEqual(item_stats.n_on, 0)
         self.assertEqual(item_stats.n_off, 1)
@@ -217,10 +217,10 @@ class TestERItemStatistics(TestCase):
         schema_stats.update(activated=True, count=40)
         schema_stats.update(activated=False, count=10)
 
-        item_stats.update(item_on=True, activated=True, count=32)
-        item_stats.update(item_on=True, activated=False, count=2)
-        item_stats.update(item_on=False, activated=True, count=8)
-        item_stats.update(item_on=False, activated=False, count=8)
+        item_stats.update(on=True, activated=True, count=32)
+        item_stats.update(on=True, activated=False, count=2)
+        item_stats.update(on=False, activated=True, count=8)
+        item_stats.update(on=False, activated=False, count=8)
 
         self.assertEqual(item_stats.n_on, 34)
         self.assertEqual(item_stats.n_off, 16)
