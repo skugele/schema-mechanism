@@ -14,6 +14,7 @@ from typing import Type
 
 import numpy as np
 
+from schema_mechanism.util import Observable
 from schema_mechanism.util import Singleton
 from schema_mechanism.util import get_unique_id
 
@@ -157,28 +158,63 @@ class ItemAssertion:
 
 class SchemaStats:
     def __init__(self):
+        self._n = 0  # total number of update events
         self._n_activated = 0
-        self._n_action = 0
+        self._n_succeeded = 0
 
-    def update(self, action_taken: bool, count: int = 1):
-        self._n_activated += count
+        # TODO: Does reliability require a variable, or can its value be derived from other variables?
+        # A schema's reliability is the likelihood with which the schema succeeds (i.e., its result obtains)
+        # when activated
+        self._reliability: float = 0.0
 
-        if action_taken:
-            self._n_action += count
+    def update(self, activated: bool = False, success: bool = False, count: int = 1):
+        self._n += count
+
+        if activated:
+            self._n_activated += count
+
+            if success:
+                self._n_succeeded += count
 
     @property
-    def n_activated(self):
-        """ Returns the number of times this schema was activated (explicitly or implicitly) """
+    def n_activated(self) -> int:
+        """ Returns the number of times this schema was activated (explicitly or implicitly).
+
+            “To activate a schema is to initiate its action when the schema is applicable.” (Drescher, 1991, p.53)
+
+            :return: the number of activations (explicit or implicit)
+        """
         return self._n_activated
 
     @property
-    def n_action(self) -> int:
-        """ Returns the number of times this schema's action was taken """
-        return self._n_action
+    def n_not_activated(self) -> int:
+        return self._n - self._n_activated
 
     @property
-    def n_not_action(self) -> int:
-        return self._n_activated - self._n_action
+    def n_succeeded(self) -> int:
+        """ Returns the number of times this schema succeeded on activation.
+
+            “An activated schema is said to succeed if its predicted results all in fact obtain, and to
+            fail otherwise.” (Drescher, 1991, p.53)
+
+        :return: the number of successes
+        """
+        return self._n_succeeded
+
+    @property
+    def n_failed(self) -> int:
+        return self._n - self._n_succeeded
+
+    @property
+    def reliability(self) -> float:
+        """ Returns the schema's reliability (i.e., its probability of success) when activated.
+
+            "A schema's reliability is the probability with which the schema succeeds when activated."
+            (Drescher, 1991, p. 54)
+
+        :return: the schema's reliability
+        """
+        return self._reliability
 
 
 class ECItemStats:
@@ -192,23 +228,23 @@ class ECItemStats:
     def __init__(self, schema_stats: SchemaStats):
         self._schema_stats = schema_stats
 
-        self._n_success_when_on = 0
-        self._n_success_when_off = 0
-        self._n_failure_when_on = 0
-        self._n_failure_when_off = 0
+        self._n_success_and_on = 0
+        self._n_success_and_off = 0
+        self._n_fail_and_on = 0
+        self._n_fail_and_off = 0
 
     def update(self, item_on: bool, success: bool, count: int = 1) -> None:
         if item_on and success:
-            self._n_success_when_on += count
+            self._n_success_and_on += count
 
         elif item_on and not success:
-            self._n_failure_when_on += count
+            self._n_fail_and_on += count
 
         elif not item_on and success:
-            self._n_success_when_off += count
+            self._n_success_and_off += count
 
         elif not item_on and not success:
-            self._n_failure_when_off += count
+            self._n_fail_and_off += count
 
     @property
     def success_corr(self) -> float:
@@ -218,15 +254,17 @@ class ECItemStats:
         """
         try:
             # calculate conditional probabilities
-            p_success_when_on = (0.0
-                                 if self.n_on == 0
-                                 else self._n_success_when_on / self.n_on)
-            p_success_when_off = (0.0
-                                  if self.n_off == 0
-                                  else self._n_success_when_off / self.n_off)
+            p_success_and_on = (0.0
+                                if self.n_on == 0
+                                else self._n_success_and_on / self.n_on)
+            p_success_and_off = (0.0
+                                 if self.n_off == 0
+                                 else self._n_success_and_off / self.n_off)
+
+            p_success = p_success_and_on + p_success_and_off
 
             # calculate the ratio p(success | on) : p(success | off)
-            positive_success_corr = p_success_when_on / (p_success_when_on + p_success_when_off)
+            positive_success_corr = p_success_and_on / p_success
             return positive_success_corr
         except ZeroDivisionError:
             return np.NAN
@@ -239,42 +277,44 @@ class ECItemStats:
         """
         try:
             # calculate conditional probabilities
-            p_failure_when_on = (0.0
-                                 if self.n_on == 0
-                                 else self._n_failure_when_on / self.n_on)
-            p_failure_when_off = (0.0
-                                  if self.n_off == 0
-                                  else self._n_failure_when_off / self.n_off)
+            p_fail_and_on = (0.0
+                             if self.n_on == 0
+                             else self._n_fail_and_on / self.n_on)
+            p_fail_and_off = (0.0
+                              if self.n_off == 0
+                              else self._n_fail_and_off / self.n_off)
+
+            p_fail = p_fail_and_on + p_fail_and_off
 
             # calculate the ratio p(failure | on) : p(failure | off)
-            positive_failure_corr = p_failure_when_on / (p_failure_when_on + p_failure_when_off)
+            positive_failure_corr = p_fail_and_on / p_fail
             return positive_failure_corr
         except ZeroDivisionError:
             return np.NAN
 
     @property
     def n_on(self) -> int:
-        return self.n_success_when_on + self.n_failure_when_on
+        return self.n_success_and_on + self.n_fail_and_on
 
     @property
     def n_off(self) -> int:
-        return self.n_success_when_off + self.n_failure_when_off
+        return self.n_success_and_off + self.n_fail_and_off
 
     @property
-    def n_success_when_on(self) -> int:
-        return self._n_success_when_on
+    def n_success_and_on(self) -> int:
+        return self._n_success_and_on
 
     @property
-    def n_success_when_off(self) -> int:
-        return self._n_success_when_off
+    def n_success_and_off(self) -> int:
+        return self._n_success_and_off
 
     @property
-    def n_failure_when_on(self) -> int:
-        return self._n_failure_when_on
+    def n_fail_and_on(self) -> int:
+        return self._n_fail_and_on
 
     @property
-    def n_failure_when_off(self) -> int:
-        return self._n_failure_when_off
+    def n_fail_and_off(self) -> int:
+        return self._n_fail_and_off
 
 
 class ERItemStats:
@@ -283,10 +323,10 @@ class ERItemStats:
     def __init__(self, schema_stats: SchemaStats):
         self._schema_stats = schema_stats
 
-        self._n_on_with_action = 0
-        self._n_on_without_action = 0
-        self._n_off_with_action = 0
-        self._n_off_without_action = 0
+        self._n_on_and_activated = 0
+        self._n_on_and_not_activated = 0
+        self._n_off_and_activated = 0
+        self._n_off_and_not_activated = 0
 
     # TODO: An external function is needed that will compare the corresponding item's state element
     # TODO: to the state before and after an action is taken. If the item assertion is satisfied before
@@ -295,18 +335,18 @@ class ERItemStats:
     # "a trial for which the result was already satisfied before the action was taken does not count as a
     # positive-transition trial; and one for which the result was already unsatisfied does not count
     # as a negative-transition trial" (see Drescher, 1991, p. 72)
-    def update(self, item_on: bool, action_taken: bool, count: int = 1) -> None:
-        if item_on and action_taken:
-            self._n_on_with_action += count
+    def update(self, item_on: bool, activated: bool, count: int = 1) -> None:
+        if item_on and activated:
+            self._n_on_and_activated += count
 
-        elif item_on and not action_taken:
-            self._n_on_without_action += count
+        elif item_on and not activated:
+            self._n_on_and_not_activated += count
 
-        elif not item_on and action_taken:
-            self._n_off_with_action += count
+        elif not item_on and activated:
+            self._n_off_and_activated += count
 
-        elif not item_on and not action_taken:
-            self._n_off_without_action += count
+        elif not item_on and not activated:
+            self._n_off_and_not_activated += count
 
     @property
     def positive_transition_corr(self) -> float:
@@ -315,19 +355,22 @@ class ERItemStats:
             "The positive-transition correlation is the ratio of the probability of the slot's item turning On when
             the schema's action has just been taken to the probability of its turning On when the schema's action
             is not being taken." (see Drescher, 1991, p. 71)
+
         :return: the positive-transition correlation
         """
         try:
             # calculate conditional probabilities
-            p_on_with_action = (0.0
-                                if self._schema_stats.n_action == 0
-                                else self.n_on_with_action / self._schema_stats.n_action)
-            p_on_without_action = (0.0
-                                   if self._schema_stats.n_not_action == 0
-                                   else self.n_on_without_action / self._schema_stats.n_not_action)
+            p_on_and_activated = (0.0
+                                  if self._schema_stats.n_activated == 0
+                                  else self.n_on_and_activated / self._schema_stats.n_activated)
+            p_on_and_not_activated = (0.0
+                                      if self._schema_stats.n_not_activated == 0
+                                      else self.n_on_and_not_activated / self._schema_stats.n_not_activated)
 
-            # calculate the ratio p(on AND action) : p(on AND NOT action)
-            positive_trans_corr = p_on_with_action / (p_on_with_action + p_on_without_action)
+            p_on = p_on_and_activated + p_on_and_not_activated
+
+            # calculate the ratio p(on AND activated) : p(on AND NOT activated)
+            positive_trans_corr = p_on_and_activated / p_on
             return positive_trans_corr
         except ZeroDivisionError:
             return np.NAN
@@ -339,45 +382,48 @@ class ERItemStats:
             "The negative-transition correlation is the ratio of the probability of the slot's item turning Off when
             the schema's action has just been taken to the probability of its turning Off when the schema's action
             is not being taken." (see Drescher, 1991, p. 72)
+
         :return: the negative-transition correlation
         """
         try:
-            p_off_with_action = (0.0
-                                 if self._schema_stats.n_action == 0
-                                 else self.n_off_with_action / self._schema_stats.n_action)
-            p_off_without_action = (0.0
-                                    if self._schema_stats.n_not_action == 0
-                                    else self.n_off_without_action / self._schema_stats.n_not_action)
+            p_off_and_activated = (0.0
+                                   if self._schema_stats.n_activated == 0
+                                   else self.n_off_and_activated / self._schema_stats.n_activated)
+            p_off_and_not_activated = (0.0
+                                       if self._schema_stats.n_not_activated == 0
+                                       else self.n_off_and_not_activated / self._schema_stats.n_not_activated)
 
-            # calculate the ratio p(off AND action) : p(off AND NOT action)
-            negative_trans_corr = p_off_with_action / (p_off_with_action + p_off_without_action)
+            p_off = p_off_and_activated + p_off_and_not_activated
+
+            # calculate the ratio p(off AND activated) : p(off AND NOT activated)
+            negative_trans_corr = p_off_and_activated / p_off
             return negative_trans_corr
         except ZeroDivisionError:
             return np.NAN
 
     @property
     def n_on(self) -> int:
-        return self._n_on_with_action + self._n_on_without_action
+        return self._n_on_and_activated + self._n_on_and_not_activated
 
     @property
     def n_off(self) -> int:
-        return self._n_off_with_action + self._n_off_without_action
+        return self._n_off_and_activated + self._n_off_and_not_activated
 
     @property
-    def n_on_with_action(self) -> int:
-        return self._n_on_with_action
+    def n_on_and_activated(self) -> int:
+        return self._n_on_and_activated
 
     @property
-    def n_on_without_action(self) -> int:
-        return self._n_on_without_action
+    def n_on_and_not_activated(self) -> int:
+        return self._n_on_and_not_activated
 
     @property
-    def n_off_with_action(self) -> int:
-        return self._n_off_with_action
+    def n_off_and_activated(self) -> int:
+        return self._n_off_and_activated
 
     @property
-    def n_off_without_action(self) -> int:
-        return self._n_off_without_action
+    def n_off_and_not_activated(self) -> int:
+        return self._n_off_and_not_activated
 
 
 class ReadOnlySchemaStats(SchemaStats):
@@ -464,8 +510,10 @@ class Result(StateAssertion):
 
 
 # TODO: Need a mechanism to alert the associated schema when an item becomes relevant (AN OBSERVER)
-class ExtendedResult:
+class ExtendedResult(Observable):
     def __init__(self, schema_stats: SchemaStats) -> None:
+        super().__init__()
+
         self._schema_stats = schema_stats
 
         self._item_pool = ReadOnlyItemPool()
@@ -489,8 +537,10 @@ class ExtendedResult:
             self.update(item, view.is_on(item), action_taken)
 
 
-class ExtendedContext:
+class ExtendedContext(Observable):
     def __init__(self, schema_stats: SchemaStats) -> None:
+        super().__init__()
+
         self._schema_stats = schema_stats
 
         self._item_pool = ReadOnlyItemPool()
@@ -522,26 +572,23 @@ class Schema:
     Note: A schema is not a rule that says to take a particular action when its context is satisfied;
     the schema just says what might happen if that action were taken.
     """
-    INITIAL_RELIABILITY = 0.0
 
     def __init__(self, action: Action, context: Optional[Context] = None, result: Optional[Result] = None):
-        self._context = context
-        self._action = action
-        self._result = result
+        super().__init__()
+
+        self._context: Optional[Context] = context
+        self._action: Action = action
+        self._result: Optional[Result] = result
 
         if self.action is None:
             raise ValueError('Action cannot be None')
 
-        # A unique identifier for this schema
-        self._id = get_unique_id()
+        self._stats: SchemaStats = SchemaStats()
 
-        self._overriding_conditions = None
+        self._extended_context: ExtendedContext = ExtendedContext(self._stats)
+        self._extended_result: ExtendedResult = ExtendedResult(self._stats)
 
-        # A schema's reliability is the likelihood with which the schema succeeds (i.e., its
-        # result obtains) when activated
-        self.reliability = Schema.INITIAL_RELIABILITY
-
-        self._stats = SchemaStats()
+        self._overriding_conditions: Optional[StateAssertion] = None
 
     @property
     def context(self) -> Context:
@@ -556,8 +603,12 @@ class Schema:
         return self._result
 
     @property
-    def id(self) -> str:
-        return self._id
+    def extended_context(self) -> ExtendedContext:
+        return self._extended_context
+
+    @property
+    def extended_result(self) -> ExtendedResult:
+        return self._extended_result
 
     @property
     def overriding_conditions(self) -> StateAssertion:
@@ -566,6 +617,10 @@ class Schema:
     @overriding_conditions.setter
     def overriding_conditions(self, overriding_conditions: StateAssertion):
         self._overriding_conditions = overriding_conditions
+
+    @property
+    def stats(self) -> SchemaStats:
+        return self._stats
 
     def is_applicable(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         """ A schema is applicable when its context is satisfied and there are no active overriding conditions.
@@ -582,6 +637,9 @@ class Schema:
         if self.overriding_conditions is not None:
             overridden = self.overriding_conditions.is_satisfied(state, *args, **kwargs)
         return (not overridden) and self.context.is_satisfied(state, *args, **kwargs)
+
+    def update(self, activated: bool, success: bool, state_diff: Collection[StateElement]) -> None:
+        self._stats.update(activated=activated, success=success)
 
     def create_spin_off(self, mode: str, item_assert: ItemAssertion) -> Schema:
         """ Creates a context or result spin-off schema that includes the supplied item in its context or result.

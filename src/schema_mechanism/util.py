@@ -1,12 +1,57 @@
 from abc import ABCMeta
 from typing import Iterable
+from typing import List
 from uuid import uuid4
 
 import numpy as np
 import sklearn.metrics as sk_metrics
 
 
-# TODO: Add Observer pattern mixins
+class Observer:
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+    def receive(self, *args, **kwargs) -> None:
+        """ Receive update from observer.
+
+        :return: None
+        """
+        raise NotImplementedError('Observer\'s receive method is missing an implementation.')
+
+
+class Observable:
+    """ An observable subject. """
+
+    def __init__(self, *args, **kwargs) -> None:
+        self._observers: List[Observer] = list()
+
+        super().__init__(*args, **kwargs)
+
+    def register(self, observer: Observer) -> None:
+        """ Registers an observer with this observable.
+
+        :param observer: the observer to register
+        :return: None
+        """
+        self._observers.append(observer)
+
+    def unregister(self, observer: Observer) -> None:
+        """ Unregisters an observer that was previously registered with this observable.
+
+        :param observer: the observer to unregister
+        :return: None
+        """
+        self._observers.remove(observer)
+
+    def notify_all(self, *args, **kwargs) -> None:
+        """ Notify all registered observers.
+
+        :param args: positional args to broadcast to observers
+        :param kwargs: keyword args to broadcast to observers
+        :return: None
+        """
+        for obs in self._observers:
+            obs.receive(*args, **kwargs)
 
 
 class Singleton(type, metaclass=ABCMeta):

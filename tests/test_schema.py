@@ -1,7 +1,5 @@
 from unittest import TestCase
 
-import numpy as np
-
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import Context
 from schema_mechanism.data_structures import Result
@@ -26,13 +24,6 @@ class TestSchema(TestCase):
             self.assertIsNone(s.result)
         except Exception as e:
             self.fail(f'Unexpected exception raised: {e}')
-
-        # Verify that id is assigned automatically
-        s = Schema(Action())
-        self.assertIsNotNone(s.id)
-
-        # Verify that initial values are set properly
-        self.assertEqual(Schema.INITIAL_RELIABILITY, s.reliability)
 
         # Verify immutability
         s = Schema(context=Context(item_asserts=(make_assertion('1'),)),
@@ -132,7 +123,6 @@ class TestSchema(TestCase):
         # context spin-off
         s2 = s1.create_spin_off(mode='context', item_assert=make_assertion('1'))
 
-        self.assertNotEqual(s1.id, s2.id)
         self.assertEqual(1, len(s2.context))
         self.assertTrue(make_assertion('1') in s2.context)
         self.assertIsNone(s2.result)
@@ -140,7 +130,6 @@ class TestSchema(TestCase):
         # result spin-off
         s3 = s1.create_spin_off(mode='result', item_assert=make_assertion('1'))
 
-        self.assertNotEqual(s1.id, s3.id)
         self.assertEqual(s1.action, s2.action)
         self.assertEqual(1, len(s3.result))
         self.assertTrue(make_assertion('1') in s3.result)
@@ -154,7 +143,6 @@ class TestSchema(TestCase):
         # context spin-off
         s2 = s1.create_spin_off(mode='context', item_assert=make_assertion('2'))
 
-        self.assertNotEqual(s1.id, s2.id)
         self.assertEqual(2, len(s2.context))
         self.assertTrue(make_assertion('1') in s2.context)
         self.assertTrue(make_assertion('2') in s2.context)
@@ -163,7 +151,6 @@ class TestSchema(TestCase):
         # result spin-off
         s3 = s1.create_spin_off(mode='result', item_assert=make_assertion('1'))
 
-        self.assertNotEqual(s1.id, s3.id)
         self.assertEqual(1, len(s3.result))
         self.assertTrue(make_assertion('1') in s3.result)
         self.assertEqual(1, len(s3.context))
@@ -178,7 +165,6 @@ class TestSchema(TestCase):
         # context spin-off
         s2 = s1.create_spin_off(mode='context', item_assert=make_assertion('1'))
 
-        self.assertNotEqual(s1.id, s2.id)
         self.assertEqual(1, len(s2.context))
         self.assertTrue(make_assertion('1') in s2.context)
         self.assertEqual(1, len(s2.result))
@@ -188,7 +174,6 @@ class TestSchema(TestCase):
         s3 = s1.create_spin_off(mode='result',
                                 item_assert=make_assertion('2'))
 
-        self.assertNotEqual(s1.id, s3.id)
         self.assertIsNone(s3.context)
         self.assertEqual(2, len(s3.result))
         self.assertTrue(make_assertion('1') in s3.result)
@@ -203,7 +188,6 @@ class TestSchema(TestCase):
         # context spin-off
         s2 = s1.create_spin_off(mode='context', item_assert=make_assertion('2'))
 
-        self.assertNotEqual(s1.id, s2.id)
         self.assertEqual(2, len(s2.context))
         self.assertTrue(make_assertion('1') in s2.context)
         self.assertTrue(make_assertion('2') in s2.context)
@@ -213,7 +197,6 @@ class TestSchema(TestCase):
         # result spin-off
         s3 = s1.create_spin_off(mode='result', item_assert=make_assertion('2'))
 
-        self.assertNotEqual(s1.id, s3.id)
         self.assertEqual(2, len(s3.result))
         self.assertTrue(make_assertion('1') in s3.result)
         self.assertTrue(make_assertion('2') in s3.result)

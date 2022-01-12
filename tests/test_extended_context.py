@@ -32,7 +32,7 @@ class TestExtendedContext(TestCase):
         schema_stats = SchemaStats()
 
         # simulate schema being activated with action taken
-        schema_stats.update(action_taken=True)
+        schema_stats.update(activated=True, success=True)
 
         ec = ExtendedContext(schema_stats)
 
@@ -47,13 +47,13 @@ class TestExtendedContext(TestCase):
                 self.assertIsNot(NULL_EC_ITEM_STATS, item_stats)
 
                 for value in [item_stats.n_on,
-                              item_stats.n_success_when_on]:
+                              item_stats.n_success_and_on]:
                     self.assertEqual(1, value)
 
                 for value in [item_stats.n_off,
-                              item_stats.n_success_when_off,
-                              item_stats.n_failure_when_on,
-                              item_stats.n_failure_when_off]:
+                              item_stats.n_success_and_off,
+                              item_stats.n_fail_and_on,
+                              item_stats.n_fail_and_off]:
                     self.assertEqual(0, value)
 
     def test_update_all(self):
@@ -64,7 +64,7 @@ class TestExtendedContext(TestCase):
         schema_stats = SchemaStats()
 
         # simulate schema being activated with action taken
-        schema_stats.update(action_taken=True)
+        schema_stats.update(activated=True, success=True)
 
         ec = ExtendedContext(schema_stats)
 
@@ -76,19 +76,19 @@ class TestExtendedContext(TestCase):
             item_stats = ec.stats[i]
             if i.state_element in state:
                 self.assertEqual(1, item_stats.n_on)
-                self.assertEqual(1, item_stats.n_success_when_on)
+                self.assertEqual(1, item_stats.n_success_and_on)
 
                 self.assertEqual(0, item_stats.n_off)
-                self.assertEqual(0, item_stats.n_success_when_off)
+                self.assertEqual(0, item_stats.n_success_and_off)
 
-                self.assertEqual(0, item_stats.n_failure_when_on)
-                self.assertEqual(0, item_stats.n_failure_when_off)
+                self.assertEqual(0, item_stats.n_fail_and_on)
+                self.assertEqual(0, item_stats.n_fail_and_off)
             else:
                 self.assertEqual(1, item_stats.n_off)
-                self.assertEqual(1, item_stats.n_success_when_off)
+                self.assertEqual(1, item_stats.n_success_and_off)
 
                 self.assertEqual(0, item_stats.n_on)
-                self.assertEqual(0, item_stats.n_success_when_on)
+                self.assertEqual(0, item_stats.n_success_and_on)
 
-                self.assertEqual(0, item_stats.n_failure_when_on)
-                self.assertEqual(0, item_stats.n_failure_when_off)
+                self.assertEqual(0, item_stats.n_fail_and_on)
+                self.assertEqual(0, item_stats.n_fail_and_off)

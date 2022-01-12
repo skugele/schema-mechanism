@@ -14,10 +14,10 @@ class TestECItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ECItemStats(schema_stats)
 
-        self.assertEqual(item_stats.n_success_when_on, 0)
-        self.assertEqual(item_stats.n_success_when_off, 0)
-        self.assertEqual(item_stats.n_failure_when_on, 0)
-        self.assertEqual(item_stats.n_failure_when_off, 0)
+        self.assertEqual(item_stats.n_success_and_on, 0)
+        self.assertEqual(item_stats.n_success_and_off, 0)
+        self.assertEqual(item_stats.n_fail_and_on, 0)
+        self.assertEqual(item_stats.n_fail_and_off, 0)
 
         self.assertIs(item_stats.success_corr, np.NAN)
         self.assertIs(item_stats.failure_corr, np.NAN)
@@ -28,16 +28,16 @@ class TestECItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ECItemStats(schema_stats)
 
-        schema_stats.update(action_taken=True)
+        schema_stats.update(activated=True)
         item_stats.update(item_on=True, success=True)
 
         self.assertEqual(item_stats.n_on, 1)
         self.assertEqual(item_stats.n_off, 0)
 
-        self.assertEqual(item_stats.n_success_when_on, 1)
-        self.assertEqual(item_stats.n_success_when_off, 0)
-        self.assertEqual(item_stats.n_failure_when_on, 0)
-        self.assertEqual(item_stats.n_failure_when_off, 0)
+        self.assertEqual(item_stats.n_success_and_on, 1)
+        self.assertEqual(item_stats.n_success_and_off, 0)
+        self.assertEqual(item_stats.n_fail_and_on, 0)
+        self.assertEqual(item_stats.n_fail_and_off, 0)
 
         self.assertEqual(item_stats.success_corr, 1.0)
         self.assertIs(item_stats.failure_corr, np.NAN)
@@ -46,16 +46,16 @@ class TestECItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ECItemStats(schema_stats)
 
-        schema_stats.update(action_taken=True)
+        schema_stats.update(activated=True)
         item_stats.update(item_on=False, success=True)
 
         self.assertEqual(item_stats.n_on, 0)
         self.assertEqual(item_stats.n_off, 1)
 
-        self.assertEqual(item_stats.n_success_when_on, 0)
-        self.assertEqual(item_stats.n_success_when_off, 1)
-        self.assertEqual(item_stats.n_failure_when_on, 0)
-        self.assertEqual(item_stats.n_failure_when_off, 0)
+        self.assertEqual(item_stats.n_success_and_on, 0)
+        self.assertEqual(item_stats.n_success_and_off, 1)
+        self.assertEqual(item_stats.n_fail_and_on, 0)
+        self.assertEqual(item_stats.n_fail_and_off, 0)
 
         self.assertEqual(item_stats.success_corr, 0.0)
         self.assertIs(item_stats.failure_corr, np.NAN)
@@ -64,16 +64,16 @@ class TestECItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ECItemStats(schema_stats)
 
-        schema_stats.update(action_taken=True)
+        schema_stats.update(activated=True)
         item_stats.update(item_on=True, success=False)
 
         self.assertEqual(item_stats.n_on, 1)
         self.assertEqual(item_stats.n_off, 0)
 
-        self.assertEqual(item_stats.n_success_when_on, 0)
-        self.assertEqual(item_stats.n_success_when_off, 0)
-        self.assertEqual(item_stats.n_failure_when_on, 1)
-        self.assertEqual(item_stats.n_failure_when_off, 0)
+        self.assertEqual(item_stats.n_success_and_on, 0)
+        self.assertEqual(item_stats.n_success_and_off, 0)
+        self.assertEqual(item_stats.n_fail_and_on, 1)
+        self.assertEqual(item_stats.n_fail_and_off, 0)
 
         self.assertIs(item_stats.success_corr, np.NAN)
         self.assertEqual(item_stats.failure_corr, 1.0)
@@ -82,16 +82,16 @@ class TestECItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ECItemStats(schema_stats)
 
-        schema_stats.update(action_taken=True)
+        schema_stats.update(activated=True)
         item_stats.update(item_on=False, success=False)
 
         self.assertEqual(item_stats.n_on, 0)
         self.assertEqual(item_stats.n_off, 1)
 
-        self.assertEqual(item_stats.n_success_when_on, 0)
-        self.assertEqual(item_stats.n_success_when_off, 0)
-        self.assertEqual(item_stats.n_failure_when_on, 0)
-        self.assertEqual(item_stats.n_failure_when_off, 1)
+        self.assertEqual(item_stats.n_success_and_on, 0)
+        self.assertEqual(item_stats.n_success_and_off, 0)
+        self.assertEqual(item_stats.n_fail_and_on, 0)
+        self.assertEqual(item_stats.n_fail_and_off, 1)
 
         self.assertIs(item_stats.success_corr, np.NAN)
         self.assertEqual(item_stats.failure_corr, 0.0)
@@ -102,8 +102,8 @@ class TestECItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ECItemStats(schema_stats)
 
-        schema_stats.update(action_taken=True, count=40)
-        schema_stats.update(action_taken=False, count=10)
+        schema_stats.update(activated=True, count=40)
+        schema_stats.update(activated=False, count=10)
 
         item_stats.update(item_on=True, success=True, count=32)
         item_stats.update(item_on=False, success=True, count=2)
@@ -113,10 +113,10 @@ class TestECItemStatistics(TestCase):
         self.assertEqual(item_stats.n_on, 40)
         self.assertEqual(item_stats.n_off, 10)
 
-        self.assertEqual(item_stats.n_success_when_on, 32)
-        self.assertEqual(item_stats.n_success_when_off, 2)
-        self.assertEqual(item_stats.n_failure_when_on, 8)
-        self.assertEqual(item_stats.n_failure_when_off, 8)
+        self.assertEqual(item_stats.n_success_and_on, 32)
+        self.assertEqual(item_stats.n_success_and_off, 2)
+        self.assertEqual(item_stats.n_fail_and_on, 8)
+        self.assertEqual(item_stats.n_fail_and_off, 8)
 
         self.assertEqual(item_stats.success_corr, 0.8)
         self.assertEqual(item_stats.failure_corr, 0.2)
@@ -127,10 +127,10 @@ class TestERItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ERItemStats(schema_stats)
 
-        self.assertEqual(item_stats.n_on_with_action, 0)
-        self.assertEqual(item_stats.n_on_without_action, 0)
-        self.assertEqual(item_stats.n_off_with_action, 0)
-        self.assertEqual(item_stats.n_off_without_action, 0)
+        self.assertEqual(item_stats.n_on_and_activated, 0)
+        self.assertEqual(item_stats.n_on_and_not_activated, 0)
+        self.assertEqual(item_stats.n_off_and_activated, 0)
+        self.assertEqual(item_stats.n_off_and_not_activated, 0)
 
         self.assertIs(item_stats.positive_transition_corr, np.NAN)
         self.assertIs(item_stats.negative_transition_corr, np.NAN)
@@ -141,16 +141,16 @@ class TestERItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ERItemStats(schema_stats)
 
-        schema_stats.update(action_taken=True)
-        item_stats.update(item_on=True, action_taken=True)
+        schema_stats.update(activated=True)
+        item_stats.update(item_on=True, activated=True)
 
         self.assertEqual(item_stats.n_on, 1)
         self.assertEqual(item_stats.n_off, 0)
 
-        self.assertEqual(item_stats.n_on_with_action, 1)
-        self.assertEqual(item_stats.n_on_without_action, 0)
-        self.assertEqual(item_stats.n_off_with_action, 0)
-        self.assertEqual(item_stats.n_off_without_action, 0)
+        self.assertEqual(item_stats.n_on_and_activated, 1)
+        self.assertEqual(item_stats.n_on_and_not_activated, 0)
+        self.assertEqual(item_stats.n_off_and_activated, 0)
+        self.assertEqual(item_stats.n_off_and_not_activated, 0)
         self.assertEqual(item_stats.positive_transition_corr, 1.0)
         self.assertIs(item_stats.negative_transition_corr, np.NAN)
 
@@ -158,16 +158,16 @@ class TestERItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ERItemStats(schema_stats)
 
-        schema_stats.update(action_taken=False)
-        item_stats.update(item_on=True, action_taken=False)
+        schema_stats.update(activated=False)
+        item_stats.update(item_on=True, activated=False)
 
         self.assertEqual(item_stats.n_on, 1)
         self.assertEqual(item_stats.n_off, 0)
 
-        self.assertEqual(item_stats.n_on_with_action, 0)
-        self.assertEqual(item_stats.n_on_without_action, 1)
-        self.assertEqual(item_stats.n_off_with_action, 0)
-        self.assertEqual(item_stats.n_off_without_action, 0)
+        self.assertEqual(item_stats.n_on_and_activated, 0)
+        self.assertEqual(item_stats.n_on_and_not_activated, 1)
+        self.assertEqual(item_stats.n_off_and_activated, 0)
+        self.assertEqual(item_stats.n_off_and_not_activated, 0)
 
         self.assertEqual(item_stats.positive_transition_corr, 0.0)
         self.assertIs(item_stats.negative_transition_corr, np.NAN)
@@ -176,16 +176,16 @@ class TestERItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ERItemStats(schema_stats)
 
-        schema_stats.update(action_taken=True)
-        item_stats.update(item_on=False, action_taken=True)
+        schema_stats.update(activated=True)
+        item_stats.update(item_on=False, activated=True)
 
         self.assertEqual(item_stats.n_on, 0)
         self.assertEqual(item_stats.n_off, 1)
 
-        self.assertEqual(item_stats.n_on_with_action, 0)
-        self.assertEqual(item_stats.n_on_without_action, 0)
-        self.assertEqual(item_stats.n_off_with_action, 1)
-        self.assertEqual(item_stats.n_off_without_action, 0)
+        self.assertEqual(item_stats.n_on_and_activated, 0)
+        self.assertEqual(item_stats.n_on_and_not_activated, 0)
+        self.assertEqual(item_stats.n_off_and_activated, 1)
+        self.assertEqual(item_stats.n_off_and_not_activated, 0)
 
         self.assertIs(item_stats.positive_transition_corr, np.NAN)
         self.assertEqual(item_stats.negative_transition_corr, 1.0)
@@ -194,16 +194,16 @@ class TestERItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ERItemStats(schema_stats)
 
-        schema_stats.update(action_taken=False)
-        item_stats.update(item_on=False, action_taken=False)
+        schema_stats.update(activated=False)
+        item_stats.update(item_on=False, activated=False)
 
         self.assertEqual(item_stats.n_on, 0)
         self.assertEqual(item_stats.n_off, 1)
 
-        self.assertEqual(item_stats.n_on_with_action, 0)
-        self.assertEqual(item_stats.n_on_without_action, 0)
-        self.assertEqual(item_stats.n_off_with_action, 0)
-        self.assertEqual(item_stats.n_off_without_action, 1)
+        self.assertEqual(item_stats.n_on_and_activated, 0)
+        self.assertEqual(item_stats.n_on_and_not_activated, 0)
+        self.assertEqual(item_stats.n_off_and_activated, 0)
+        self.assertEqual(item_stats.n_off_and_not_activated, 1)
 
         self.assertIs(item_stats.positive_transition_corr, np.NAN)
         self.assertEqual(item_stats.negative_transition_corr, 0.0)
@@ -214,21 +214,21 @@ class TestERItemStatistics(TestCase):
         schema_stats = SchemaStats()
         item_stats = ERItemStats(schema_stats)
 
-        schema_stats.update(action_taken=True, count=40)
-        schema_stats.update(action_taken=False, count=10)
+        schema_stats.update(activated=True, count=40)
+        schema_stats.update(activated=False, count=10)
 
-        item_stats.update(item_on=True, action_taken=True, count=32)
-        item_stats.update(item_on=True, action_taken=False, count=2)
-        item_stats.update(item_on=False, action_taken=True, count=8)
-        item_stats.update(item_on=False, action_taken=False, count=8)
+        item_stats.update(item_on=True, activated=True, count=32)
+        item_stats.update(item_on=True, activated=False, count=2)
+        item_stats.update(item_on=False, activated=True, count=8)
+        item_stats.update(item_on=False, activated=False, count=8)
 
         self.assertEqual(item_stats.n_on, 34)
         self.assertEqual(item_stats.n_off, 16)
 
-        self.assertEqual(item_stats.n_on_with_action, 32)
-        self.assertEqual(item_stats.n_on_without_action, 2)
-        self.assertEqual(item_stats.n_off_with_action, 8)
-        self.assertEqual(item_stats.n_off_without_action, 8)
+        self.assertEqual(item_stats.n_on_and_activated, 32)
+        self.assertEqual(item_stats.n_on_and_not_activated, 2)
+        self.assertEqual(item_stats.n_off_and_activated, 8)
+        self.assertEqual(item_stats.n_off_and_not_activated, 8)
 
         self.assertEqual(item_stats.positive_transition_corr, 0.8)
         self.assertEqual(item_stats.negative_transition_corr, 0.2)
