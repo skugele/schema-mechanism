@@ -27,6 +27,10 @@ class Observable:
 
         super().__init__(*args, **kwargs)
 
+    @property
+    def observers(self) -> List[Observer]:
+        return self._observers
+
     def register(self, observer: Observer) -> None:
         """ Registers an observer with this observable.
 
