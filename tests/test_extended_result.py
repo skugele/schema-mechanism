@@ -100,20 +100,20 @@ class TestExtendedResult(TestCase):
 
         # test updates that SHOULD NOT result in relevant item determination
         self.er.update(i1, on=True, activated=False)
-        self.assertFalse(self.er.new_relevant_items())
+        self.assertEqual(0, len(self.er.new_relevant_items))
 
         self.er.update(i1, on=False, activated=False, count=2)
-        self.assertFalse(self.er.new_relevant_items())
+        self.assertEqual(0, len(self.er.new_relevant_items))
 
         self.er.update(i1, on=False, activated=True)
-        self.assertFalse(self.er.new_relevant_items())
+        self.assertEqual(0, len(self.er.new_relevant_items))
 
         self.er.update(i1, on=True, activated=True)
-        self.assertFalse(self.er.new_relevant_items())
+        self.assertEqual(0, len(self.er.new_relevant_items))
 
         # test update that SHOULD result is a relevant item
         self.er.update(i1, on=True, activated=True)
-        self.assertTrue(self.er.new_relevant_items())
+        self.assertEqual(1, len(self.er.new_relevant_items))
 
         i1_stats = self.er.stats[i1]
         self.assertTrue(i1_stats.positive_transition_corr > self.er.POS_CORR_RELEVANCE_THRESHOLD)
@@ -134,7 +134,4 @@ class TestExtendedResult(TestCase):
 
         # number of new relevant items SHOULD be reset to zero after notifying observers
         self.er.notify_all()
-        self.assertFalse(self.er.new_relevant_items())
-
-        # test that observer received the correct count of new relevant items
-        self.assertEqual(2, self.obs.last_message['kwargs']['n'])
+        self.assertEqual(0, len(self.er.new_relevant_items))

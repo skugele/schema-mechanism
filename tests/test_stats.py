@@ -234,6 +234,89 @@ class TestERItemStatistics(TestCase):
         self.assertEqual(item_stats.negative_transition_corr, 0.2)
 
 
+class TestSchemaStats(TestCase):
+    def setUp(self) -> None:
+        self.ss = SchemaStats()
+
+    def test_init(self):
+        self.assertEqual(self.ss.n, 0)
+        self.assertEqual(self.ss.n_activated, 0)
+        self.assertEqual(self.ss.n_not_activated, 0)
+        self.assertEqual(self.ss.n_success, 0)
+        self.assertEqual(self.ss.n_fail, 0)
+        self.assertEqual(self.ss.reliability, 0)
+
+    def test_update(self):
+        self.ss.update(activated=True, success=True, count=1)
+        self.assertEqual(1, self.ss.n)
+        self.assertEqual(1, self.ss.n_activated)
+        self.assertEqual(1, self.ss.n_success)
+        self.assertEqual(0, self.ss.n_fail)
+        self.assertEqual(0, self.ss.n_not_activated)
+
+        self.ss.update(activated=True, success=False, count=1)
+        self.assertEqual(2, self.ss.n)
+        self.assertEqual(2, self.ss.n_activated)
+        self.assertEqual(1, self.ss.n_success)
+        self.assertEqual(1, self.ss.n_fail)
+        self.assertEqual(0, self.ss.n_not_activated)
+
+        self.ss.update(activated=False, success=True, count=1)
+        self.assertEqual(3, self.ss.n)
+        self.assertEqual(2, self.ss.n_activated)
+        self.assertEqual(1, self.ss.n_success)  # must be activated for success or fail
+        self.assertEqual(1, self.ss.n_fail)  # must be activated for success or fail
+        self.assertEqual(1, self.ss.n_not_activated)
+
+        self.ss.update(activated=False, success=False, count=1)
+        self.assertEqual(4, self.ss.n)
+        self.assertEqual(2, self.ss.n_activated)
+        self.assertEqual(1, self.ss.n_success)
+        self.assertEqual(1, self.ss.n_fail)
+        self.assertEqual(2, self.ss.n_not_activated)
+
+    def test_n(self):
+        # should always be updated by count
+        self.ss.update(activated=True, success=True, count=1)
+        self.ss.update(activated=True, success=False, count=1)
+        self.ss.update(activated=False, success=True, count=1)
+
+        # test with count > 1
+        self.ss.update(activated=False, success=False, count=2)
+        self.assertEqual(5, self.ss.n)
+
+    def test_activated(self):
+        self.ss.update(activated=True, success=True, count=1)
+        self.ss.update(activated=True, success=False, count=1)
+        self.assertEqual(2, self.ss.n_activated)
+
+        self.ss.update(activated=False, success=True, count=1)
+        self.ss.update(activated=False, success=False, count=1)
+        self.assertEqual(2, self.ss.n_activated)
+
+    def test_success(self):
+        # must be activated to increment success
+        self.ss.update(activated=True, success=True, count=1)
+        self.ss.update(activated=True, success=False, count=1)
+        self.assertEqual(1, self.ss.n_success)
+
+        self.ss.update(activated=False, success=True, count=1)
+        self.ss.update(activated=False, success=False, count=1)
+        self.assertEqual(1, self.ss.n_success)
+
+    def test_reliability(self):
+        self.ss.update(activated=True, success=True, count=1)
+        self.assertEqual(1.0, self.ss.reliability)
+
+        self.ss.update(activated=True, success=False, count=1)
+        self.assertEqual(0.5, self.ss.reliability)
+
+        # must be activated to increment success
+        self.ss.update(activated=False, success=True, count=1)
+        self.ss.update(activated=False, success=False, count=1)
+        self.assertEqual(0.5, self.ss.reliability)
+
+
 class TestReadOnlyECItemStats(TestCase):
     def test_update(self):
         item_stats = ReadOnlyECItemStats(SchemaStats())

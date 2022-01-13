@@ -180,12 +180,7 @@ class SchemaStats:
     def __init__(self):
         self._n = 0  # total number of update events
         self._n_activated = 0
-        self._n_succeeded = 0
-
-        # TODO: Does reliability require a variable, or can its value be derived from other variables?
-        # A schema's reliability is the likelihood with which the schema succeeds (i.e., its result obtains)
-        # when activated
-        self._reliability: float = 0.0
+        self._n_success = 0
 
         # TODO: Are duration and cost needed???
 
@@ -204,7 +199,11 @@ class SchemaStats:
             self._n_activated += count
 
             if success:
-                self._n_succeeded += count
+                self._n_success += count
+
+    @property
+    def n(self) -> int:
+        return self._n
 
     @property
     def n_activated(self) -> int:
@@ -221,7 +220,7 @@ class SchemaStats:
         return self._n - self._n_activated
 
     @property
-    def n_succeeded(self) -> int:
+    def n_success(self) -> int:
         """ Returns the number of times this schema succeeded on activation.
 
             “An activated schema is said to succeed if its predicted results all in fact obtain, and to
@@ -229,11 +228,11 @@ class SchemaStats:
 
         :return: the number of successes
         """
-        return self._n_succeeded
+        return self._n_success
 
     @property
-    def n_failed(self) -> int:
-        return self._n - self._n_succeeded
+    def n_fail(self) -> int:
+        return self._n_activated - self._n_success
 
     @property
     def reliability(self) -> float:
@@ -244,7 +243,21 @@ class SchemaStats:
 
         :return: the schema's reliability
         """
-        return self._reliability
+        return 0.0 if self.n_activated == 0 else self.n_success / self.n_activated
+
+    def __str__(self):
+        attr_values = '; '.join([
+            f'n_activated: {self.n_activated:,}',
+            f'n_not_activated: {self.n_not_activated:,}',
+            f'n_success: {self.n_success:,}',
+            f'n_fail: {self.n_fail:,}',
+            f'reliability: {self.reliability:,}',
+        ])
+
+        module_name = type(self).__module__
+        type_name = type(self).__name__
+
+        return f'{module_name}.{type_name}({attr_values})'
 
 
 class ECItemStats:
@@ -345,6 +358,23 @@ class ECItemStats:
     @property
     def n_fail_and_off(self) -> int:
         return self._n_fail_and_off
+
+    def __str__(self):
+        attr_values = '; '.join([
+            f'success_corr: {self.success_corr:.2}',
+            f'failure_corr: {self.failure_corr:.2}',
+            f'n_on: {self.n_on:,}',
+            f'n_off: {self.n_off:,}',
+            f'n_success_and_on: {self.n_success_and_on:,}',
+            f'n_success_and_off: {self.n_success_and_off:,}',
+            f'n_fail_and_on: {self.n_fail_and_on:,}',
+            f'n_fail_and_off: {self.n_fail_and_off:,}',
+        ])
+
+        module_name = type(self).__module__
+        type_name = type(self).__name__
+
+        return f'{module_name}.{type_name}({attr_values})'
 
 
 class ERItemStats:
@@ -573,8 +603,8 @@ class ExtendedItemCollection(Observable):
         self._schema_stats = schema_stats
         self._item_pool = ReadOnlyItemPool()
 
-        self._relevant_items: MutableSet[Any] = set()
-        self._new_relevant_items: int = 0
+        self._relevant_items: MutableSet[ItemAssertion] = set()
+        self._new_relevant_items: MutableSet[ItemAssertion] = set()
 
     @property
     def relevant_items(self) -> FrozenSet[ItemAssertion]:
@@ -583,7 +613,7 @@ class ExtendedItemCollection(Observable):
     def update_relevant_items(self, item_assert: ItemAssertion):
         if item_assert not in self._relevant_items:
             self._relevant_items.add(item_assert)
-            self._new_relevant_items += 1
+            self._new_relevant_items.add(item_assert)
 
     def known_relevant_item(self, item: Item) -> bool:
         return item in self._relevant_items
@@ -592,13 +622,14 @@ class ExtendedItemCollection(Observable):
         if 'source' not in kwargs:
             kwargs['source'] = self
 
-        kwargs['n'] = self._new_relevant_items
-
         super().notify_all(*args, **kwargs)
-        self._new_relevant_items = 0
 
-    def new_relevant_items(self) -> bool:
-        return self._new_relevant_items > 0
+        # clears the set
+        self._new_relevant_items = set()
+
+    @property
+    def new_relevant_items(self) -> FrozenSet[ItemAssertion]:
+        return frozenset(self._new_relevant_items)
 
 
 # TODO: Need a mechanism to alert the associated schema when an item becomes relevant
@@ -637,7 +668,7 @@ class ExtendedResult(ExtendedItemCollection):
         for item in self._item_pool.items:
             self.update(item, view.is_on(item), activated)
 
-        if self.new_relevant_items():
+        if self.new_relevant_items:
             self.notify_all(source=self)
 
 
@@ -687,7 +718,7 @@ class ExtendedContext(ExtendedItemCollection):
         for item in self._item_pool.items:
             self.update(item, view.is_on(item), success)
 
-        if self.new_relevant_items():
+        if self.new_relevant_items:
             self.notify_all(source=self)
 
 
@@ -837,13 +868,10 @@ class Schema(Observer, Observable):
     # this will be invoked by the schema's extended context or extended result when one of their items is determined
     # to be relevant
     def receive(self, *args, **kwargs) -> None:
-        # source should be either the extended context or extended result
-        source = kwargs['source']
+        # source should be an ExtendedContext, ExtendedResult, or one of their subclasses
+        source: Type = kwargs['source']
 
-        # item should be set to the item that was determined to be relevant based on last update
-        item = kwargs['item']
-
-        # TODO: the schema will likely need lists for the relevant items in its extended context and extended result
+        # TODO: Access the new relevant items and notify listeners
         if isinstance(source, ExtendedResult):
             pass
         elif isinstance(source, ExtendedContext):
