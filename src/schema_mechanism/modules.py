@@ -21,10 +21,14 @@
 
 
 # Update procedure for Extended Context
+from collections import Collection
+from typing import FrozenSet
+
 from schema_mechanism.data_structures import Context
 from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import Result
 from schema_mechanism.data_structures import Schema
+from schema_mechanism.data_structures import StateElement
 
 
 class SchemaMemory:
@@ -36,6 +40,48 @@ class SchemaSelection:
         See Drescher, 1991, section 3.4
     """
     pass
+
+
+def held_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement]) -> FrozenSet[StateElement]:
+    """ Returns the set of state elements that are in both previous and current state
+
+    :param s_prev: a collection of the previous state's elements
+    :param s_curr: a collection of the current state's elements
+
+    :return: a set containing state elements shared between current and previous state
+    """
+    if s_curr is None:
+        return frozenset()
+
+    return frozenset([se for se in s_curr if se in s_prev])
+
+
+def new_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement]) -> FrozenSet[StateElement]:
+    """ Returns the set of state elements that are in current state but not previous
+
+    :param s_prev: a collection of the previous state's elements
+    :param s_curr: a collection of the current state's elements
+
+    :return: a set containing new state elements
+    """
+    if s_curr is None:
+        return frozenset()
+
+    return frozenset([se for se in s_curr if se not in s_prev])
+
+
+def lost_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement]) -> FrozenSet[StateElement]:
+    """ Returns the set of state elements that are in previous state but not current
+
+    :param s_prev: a collection of the previous state's elements
+    :param s_curr: a collection of the current state's elements
+
+    :return: a set containing lost state elements
+    """
+    if s_prev is None:
+        return frozenset()
+
+    return frozenset([se for se in s_prev if se not in s_curr])
 
 
 # TODO: Need a way to suppress the creation of a new spin-off schema when a new relevant item is detected, but that
