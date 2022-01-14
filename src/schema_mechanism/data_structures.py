@@ -885,37 +885,6 @@ class Schema(Observer, Observable):
         if activated:
             self._extended_context.update_all(view=view, success=success, count=count)
 
-    # TODO: Might be better to externalize this method.
-    def create_spin_off(self, mode: str, item_assert: ItemAssertion) -> Schema:
-        """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
-
-        :param mode: "result" (see Drescher, 1991, p. 71) or "context" (see Drescher, 1991, p. 73)
-        :param item_assert: the item assertion to add to the context or result of a spin-off schema
-        :return: a spin-off schema based on this one
-        """
-        if "context" == mode:
-            new_context = (
-                Context(item_asserts=(item_assert,))
-                if self.context is None
-                else self.context.replicate_with(item_assert)
-            )
-            return Schema(action=self.action,
-                          context=new_context,
-                          result=self.result)
-
-        elif "result" == mode:
-            new_result = (
-                Result(item_asserts=(item_assert,))
-                if self.result is None
-                else self.result.replicate_with(item_assert)
-            )
-            return Schema(action=self.action,
-                          context=self.context,
-                          result=new_result)
-
-        else:
-            raise ValueError(f'Unknown spin-off mode: {mode}')
-
     # invoked by the schema's extended context or extended result when one of their items is
     # determined to be relevant
     def receive(self, *args, **kwargs) -> None:
