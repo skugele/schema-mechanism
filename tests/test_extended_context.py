@@ -5,7 +5,6 @@ from schema_mechanism.data_structures import ExtendedContext
 from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_EC_ITEM_STATS
-from schema_mechanism.data_structures import ReadOnlyItemPool
 from schema_mechanism.data_structures import SchemaStats
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import create_item
@@ -30,7 +29,7 @@ class TestExtendedContext(TestCase):
 
     def test_init(self):
         ec = ExtendedContext(SchemaStats())
-        for i in ItemPool().items:
+        for i in ItemPool():
             self.assertIs(NULL_EC_ITEM_STATS, ec.stats[i])
 
     def test_update(self):
@@ -44,7 +43,7 @@ class TestExtendedContext(TestCase):
         self.ec.update(new_item, on=True, success=True)
 
         item_stats = self.ec.stats[new_item]
-        for i in ItemPool().items:
+        for i in ItemPool():
             if i.state_element != state[0]:
                 self.assertIs(NULL_EC_ITEM_STATS, self.ec.stats[i])
             else:
@@ -62,7 +61,7 @@ class TestExtendedContext(TestCase):
 
     def test_update_all(self):
         state = sample(range(self.N_ITEMS), k=10)
-        view = ItemPoolStateView(pool=ReadOnlyItemPool(), state=state)
+        view = ItemPoolStateView(state=state)
 
         # simulate schema being activated with action taken
         self.schema_stats.update(activated=True, success=True)
@@ -71,7 +70,7 @@ class TestExtendedContext(TestCase):
         self.ec.update_all(view, success=True)
 
         # test that all items in the state have been updated
-        for i in ItemPool().items:
+        for i in ItemPool():
             item_stats = self.ec.stats[i]
             if i.state_element in state:
                 self.assertEqual(1, item_stats.n_on)

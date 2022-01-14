@@ -2,13 +2,28 @@ from unittest import TestCase
 
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import Context
+from schema_mechanism.data_structures import ItemPool
+from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import Result
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import StateAssertion
+from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.func_api import create_item
 from schema_mechanism.func_api import make_assertion
+from schema_mechanism.func_api import make_assertions
+from test_share.test_classes import MockObserver
 
 
 class TestSchema(TestCase):
+    def setUp(self) -> None:
+        self._item_pool = ItemPool()
+
+        # populate pool
+        for i in range(10):
+            _ = self._item_pool.get(i, SymbolicItem)
+
+        self.obs = MockObserver()
+
     def test_init(self):
         # Action CANNOT be None
         try:
@@ -114,6 +129,40 @@ class TestSchema(TestCase):
         # expected to NOT be applicable (due to overriding condition)
         self.assertFalse(schema.is_applicable(state=['1', '3', '4', '5']))
 
+    def test_update(self):
+        s = Schema(context=Context(make_assertions([1])),
+                   action=Action(),
+                   result=Result(make_assertions([2])))
+        s.register(self.obs)
+
+        s_a = [0, 1, 2]
+
+        # TODO: Uncomment this once the "held" items list is operational
+        # TODO: Update these test cases once context/result suppression for item relevance determination is in place
+        # s_na = [0, 1, 2]
+
+        s_na = [4, 5, 6]
+
+        s.update(activated=True, view=ItemPoolStateView(s_a), count=10)
+
+        # for k, v in s.extended_result.stats.items():
+        #     print(f'{k} -> {repr(v)}')
+
+        for se in s_a:
+            i_stats = s.extended_context.stats.get(create_item(se))
+
+            self.assertEqual(10, i_stats.n_on)
+
+        s.update(activated=False, view=ItemPoolStateView(s_na), count=1)
+
+        for se in s_na:
+            i_stats = s.extended_context.stats.get(create_item(se))
+
+            self.assertEqual(i_stats.n_off, 10)
+
+        # verify observer notified
+        self.assertTrue(self.obs.n_received >= 1)
+
     def test_spin_off(self):
         # test bare schema spin-off
         ###########################
@@ -207,3 +256,32 @@ class TestSchema(TestCase):
             s3.create_spin_off(mode='result', item_assert=make_assertion('2'))
         except ValueError as e:
             self.assertEqual(str(e), 'ItemAssertion already exists in StateAssertion')
+
+    def test_notify_all(self):
+        s = Schema(context=Context(make_assertions([1, 2, 3])),
+                   action=Action(),
+                   result=Result(make_assertions([1, 2, 3, 4])))
+
+        state = [1, 2, 3, 4, 5, 6]
+        view = ItemPoolStateView(state)
+
+        s.update(activated=True,
+                 view=view)
+
+    # def test_performance(self):
+    #     s = Schema(context=Context(make_assertions([1])),
+    #                action=Action(),
+    #                result=Result(make_assertions([2])))
+    #     s.register(self.obs)
+    #
+    #     n_states = 32
+    #     for _ in range(n_states):
+    #         state = sample(range(len(self._item_pool)), k=3)
+    #
+    #         if random.randint(0, 3) == 0:
+    #             s.update(activated=True, view=ItemPoolStateView(state))
+    #         else:
+    #             s.update(activated=False, view=ItemPoolStateView(state))
+    #
+    #     for v in s.extended_result.stats.values():
+    #         print(repr(v))

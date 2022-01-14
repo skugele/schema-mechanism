@@ -4,7 +4,6 @@ from unittest import TestCase
 from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_ER_ITEM_STATS
-from schema_mechanism.data_structures import ReadOnlyItemPool
 from schema_mechanism.data_structures import SchemaStats
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import create_item
@@ -29,7 +28,7 @@ class TestExtendedResult(TestCase):
         self.er.register(self.obs)
 
     def test_init(self):
-        for i in ItemPool().items:
+        for i in ItemPool():
             self.assertIs(NULL_ER_ITEM_STATS, self.er.stats[i])
 
     def test_update(self):
@@ -40,7 +39,7 @@ class TestExtendedResult(TestCase):
         self.er.update(new_item, on=True, activated=True)
 
         item_stats = self.er.stats[new_item]
-        for i in ItemPool().items:
+        for i in ItemPool():
             if i != new_item:
                 self.assertIs(NULL_ER_ITEM_STATS, self.er.stats[i])
             else:
@@ -58,13 +57,13 @@ class TestExtendedResult(TestCase):
 
     def test_update_all(self):
         state = sample(range(self.N_ITEMS), k=10)
-        view = ItemPoolStateView(pool=ReadOnlyItemPool(), state=state)
+        view = ItemPoolStateView(state=state)
 
         # update all items in this state simulating case of action taken
         self.er.update_all(view, activated=True)
 
         # test that all items in the state have been updated
-        for i in ItemPool().items:
+        for i in ItemPool():
             item_stats = self.er.stats[i]
             if i.state_element in state:
                 self.assertEqual(1, item_stats.n_on)

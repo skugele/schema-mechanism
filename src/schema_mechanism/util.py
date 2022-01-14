@@ -1,4 +1,6 @@
 from abc import ABCMeta
+from typing import Any
+from typing import Dict
 from typing import Iterable
 from typing import List
 from uuid import uuid4
@@ -81,3 +83,10 @@ def get_orthogonal_vector(v: np.ndarray):
 
 def get_unique_id():
     return uuid4()
+
+
+def repr_str(obj: Any, attr_values: Dict[str, str]) -> str:
+    module_name = type(obj).__module__
+    type_name = type(obj).__name__
+
+    return f'{module_name}.{type_name}({attr_values})'

@@ -74,7 +74,7 @@ class TestSharedItemPool(TestCase):
             _ = pool.get(value, SymbolicItem)
 
         encountered = defaultdict(lambda: 0)
-        for item in pool.items:
+        for item in pool:
             self.assertIsInstance(item, SymbolicItem)
             encountered[item.state_element] += 1
 
@@ -99,7 +99,7 @@ class TestSharedItemPool(TestCase):
 
         elapsed_time = 0
         start = time()
-        for _ in pool.items:
+        for _ in pool:
             pass
         end = time()
         elapsed_time += end - start
@@ -166,9 +166,9 @@ class TestItemPoolStateView(TestCase):
             _ = pool.get(i, SymbolicItem)
 
         state = [1, 2, 3]
-        view = ItemPoolStateView(pool=ReadOnlyItemPool(), state=state)
+        view = ItemPoolStateView(state=state)
 
-        for i in pool.items:
+        for i in pool:
             if i.state_element in state:
                 self.assertTrue(view.is_on(i))
             else:
@@ -188,13 +188,13 @@ class TestItemPoolStateView(TestCase):
 
         # test view creation time
         start = time()
-        view = ItemPoolStateView(pool=ReadOnlyItemPool(), state=state)
+        view = ItemPoolStateView(state=state)
         end = time()
         elapsed_time = end - start
         print(f'Time creating item pool view for {n_items:,} {elapsed_time}s')
 
         elapsed_time = 0
-        for i in pool.items:
+        for i in pool:
             start = time()
             view.is_on(i)
             end = time()

@@ -1,7 +1,6 @@
 from unittest import TestCase
 
 from schema_mechanism.data_structures import StateAssertion
-from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import make_assertion
 
 
@@ -17,23 +16,6 @@ class TestStateAssertion(TestCase):
                              make_assertion('3')))
 
         self.assertEqual(3, len(sa))
-
-    def test_immutability(self):
-        sa = StateAssertion((make_assertion('1'),))
-
-        # Try changing individual item
-        try:
-            sa.items[0] = SymbolicItem('5')
-            self.fail('StateAssertion\'s items are not immutable as expected!')
-        except TypeError:
-            pass
-
-        # Try changing the tuple referenced by items
-        try:
-            sa.items = (make_assertion('5'),)
-            self.fail('StateAssertion\'s items are not immutable as expected!')
-        except AttributeError:
-            pass
 
     def test_is_satisfied(self):
         state = ['1', '2']
