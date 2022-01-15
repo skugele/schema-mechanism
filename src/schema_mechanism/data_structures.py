@@ -19,11 +19,10 @@ import numpy as np
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
-from schema_mechanism.util import get_unique_id
-# Type Aliases
-##############
 from schema_mechanism.util import repr_str
 
+# Type Aliases
+##############
 StateElement = Hashable
 
 
@@ -543,20 +542,34 @@ NULL_ER_ITEM_STATS = ReadOnlyERItemStats(NULL_SCHEMA_STATS)
 
 
 class Action:
-    def __init__(self, uid: Optional[str] = None):
-        self._uid = uid or get_unique_id()
+    _last_uid: int = 0
+
+    def __init__(self, label: Optional[str] = None):
+        self.label = label
+
+        self._uid = Action._gen_uid()
 
     @property
-    def uid(self) -> str:
+    def uid(self) -> int:
         return self._uid
 
-    def __eq__(self, other) -> bool:
+    def copy(self) -> Action:
+        copy = super().__new__(Action)
+        copy._uid = self._uid
+
+        return copy
+
+    @classmethod
+    def _gen_uid(cls) -> int:
+        # FIXME: not thread safe
+        cls._last_uid += 1
+        return cls._last_uid
+
+    def __eq__(self, other):
         if isinstance(other, Action):
             return self._uid == other._uid
-        return False
 
-    def __ne__(self, other) -> bool:
-        return not self.__eq__(other)
+        return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
         return hash(self._uid)

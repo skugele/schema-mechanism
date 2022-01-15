@@ -1,4 +1,5 @@
 from typing import Any
+from typing import Hashable
 
 
 def is_eq_reflexive(x: Any) -> bool:
@@ -59,7 +60,7 @@ def is_eq_consistent(x: Any, y: Any, count: int = 1) -> bool:
 
     :param x: any non-None object
     :param y: any non-None object
-    :param count: the number of times to repeat the consistency check
+    :param count: the number of times to perform the consistency check
 
     :return: True if the __eq__ methods satisfy the consistency property for these object instances
     """
@@ -83,4 +84,29 @@ def is_eq_with_null_is_false(x: Any) -> bool:
     """
     assert (x is not None)
 
-    return x.__eq__(None)
+    return x != None
+
+
+def is_hash_consistent(x: Hashable, count: int = 1) -> bool:
+    """ Test that the object's hash method consistently returns the same hash.
+
+    :param x: any non-None, hashable object
+    :param count: the number of times to perform the consistency check
+
+    :return: True if x's __hash__ method satisfies the consistency property for this object instance
+    """
+    h_value = hash(x)
+    return all({h_value == hash(x) for _ in range(count)})
+
+
+def is_hash_same_for_equal_objects(x: Hashable, y: Hashable) -> bool:
+    """ Test hash method produces same result for equal objects.
+
+    :param x: non-None, hashable object equal to y
+    :param y: non-None, hashable object equal to x
+
+    :return: True if x's __hash__ method returns same hash for equal objects
+    """
+    assert (x == y)
+
+    return hash(x) == hash(y)
