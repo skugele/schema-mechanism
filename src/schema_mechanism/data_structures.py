@@ -82,14 +82,13 @@ class ItemPool(metaclass=Singleton):
     def clear(self):
         self._items.clear()
 
-        # clears the lru cache on get method
         self.get.cache_clear()
 
     @lru_cache
-    def get(self, state_element: StateElement, item_type: Type[Item], **kwargs) -> Item:
+    def get(self, state_element: StateElement, item_type: Optional[Type[Item]] = None, **kwargs) -> Item:
         obj = self._items.get(state_element)
         if obj is None and not kwargs.get('read_only', False):
-            self._items[state_element] = obj = item_type(state_element)
+            self._items[state_element] = obj = item_type(state_element) if item_type else SymbolicItem(state_element)
         return obj
 
 
@@ -97,7 +96,7 @@ class ReadOnlyItemPool(ItemPool):
     def __init__(self):
         self._pool = ItemPool()
 
-    def get(self, state_element: StateElement, item_type: Type[Item], **kwargs) -> Item:
+    def get(self, state_element: StateElement, item_type: Optional[Type[Item]] = None, **kwargs) -> Item:
         kwargs['read_only'] = True
         return self._pool.get(state_element, item_type, **kwargs)
 
@@ -110,7 +109,7 @@ class ItemPoolStateView:
     def __init__(self, state: Collection[StateElement]):
         # The state to which this view corresponds
         self._state = state
-        self._on_items = set([item for item in ReadOnlyItemPool() if item.is_on(state)])
+        self._on_items = set([item for item in ReadOnlyItemPool() if item.is_on(state)]) if state else set()
 
     @property
     def state(self):
@@ -201,12 +200,12 @@ class SchemaStats:
 
         # TODO: Are duration and cost needed???
 
-        ## The duration is the average time from the activation to the completion of an action.
+        # The duration is the average time from the activation to the completion of an action.
         # self.duration = Schema.INITIAL_DURATION
 
-        ## The cost is the minimum (i.e., the greatest magnitude) of any negative-valued results
-        ## of schemas that are implicitly activated as a side effect of the given schema’s [explicit]
-        ## activation on that occasion (see Drescher, 1991, p.55).
+        # The cost is the minimum (i.e., the greatest magnitude) of any negative-valued results
+        # of schemas that are implicitly activated as a side effect of the given schema’s [explicit]
+        # activation on that occasion (see Drescher, 1991, p.55).
         # self.cost = Schema.INITIAL_COST
 
     def update(self, activated: bool = False, success: bool = False, count: int = 1):
@@ -278,7 +277,7 @@ class SchemaStats:
         """
         return 0.0 if self.n_activated == 0 else self.n_success / self.n_activated
 
-    def __str__(self):
+    def __repr__(self):
         attr_values = {
             'n_activated': f'{self.n_activated:,}',
             'n_not_activated': f'{self.n_not_activated:,}',
@@ -290,7 +289,11 @@ class SchemaStats:
         return repr_str(self, attr_values)
 
 
-class ECItemStats:
+class ItemStats:
+    pass
+
+
+class ECItemStats(ItemStats):
     """ Extended context item-level statistics
 
         "each extended-context slot records the ratio of the probability that the schema will succeed (i.e., that
@@ -399,7 +402,7 @@ class ECItemStats:
         return repr_str(self, attr_values)
 
 
-class ERItemStats:
+class ERItemStats(ItemStats):
     """ Extended result item-level statistics """
 
     def __init__(self, schema_stats: SchemaStats):
@@ -619,14 +622,25 @@ class ExtendedItemCollection(Observable):
     POS_CORR_RELEVANCE_THRESHOLD = 0.65
     NEG_CORR_RELEVANCE_THRESHOLD = 0.65
 
-    def __init__(self, schema_stats: SchemaStats):
+    def __init__(self, schema_stats: SchemaStats, null_member: ItemStats = None):
         super().__init__()
 
         self._schema_stats = schema_stats
-        self._item_pool = ReadOnlyItemPool()
+        self._null_member = null_member
+
+        self._stats: Dict[Item, ItemStats] = defaultdict(lambda: self._null_member)
+
+        # TODO: Should this really be a mutable Item Pool??? What is in place upstream to guarantee that all
+        # TODO: state elements in the current state have been added to the item pool? Wouldn't it be better
+        # TODO: just to allow new items to be added "in passing"
+        self._item_pool = ItemPool()
 
         self._relevant_items: MutableSet[ItemAssertion] = set()
         self._new_relevant_items: MutableSet[ItemAssertion] = set()
+
+    @property
+    def stats(self) -> Dict[Item, Any]:
+        return self._stats
 
     @property
     def relevant_items(self) -> FrozenSet[ItemAssertion]:
@@ -654,9 +668,20 @@ class ExtendedItemCollection(Observable):
         return frozenset(self._new_relevant_items)
 
     def __str__(self) -> str:
+        name = self.__class__.__name__
+        stats = '; '.join([f'{k} -> {v}' for k, v in self._stats.items()])
+
+        return f'{name}[{stats}]'
+
+    def __repr__(self) -> str:
+        item_stats = ', '.join(['{} -> {}'.format(k, v) for k, v in self.stats.items()])
+        relevant_items = ', '.join(str(i) for i in self.relevant_items)
+        new_relevant_items = ', '.join(str(i) for i in self.new_relevant_items)
+
         attr_values = {
-            'relevant_items': f'[{",".join(str(i) for i in self._relevant_items)}]',
-            'new_relevant_items': f'[{",".join(str(i) for i in self._new_relevant_items)}]',
+            'stats': f'[{item_stats}]',
+            'relevant_items': f'[{relevant_items}]',
+            'new_relevant_items': f'[{new_relevant_items}]',
         }
 
         return repr_str(self, attr_values)
@@ -670,13 +695,11 @@ class ExtendedItemCollection(Observable):
 class ExtendedResult(ExtendedItemCollection):
 
     def __init__(self, schema_stats: SchemaStats) -> None:
-        super().__init__(schema_stats)
-
-        self._stats: Dict[Item, ERItemStats] = defaultdict(lambda: NULL_ER_ITEM_STATS)
+        super().__init__(schema_stats, null_member=NULL_ER_ITEM_STATS)
 
     @property
     def stats(self) -> Dict[Item, ERItemStats]:
-        return self._stats
+        return super().stats
 
     def update(self, item: Item, on: bool, activated=False, count: int = 1) -> None:
         item_stats = self._stats[item]
@@ -695,25 +718,17 @@ class ExtendedResult(ExtendedItemCollection):
 
     # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
     # TODO: statistics.
-    def update_all(self, view: ItemPoolStateView, activated=False, count: int = 1) -> None:
-        for item in self._item_pool:
-            self.update(item, view.is_on(item), activated, count=count)
+    def update_all(self, activated, new: Collection[StateElement], lost: Collection[StateElement],
+                   count: int = 1) -> None:
+
+        for se in new:
+            self.update(item=self._item_pool.get(se), on=True, activated=activated, count=count)
+
+        for se in lost:
+            self.update(item=self._item_pool.get(se), on=False, activated=activated, count=count)
 
         if self.new_relevant_items:
             self.notify_all(source=self)
-
-    def __str__(self) -> str:
-        name = self.__class__.__name__
-        stats = '; '.join([f'{k} -> {v}' for k, v in self._stats.items()])
-
-        return f'{name}[{stats}]'
-
-    def __repr__(self) -> str:
-        attr_values = {
-            'stats': f'[{[f"{str(k)}:{str(v)}" for k, v in self._stats.items()]}]'
-        }
-
-        return repr_str(self, attr_values)
 
 
 # TODO: Need to suppress item relevance when those items appear in the parent schema's context (THIS MIGHT BE SOMEThING
@@ -736,13 +751,11 @@ class ExtendedContext(ExtendedItemCollection):
     """
 
     def __init__(self, schema_stats: SchemaStats) -> None:
-        super().__init__(schema_stats)
-
-        self._stats: Dict[Item, ECItemStats] = defaultdict(lambda: NULL_EC_ITEM_STATS)
+        super().__init__(schema_stats, null_member=NULL_EC_ITEM_STATS)
 
     @property
     def stats(self) -> Dict[Item, ECItemStats]:
-        return self._stats
+        return super().stats
 
     def update(self, item: Item, on: bool, success: bool, count: int = 1) -> None:
         item_stats = self._stats[item]
@@ -856,34 +869,40 @@ class Schema(Observer, Observable):
             overridden = self.overriding_conditions.is_satisfied(state, *args, **kwargs)
         return (not overridden) and self.context.is_satisfied(state, *args, **kwargs)
 
-    # TODO: The state diff is needed to prevent updates when items were on in the previous state
-    def update(self, activated: bool, view: ItemPoolStateView, held: Collection[StateElement] = None, count=1) -> None:
+    def update(self,
+               activated: bool,
+               v_prev: Optional[ItemPoolStateView],
+               v_curr: ItemPoolStateView,
+               new: Collection[StateElement] = None,
+               lost: Collection[StateElement] = None, count=1) -> None:
         """
 
             Note: As a result of these updates, one or more notifications may be generated by the schema's
             context and/or result. These will be received via schema's 'receive' method.
 
         :param activated: True if this schema was implicitly or explicitly activated; False otherwise
-        :param view: a view of the set of items that are On in the item pool for the current state
-        :param held: the state elements shared between previous state and current state
+        :param v_prev: a view of the set of items that were On in the item pool for the previous state
+        :param v_curr: a view of the set of items that are On in the item pool for the current state
+        :param new: the state elements in current but not previous state
+        :param lost: the state elements in previous but not current state
         :param count: the number of updates to perform
 
         :return: None
         """
 
         # True if this schema was activated AND its result obtained; False otherwise
-        success: bool = self.result.is_satisfied_in_view(view)
+        success: bool = activated and self.result.is_satisfied_in_view(v_curr)
 
         # update top-level stats
         self._stats.update(activated=activated, success=success, count=count)
 
-        # TODO: Need to pass state_diff to limit updates to when the result represents a change in item On- or Off-ness
         # update extended result stats
-        self._extended_result.update_all(view=view, activated=activated, count=count)
+        if not all((new, lost)):
+            self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
 
         # update extended context stats
-        if activated:
-            self._extended_context.update_all(view=view, success=success, count=count)
+        if activated and v_prev:
+            self._extended_context.update_all(view=v_prev, success=success, count=count)
 
     # invoked by the schema's extended context or extended result when one of their items is
     # determined to be relevant

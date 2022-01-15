@@ -17,3 +17,4 @@ def make_assertion(state_element: StateElement, negated: bool = False) -> ItemAs
 
 def make_assertions(state_elements: Iterable[StateElement], negated: bool = False) -> MutableSet[ItemAssertion]:
     return set([ItemAssertion(item=create_item(se), negated=negated) for se in state_elements])
+

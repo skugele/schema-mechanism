@@ -86,7 +86,6 @@ def get_unique_id():
 
 
 def repr_str(obj: Any, attr_values: Dict[str, str]) -> str:
-    module_name = type(obj).__module__
     type_name = type(obj).__name__
 
-    return f'{module_name}.{type_name}({attr_values})'
+    return f'{type_name}({attr_values})'

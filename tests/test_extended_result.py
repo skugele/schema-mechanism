@@ -2,11 +2,12 @@ from random import sample
 from unittest import TestCase
 
 from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_ER_ITEM_STATS
 from schema_mechanism.data_structures import SchemaStats
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import create_item
+from schema_mechanism.modules import lost_state
+from schema_mechanism.modules import new_state
 from test_share.test_classes import ExtendedResultTestWrapper
 from test_share.test_classes import MockObserver
 
@@ -15,11 +16,11 @@ class TestExtendedResult(TestCase):
     N_ITEMS = 1000
 
     def setUp(self) -> None:
-        pool = ItemPool()
-        pool.clear()
+        self._item_pool = ItemPool()
+        self._item_pool.clear()
 
         for i in range(self.N_ITEMS):
-            pool.get(i, SymbolicItem)
+            self._item_pool.get(i, SymbolicItem)
 
         self.er = ExtendedResultTestWrapper(SchemaStats())
 
@@ -56,33 +57,37 @@ class TestExtendedResult(TestCase):
                     self.assertEqual(0, value)
 
     def test_update_all(self):
-        state = sample(range(self.N_ITEMS), k=10)
-        view = ItemPoolStateView(state=state)
+        s_prev = [0, 1, 2]
+        s_curr = [1, 2, 3]
+
+        new = new_state(s_prev=s_prev, s_curr=s_curr)
+        lost = lost_state(s_prev=s_prev, s_curr=s_curr)
 
         # update all items in this state simulating case of action taken
-        self.er.update_all(view, activated=True)
+        self.er.update_all(activated=True, new=new, lost=lost)
 
         # test that all items in the state have been updated
-        for i in ItemPool():
-            item_stats = self.er.stats[i]
-            if i.state_element in state:
-                self.assertEqual(1, item_stats.n_on)
-                self.assertEqual(1, item_stats.n_on_and_activated)
+        for se in new:
+            item_stats = self.er.stats[self._item_pool.get(se)]
+            self.assertEqual(1, item_stats.n_on)
+            self.assertEqual(1, item_stats.n_on_and_activated)
 
-                self.assertEqual(0, item_stats.n_off)
-                self.assertEqual(0, item_stats.n_off_and_activated)
+            self.assertEqual(0, item_stats.n_off)
+            self.assertEqual(0, item_stats.n_off_and_activated)
 
-                self.assertEqual(0, item_stats.n_off_and_not_activated)
-                self.assertEqual(0, item_stats.n_on_and_not_activated)
-            else:
-                self.assertEqual(1, item_stats.n_off)
-                self.assertEqual(1, item_stats.n_off_and_activated)
+            self.assertEqual(0, item_stats.n_off_and_not_activated)
+            self.assertEqual(0, item_stats.n_on_and_not_activated)
 
-                self.assertEqual(0, item_stats.n_on)
-                self.assertEqual(0, item_stats.n_on_and_activated)
+        for se in lost:
+            item_stats = self.er.stats[self._item_pool.get(se)]
+            self.assertEqual(1, item_stats.n_off)
+            self.assertEqual(1, item_stats.n_off_and_activated)
 
-                self.assertEqual(0, item_stats.n_on_and_not_activated)
-                self.assertEqual(0, item_stats.n_off_and_not_activated)
+            self.assertEqual(0, item_stats.n_on)
+            self.assertEqual(0, item_stats.n_on_and_activated)
+
+            self.assertEqual(0, item_stats.n_on_and_not_activated)
+            self.assertEqual(0, item_stats.n_off_and_not_activated)
 
     def test_register_and_unregister(self):
         observer = MockObserver()

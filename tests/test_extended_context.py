@@ -8,6 +8,7 @@ from schema_mechanism.data_structures import NULL_EC_ITEM_STATS
 from schema_mechanism.data_structures import SchemaStats
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import create_item
+from test_share.test_classes import ExtendedContextTestWrapper
 from test_share.test_classes import MockObserver
 
 
@@ -21,8 +22,7 @@ class TestExtendedContext(TestCase):
         for i in range(self.N_ITEMS):
             pool.get(i, SymbolicItem)
 
-        self.schema_stats = SchemaStats()
-        self.ec = ExtendedContext(self.schema_stats)
+        self.ec = ExtendedContextTestWrapper()
 
         self.obs = MockObserver()
         self.ec.register(self.obs)
@@ -34,9 +34,6 @@ class TestExtendedContext(TestCase):
 
     def test_update(self):
         state = sample(range(self.N_ITEMS), k=10)
-
-        # simulate schema being activated with action taken
-        self.schema_stats.update(activated=True, success=True)
 
         # update an item from this state assuming the action was taken
         new_item = create_item(state[0])
@@ -62,9 +59,6 @@ class TestExtendedContext(TestCase):
     def test_update_all(self):
         state = sample(range(self.N_ITEMS), k=10)
         view = ItemPoolStateView(state=state)
-
-        # simulate schema being activated with action taken
-        self.schema_stats.update(activated=True, success=True)
 
         # update all items in this state simulating case of action taken
         self.ec.update_all(view, success=True)

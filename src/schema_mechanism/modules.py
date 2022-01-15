@@ -23,9 +23,11 @@
 # Update procedure for Extended Context
 from collections import Collection
 from typing import FrozenSet
+from typing import Optional
 
 from schema_mechanism.data_structures import Context
 from schema_mechanism.data_structures import ItemAssertion
+from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import Result
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import StateElement
@@ -50,7 +52,7 @@ def held_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement
 
     :return: a set containing state elements shared between current and previous state
     """
-    if s_curr is None:
+    if not all((s_prev, s_curr)):
         return frozenset()
 
     return frozenset([se for se in s_curr if se in s_prev])
@@ -64,7 +66,7 @@ def new_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement]
 
     :return: a set containing new state elements
     """
-    if s_curr is None:
+    if not all((s_prev, s_curr)):
         return frozenset()
 
     return frozenset([se for se in s_curr if se not in s_prev])
@@ -78,7 +80,7 @@ def lost_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement
 
     :return: a set containing lost state elements
     """
-    if s_prev is None:
+    if not all((s_prev, s_curr)):
         return frozenset()
 
     return frozenset([se for se in s_prev if se not in s_curr])
@@ -124,3 +126,28 @@ def create_spin_off(schema: Schema, mode: str, item_assert: ItemAssertion) -> Sc
 
     else:
         raise ValueError(f'Unknown spin-off mode: {mode}')
+
+
+def update_schema(schema: Schema,
+                  activated: bool,
+                  s_prev: Optional[Collection[StateElement]],
+                  s_curr: Collection[StateElement],
+                  count: int = 1) -> Schema:
+    """ Update the schema based on the previous and current state.
+
+    :param schema: the schema to update
+    :param activated: a bool indicated whether the schema was activated (explicitly or implicitly)
+    :param s_prev: a collection containing the previous state elements
+    :param s_curr: a collection containing the current state elements
+    :param count: the number of times to perform this update
+
+    :return: the updated schema
+    """
+    schema.update(activated=activated,
+                  v_prev=ItemPoolStateView(s_prev),
+                  v_curr=ItemPoolStateView(s_curr),
+                  new=new_state(s_prev, s_curr),
+                  lost=lost_state(s_prev, s_curr),
+                  count=count)
+
+    return schema
