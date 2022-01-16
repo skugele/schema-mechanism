@@ -1,3 +1,4 @@
+from time import time
 from unittest import TestCase
 
 import numpy as np
@@ -7,6 +8,13 @@ from schema_mechanism.data_structures import ReadOnlyERItemStats
 from schema_mechanism.data_structures import SchemaStats
 from test_share.test_classes import ECItemStatsTestWrapper
 from test_share.test_classes import ERItemStatsTestWrapper
+from test_share.test_func import is_eq_consistent
+from test_share.test_func import is_eq_reflexive
+from test_share.test_func import is_eq_symmetric
+from test_share.test_func import is_eq_transitive
+from test_share.test_func import is_eq_with_null_is_false
+from test_share.test_func import is_hash_consistent
+from test_share.test_func import is_hash_same_for_equal_objects
 
 
 class TestECItemStatistics(TestCase):
@@ -69,6 +77,78 @@ class TestECItemStatistics(TestCase):
         self.assertEqual(self.item_stats.success_corr, 0.8)
         self.assertEqual(self.item_stats.failure_corr, 0.2)
 
+    def test_copy(self):
+        copy = self.item_stats.copy()
+
+        self.assertEqual(self.item_stats, copy)
+        self.assertIsNot(self.item_stats, copy)
+
+    def test_equal(self):
+        self.item_stats.update(on=True, success=True)
+        self.item_stats.update(on=False, success=False)
+
+        copy = self.item_stats.copy()
+        other = ECItemStatsTestWrapper()
+
+        self.assertEqual(self.item_stats, copy)
+        self.assertNotEqual(self.item_stats, other)
+
+        self.assertTrue(is_eq_reflexive(self.item_stats))
+        self.assertTrue(is_eq_symmetric(x=self.item_stats, y=copy))
+        self.assertTrue(is_eq_transitive(x=self.item_stats, y=copy, z=copy.copy()))
+        self.assertTrue(is_eq_consistent(x=self.item_stats, y=copy))
+        self.assertTrue(is_eq_with_null_is_false(self.item_stats))
+
+    def test_hash(self):
+        self.item_stats.update(on=True, success=True)
+        self.item_stats.update(on=False, success=False)
+
+        self.assertIsInstance(hash(self.item_stats), int)
+        self.assertTrue(is_hash_consistent(self.item_stats))
+        self.assertTrue(is_hash_same_for_equal_objects(x=self.item_stats, y=self.item_stats.copy()))
+
+    def test_performance_equal(self):
+        self.item_stats.update(on=True, success=True)
+        self.item_stats.update(on=False, success=False)
+
+        copy = self.item_stats.copy()
+        other = ECItemStatsTestWrapper()
+
+        n_iters = 100_000
+
+        elapsed_time = 0
+        for _ in range(n_iters):
+            start = time()
+            _ = self.item_stats == other
+            end = time()
+            elapsed_time += end - start
+
+        print(f'Time for {n_iters:,} calls to ECItemStats.__eq__ (other IS NOT caller): {elapsed_time}s')
+
+        elapsed_time = 0
+        for _ in range(n_iters):
+            start = time()
+            _ = self.item_stats == copy
+            end = time()
+            elapsed_time += end - start
+
+        print(f'Time for {n_iters:,} calls to ECItemStats.__eq__ (other IS caller): {elapsed_time}s')
+
+    def test_performance_hash(self):
+        self.item_stats.update(on=True, success=True)
+        self.item_stats.update(on=False, success=False)
+
+        n_iters = 1_000_000
+
+        elapsed_time = 0
+        for _ in range(n_iters):
+            start = time()
+            _ = hash(self.item_stats)
+            end = time()
+            elapsed_time += end - start
+
+        print(f'Time for {n_iters:,} calls to ECItemStats.__hash__: {elapsed_time}s')
+
 
 class TestERItemStatistics(TestCase):
     def setUp(self) -> None:
@@ -128,6 +208,78 @@ class TestERItemStatistics(TestCase):
 
         self.assertEqual(self.item_stats.positive_transition_corr, 0.8)
         self.assertEqual(self.item_stats.negative_transition_corr, 0.2)
+
+    def test_copy(self):
+        copy = self.item_stats.copy()
+
+        self.assertEqual(self.item_stats, copy)
+        self.assertIsNot(self.item_stats, copy)
+
+    def test_equal(self):
+        self.item_stats.update(on=True, activated=True)
+        self.item_stats.update(on=False, activated=False)
+
+        copy = self.item_stats.copy()
+        other = ERItemStatsTestWrapper()
+
+        self.assertEqual(self.item_stats, copy)
+        self.assertNotEqual(self.item_stats, other)
+
+        self.assertTrue(is_eq_reflexive(self.item_stats))
+        self.assertTrue(is_eq_symmetric(x=self.item_stats, y=copy))
+        self.assertTrue(is_eq_transitive(x=self.item_stats, y=copy, z=copy.copy()))
+        self.assertTrue(is_eq_consistent(x=self.item_stats, y=copy))
+        self.assertTrue(is_eq_with_null_is_false(self.item_stats))
+
+    def test_hash(self):
+        self.item_stats.update(on=True, activated=True)
+        self.item_stats.update(on=False, activated=False)
+
+        self.assertIsInstance(hash(self.item_stats), int)
+        self.assertTrue(is_hash_consistent(self.item_stats))
+        self.assertTrue(is_hash_same_for_equal_objects(x=self.item_stats, y=self.item_stats.copy()))
+
+    def test_performance_equal(self):
+        self.item_stats.update(on=True, activated=True)
+        self.item_stats.update(on=False, activated=False)
+
+        copy = self.item_stats.copy()
+        other = ECItemStatsTestWrapper()
+
+        n_iters = 100_000
+
+        elapsed_time = 0
+        for _ in range(n_iters):
+            start = time()
+            _ = self.item_stats == other
+            end = time()
+            elapsed_time += end - start
+
+        print(f'Time for {n_iters:,} calls to ERItemStats.__eq__ (other IS NOT caller): {elapsed_time}s')
+
+        elapsed_time = 0
+        for _ in range(n_iters):
+            start = time()
+            _ = self.item_stats == copy
+            end = time()
+            elapsed_time += end - start
+
+        print(f'Time for {n_iters:,} calls to ERItemStats.__eq__ (other IS caller): {elapsed_time}s')
+
+    def test_performance_hash(self):
+        self.item_stats.update(on=True, activated=True)
+        self.item_stats.update(on=False, activated=False)
+
+        n_iters = 1_000_000
+
+        elapsed_time = 0
+        for _ in range(n_iters):
+            start = time()
+            _ = hash(self.item_stats)
+            end = time()
+            elapsed_time += end - start
+
+        print(f'Time for {n_iters:,} calls to ERItemStats.__hash__: {elapsed_time}s')
 
 
 class TestSchemaStats(TestCase):

@@ -365,6 +365,33 @@ class ECItemStats(ItemStats):
     def n_fail_and_off(self) -> int:
         return self._n_fail_and_off
 
+    def copy(self) -> ECItemStats:
+        new = ECItemStats(self._schema_stats)
+
+        new._n_success_and_on = self._n_success_and_on
+        new._n_success_and_off = self._n_success_and_off
+        new._n_fail_and_on = self._n_fail_and_on
+        new._n_fail_and_off = self._n_fail_and_off
+
+        return new
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, ECItemStats):
+            # the "s is o" check is to handle np.nan fields
+            return all({s is o or s == o for s, o in
+                        [[self._n_success_and_on, other._n_success_and_on],
+                         [self._n_success_and_off, other._n_success_and_off],
+                         [self._n_fail_and_on, other._n_fail_and_on],
+                         [self._n_fail_and_off, other._n_fail_and_off]]})
+
+        return False if other is None else NotImplemented
+
+    def __hash__(self):
+        return hash((self._n_success_and_on,
+                     self._n_success_and_off,
+                     self._n_fail_and_on,
+                     self._n_fail_and_off))
+
     def __str__(self) -> str:
         attr_values = (
             f'sc: {self.success_corr:.2}',
@@ -399,13 +426,6 @@ class ERItemStats(ItemStats):
         self._n_off_and_activated = 0
         self._n_off_and_not_activated = 0
 
-    # TODO: An external function is needed that will compare the corresponding item's state element
-    # TODO: to the state before and after an action is taken. If the item assertion is satisfied before
-    # TODO: the action is executed then NO UPDATE.
-
-    # "a trial for which the result was already satisfied before the action was taken does not count as a
-    # positive-transition trial; and one for which the result was already unsatisfied does not count
-    # as a negative-transition trial" (see Drescher, 1991, p. 72)
     def update(self, on: bool, activated: bool, count: int = 1) -> None:
         if on and activated:
             self._n_on_and_activated += count
@@ -483,6 +503,33 @@ class ERItemStats(ItemStats):
     @property
     def n_off_and_not_activated(self) -> int:
         return self._n_off_and_not_activated
+
+    def copy(self) -> ERItemStats:
+        new = ERItemStats(self._schema_stats)
+
+        new._n_on_and_activated = self._n_on_and_activated
+        new._n_on_and_not_activated = self._n_on_and_not_activated
+        new._n_off_and_activated = self._n_off_and_activated
+        new._n_off_and_not_activated = self._n_off_and_not_activated
+
+        return new
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, ERItemStats):
+            # the "s is o" check is to handle np.nan fields
+            return all({s is o or s == o for s, o in
+                        [[self._n_on_and_activated, other._n_on_and_activated],
+                         [self._n_off_and_activated, other._n_off_and_activated],
+                         [self._n_on_and_not_activated, other._n_on_and_not_activated],
+                         [self._n_off_and_not_activated, other._n_off_and_not_activated]]})
+
+        return False if other is None else NotImplemented
+
+    def __hash__(self):
+        return hash((self._n_on_and_activated,
+                     self._n_off_and_activated,
+                     self._n_on_and_not_activated,
+                     self._n_off_and_not_activated))
 
     def __str__(self) -> str:
         attr_values = (
@@ -741,6 +788,9 @@ class ExtendedResult(ExtendedItemCollection):
     def update_all(self, activated, new: Collection[StateElement], lost: Collection[StateElement],
                    count: int = 1) -> None:
 
+        # "a trial for which the result was already satisfied before the action was taken does not count as a
+        # positive-transition trial; and one for which the result was already unsatisfied does not count
+        # as a negative-transition trial" (see Drescher, 1991, p. 72)
         for se in new:
             self.update(item=self._item_pool.get(se), on=True, activated=activated, count=count)
 
