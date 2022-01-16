@@ -82,7 +82,7 @@ class TestSharedItemPool(TestCase):
         self.assertTrue(all(encountered[i] == 1 for i in range(100)))
 
     def test_performance(self):
-        n_items = 1_000_000
+        n_items = 100_000
 
         pool = ItemPool()
 
