@@ -167,16 +167,17 @@ class ItemAssertion(Item):
     def is_satisfied_in_view(self, view: ItemPoolStateView) -> bool:
         return self._negated and view.is_on(self._item)
 
+    def copy(self) -> ItemAssertion:
+        """ Performs a shallow copy of this ItemAssertion. """
+        return ItemAssertion(item=self.item, negated=self.negated)
+
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, ItemAssertion):
             return self._item == other._item and self._negated == other._negated
         elif isinstance(other, Item):
             return self._item == other
 
-        return NotImplemented
-
-    def __ne__(self, other: Any) -> bool:
-        return not self.__eq__(other)
+        return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
         """ Returns a hash of this object.
@@ -191,6 +192,10 @@ class ItemAssertion(Item):
 
     def __str__(self) -> str:
         return f'{"NOT" if self._negated else ""} {self._item.state_element}'
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'state_element': self.state_element,
+                               'negated': self.negated})
 
 
 class SchemaStats:
