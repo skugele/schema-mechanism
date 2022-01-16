@@ -1,37 +1,58 @@
-from random import randint
 from random import sample
 from time import time
 from unittest import TestCase
 
-import numpy as np
-
 from schema_mechanism.data_structures import SymbolicItem
+from test_share.test_func import is_eq_consistent
+from test_share.test_func import is_eq_reflexive
+from test_share.test_func import is_eq_symmetric
+from test_share.test_func import is_eq_transitive
+from test_share.test_func import is_eq_with_null_is_false
+from test_share.test_func import is_hash_consistent
+from test_share.test_func import is_hash_same_for_equal_objects
 
 
-class TestDiscreteItem(TestCase):
+class TestSymbolicItem(TestCase):
+
+    def setUp(self) -> None:
+        self.item = SymbolicItem(state_element=1234)
 
     def test_init(self):
-        i = SymbolicItem(state_element='1234')
-        self.assertEqual('1234', i.state_element)
+        self.assertEqual(1234, self.item.state_element)
 
     def test_is_on(self):
-        i = SymbolicItem(state_element='1234')
-
         # item expected to be ON for these states
-        self.assertTrue(i.is_on(state=['1234']))
-        self.assertTrue(i.is_on(state=['123', '1234']))
+        self.assertTrue(self.item.is_on(state=[1234]))
+        self.assertTrue(self.item.is_on(state=[123, 1234]))
 
         # item expected to be OFF for these states
-        self.assertFalse(i.is_on(state=[]))
-        self.assertFalse(i.is_on(state=['123']))
-        self.assertFalse(i.is_on(state=['123', '4321']))
+        self.assertFalse(self.item.is_on(state=[]))
+        self.assertFalse(self.item.is_on(state=[123]))
+        self.assertFalse(self.item.is_on(state=[123, 4321]))
+
+    def test_copy(self):
+        copy = self.item.copy()
+
+        self.assertEqual(self.item, copy)
+        self.assertIsNot(self.item, copy)
 
     def test_equal(self):
-        v1, v2 = '1234', '123'
-        i = SymbolicItem(state_element=v1)
+        copy = self.item.copy()
+        other = SymbolicItem(123)
 
-        self.assertEqual(i, SymbolicItem(state_element=v1))
-        self.assertNotEqual(i, SymbolicItem(state_element=v2))
+        self.assertEqual(self.item, copy)
+        self.assertNotEqual(self.item, other)
+
+        self.assertTrue(is_eq_reflexive(self.item))
+        self.assertTrue(is_eq_symmetric(x=self.item, y=copy))
+        self.assertTrue(is_eq_transitive(x=self.item, y=copy, z=copy.copy()))
+        self.assertTrue(is_eq_consistent(x=self.item, y=copy))
+        self.assertTrue(is_eq_with_null_is_false(self.item))
+
+    def test_hash(self):
+        self.assertIsInstance(hash(self.item), int)
+        self.assertTrue(is_hash_consistent(self.item))
+        self.assertTrue(is_hash_same_for_equal_objects(x=self.item, y=self.item.copy()))
 
     def test_performance(self):
         n_items = 100_000
@@ -44,7 +65,7 @@ class TestDiscreteItem(TestCase):
 
         start = time()
         for run in range(n_runs):
-            _ = map(lambda i: i.is_on(state), items)
+            _ = map(lambda i: self.item.is_on(state), items)
         end = time()
 
         # TODO: Need to add a test that includes an upper bound on the elapsed time

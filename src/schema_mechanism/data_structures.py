@@ -50,20 +50,17 @@ class Item(ABC):
         return not self.is_on(state, *args, **kwargs)
 
     @abstractmethod
-    def __eq__(self, other: Any):
-        pass
-
-    def __ne__(self, other: Any):
-        return not self.__eq__(other)
+    def copy(self) -> Item:
+        return NotImplemented
 
     # TODO: Need to be really careful with the default hash implementations which produce different values between
     # TODO: runs. This will kill and direct serialization/deserialization of data structures that rely on hashes.
-    @abstractmethod
-    def __hash__(self):
-        pass
 
     def __str__(self) -> str:
         return str(self._state_element)
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'state_element': str(self._state_element)})
 
 
 class ItemPool(metaclass=Singleton):
@@ -131,8 +128,13 @@ class SymbolicItem(Item):
     def is_on(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         return self.state_element in state
 
+    def copy(self) -> Item:
+        return SymbolicItem(self.state_element)
+
     def __eq__(self, other: Any) -> bool:
-        return self.state_element == other.state_element if isinstance(other, SymbolicItem) else NotImplemented
+        if isinstance(other, SymbolicItem):
+            return self.state_element == other.state_element
+        return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
         return hash(self.state_element)
@@ -545,25 +547,32 @@ class Action:
     _last_uid: int = 0
 
     def __init__(self, label: Optional[str] = None):
-        self.label = label
+        self._label = label
 
         self._uid = Action._gen_uid()
 
     @property
     def uid(self) -> int:
+        """ a globally unique id for this action
+
+        :return: returns this object's unique id
+        """
         return self._uid
 
+    @property
+    def label(self) -> Optional[str]:
+        """ A description of this action.
+
+        :return: returns the Action's label
+        """
+        return self._label
+
     def copy(self) -> Action:
+        # bypasses initializer to force reuse of uid
         copy = super().__new__(Action)
         copy._uid = self._uid
 
         return copy
-
-    @classmethod
-    def _gen_uid(cls) -> int:
-        # FIXME: not thread safe
-        cls._last_uid += 1
-        return cls._last_uid
 
     def __eq__(self, other):
         if isinstance(other, Action):
@@ -573,6 +582,19 @@ class Action:
 
     def __hash__(self) -> int:
         return hash(self._uid)
+
+    def __str__(self) -> str:
+        return str(self.uid)
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'uid': self.uid,
+                               'label': self.label})
+
+    @classmethod
+    def _gen_uid(cls) -> int:
+        # FIXME: not thread safe
+        cls._last_uid += 1
+        return cls._last_uid
 
 
 class StateAssertion:
