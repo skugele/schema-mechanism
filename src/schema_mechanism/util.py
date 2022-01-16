@@ -3,7 +3,6 @@ from typing import Any
 from typing import Dict
 from typing import Iterable
 from typing import List
-from uuid import uuid4
 
 import numpy as np
 import sklearn.metrics as sk_metrics
@@ -81,11 +80,7 @@ def get_orthogonal_vector(v: np.ndarray):
     return v_orth
 
 
-def get_unique_id():
-    return uuid4()
-
-
-def repr_str(obj: Any, attr_values: Dict[str, str]) -> str:
+def repr_str(obj: Any, attr_values: Dict[str, Any]) -> str:
     type_name = type(obj).__name__
 
     return f'{type_name}({attr_values})'
