@@ -3,6 +3,8 @@ from time import time
 from unittest import TestCase
 from unittest.mock import MagicMock
 
+import numpy as np
+
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import Context
 from schema_mechanism.data_structures import ItemPool
@@ -333,6 +335,63 @@ class TestSchema(TestCase):
                 self.assertEqual(0, er_stats.n_off_and_activated)
                 self.assertEqual(1, er_stats.n_off_and_not_activated)
 
+    def test_reliability_0(self):
+        # reliability before update should be NAN
+        self.assertIs(np.NAN, self.schema.reliability)
+
+    def test_reliability_1(self):
+        # success update
+        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=1)
+        self.assertEqual(1.0, self.schema.reliability)
+
+        # failure update
+        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 5], count=1)
+        self.assertEqual(0.5, self.schema.reliability)
+
+        # failure update
+        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 5], count=2)
+        self.assertEqual(0.25, self.schema.reliability)
+
+    def test_reliability_2(self):
+        # failure update
+        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 5], count=1)
+        self.assertEqual(0.0, self.schema.reliability)
+
+        # success update
+        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=1)
+        self.assertEqual(0.5, self.schema.reliability)
+
+        # success update
+        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=2)
+        self.assertEqual(0.75, self.schema.reliability)
+
+    def test_reliability_3(self):
+        # reliability stats SHOULD NOT affected when schema not activated
+
+        # failure update WITHOUT activation
+        update_schema(self.schema, activated=False, s_prev=[0, 1], s_curr=[2, 3, 5], count=1)
+        self.assertIs(np.NAN, self.schema.reliability)
+
+        # success update WITHOUT activation
+        update_schema(self.schema, activated=False, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=1)
+        self.assertIs(np.NAN, self.schema.reliability)
+
+        # failure update WITHOUT activation
+        update_schema(self.schema, activated=False, s_prev=[0, 1], s_curr=[2, 3, 5], count=1)
+        self.assertIs(np.NAN, self.schema.reliability)
+
+        # success update WITHOUT activation
+        update_schema(self.schema, activated=False, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=1)
+        self.assertIs(np.NAN, self.schema.reliability)
+
+        # success update WITH activation
+        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=1)
+        self.assertEqual(1.0, self.schema.reliability)
+
+        # failure update WITHOUT activation
+        update_schema(self.schema, activated=False, s_prev=[0, 1], s_curr=[2, 3, 5], count=1)
+        self.assertEqual(1.0, self.schema.reliability)
+
     def test_notify_all(self):
         self.schema.notify_all = MagicMock()
 
@@ -360,11 +419,19 @@ class TestSchema(TestCase):
         s_prev = sample(range(n_items), k=n_state_elements)
         s_curr = sample(range(n_items), k=n_state_elements)
 
+        v_prev = ItemPoolStateView(s_prev)
+        v_curr = ItemPoolStateView(s_curr)
+
+        new = new_state(s_prev, s_curr)
+        lost = lost_state(s_prev, s_curr)
+
+        # TODO: This is WAY too slow...
         start = time()
-        update_schema(self.schema,
-                      activated=True,
-                      s_prev=s_prev,
-                      s_curr=s_curr)
+        self.schema.update(activated=True,
+                           v_prev=v_prev,
+                           v_curr=v_curr,
+                           new=new,
+                           lost=lost)
         end = time()
         elapsed_time = end - start
 

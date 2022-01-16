@@ -140,7 +140,6 @@ class TestSchemaStats(TestCase):
         self.assertEqual(self.ss.n_not_activated, 0)
         self.assertEqual(self.ss.n_success, 0)
         self.assertEqual(self.ss.n_fail, 0)
-        self.assertEqual(self.ss.reliability, 0)
 
     def test_update(self):
         self.ss.update(activated=True, success=True, count=1)
@@ -199,18 +198,6 @@ class TestSchemaStats(TestCase):
         self.ss.update(activated=False, success=True, count=1)
         self.ss.update(activated=False, success=False, count=1)
         self.assertEqual(1, self.ss.n_success)
-
-    def test_reliability(self):
-        self.ss.update(activated=True, success=True, count=1)
-        self.assertEqual(1.0, self.ss.reliability)
-
-        self.ss.update(activated=True, success=False, count=1)
-        self.assertEqual(0.5, self.ss.reliability)
-
-        # must be activated to increment success
-        self.ss.update(activated=False, success=True, count=1)
-        self.ss.update(activated=False, success=False, count=1)
-        self.assertEqual(0.5, self.ss.reliability)
 
 
 class TestReadOnlyECItemStats(TestCase):

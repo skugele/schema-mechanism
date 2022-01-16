@@ -204,16 +204,6 @@ class SchemaStats:
         self._n_activated = 0
         self._n_success = 0
 
-        # TODO: Are duration and cost needed???
-
-        # The duration is the average time from the activation to the completion of an action.
-        # self.duration = Schema.INITIAL_DURATION
-
-        # The cost is the minimum (i.e., the greatest magnitude) of any negative-valued results
-        # of schemas that are implicitly activated as a side effect of the given schema’s [explicit]
-        # activation on that occasion (see Drescher, 1991, p.55).
-        # self.cost = Schema.INITIAL_COST
-
     def update(self, activated: bool = False, success: bool = False, count: int = 1):
         self._n += count
 
@@ -225,6 +215,12 @@ class SchemaStats:
 
     @property
     def n(self) -> int:
+        """ Returns the number of times this schema's stats were updated.
+
+            A schema is updated whenever its context is satisfied.
+
+            :return: the total number of schema updates (regardless of activation)
+        """
         return self._n
 
     @property
@@ -239,6 +235,12 @@ class SchemaStats:
 
     @property
     def n_not_activated(self) -> int:
+        """ Returns the number of times this schema was not chosen for activation (explicitly or implicitly).
+
+            “To activate a schema is to initiate its action when the schema is applicable.” (Drescher, 1991, p.53)
+
+            :return: the number of times the schema was not chosen for activation (explicit or implicit)
+        """
         return self._n - self._n_activated
 
     @property
@@ -254,42 +256,20 @@ class SchemaStats:
 
     @property
     def n_fail(self) -> int:
-        return self._n_activated - self._n_success
+        """ Returns the number of times this schema failed on activation.
 
-    @property
-    def p_success(self) -> float:
-        return self._n_success / self._n
+            “An activated schema is said to succeed if its predicted results all in fact obtain, and to
+            fail otherwise.” (Drescher, 1991, p.53)
 
-    @property
-    def p_fail(self) -> float:
-        return 1 - self.p_success
-
-    @property
-    def p_activated(self) -> float:
-        return self._n_activated / self._n
-
-    @property
-    def p_not_activated(self) -> float:
-        return 1 - self.p_activated
-
-    @property
-    def reliability(self) -> float:
-        """ Returns the schema's reliability (i.e., its probability of success) when activated.
-
-            "A schema's reliability is the probability with which the schema succeeds when activated."
-            (Drescher, 1991, p. 54)
-
-        :return: the schema's reliability
+        :return: the number of failures
         """
-        return 0.0 if self.n_activated == 0 else self.n_success / self.n_activated
+        return self._n_activated - self._n_success
 
     def __repr__(self):
         attr_values = {
+            'n': f'{self.n:,}',
             'n_activated': f'{self.n_activated:,}',
-            'n_not_activated': f'{self.n_not_activated:,}',
             'n_success': f'{self.n_success:,}',
-            'n_fail': f'{self.n_fail:,}',
-            'reliability': f'{self.reliability:,}',
         }
 
         return repr_str(self, attr_values)
@@ -849,12 +829,23 @@ class Schema(Observer, Observable):
         self._extended_context: ExtendedContext = ExtendedContext(self._stats)
         self._extended_result: ExtendedResult = ExtendedResult(self._stats)
 
+        # TODO: Need to update overriding conditions.
+        self._overriding_conditions: Optional[StateAssertion] = None
+
         # This observer registration is used to notify the schema when a relevant item has been detected in its
         # extended context or extended result
         self._extended_context.register(self)
         self._extended_result.register(self)
 
-        self._overriding_conditions: Optional[StateAssertion] = None
+        # TODO: Are duration or cost needed?
+
+        # The duration is the average time from the activation to the completion of an action.
+        # self.duration = Schema.INITIAL_DURATION
+
+        # The cost is the minimum (i.e., the greatest magnitude) of any negative-valued results
+        # of schemas that are implicitly activated as a side effect of the given schema’s [explicit]
+        # activation on that occasion (see Drescher, 1991, p.55).
+        # self.cost = Schema.INITIAL_COST
 
     @property
     def context(self) -> Context:
@@ -888,6 +879,17 @@ class Schema(Observer, Observable):
     @overriding_conditions.setter
     def overriding_conditions(self, overriding_conditions: StateAssertion) -> None:
         self._overriding_conditions = overriding_conditions
+
+    @property
+    def reliability(self) -> float:
+        """ Returns the schema's reliability (i.e., its probability of success) when activated.
+
+            "A schema's reliability is the probability with which the schema succeeds when activated."
+            (Drescher, 1991, p. 54)
+
+        :return: the schema's reliability
+        """
+        return np.NAN if self.stats.n_activated == 0 else self.stats.n_success / self.stats.n_activated
 
     @property
     def stats(self) -> SchemaStats:
