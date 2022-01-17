@@ -3,6 +3,7 @@ from unittest import TestCase
 
 import numpy as np
 
+import test_share
 from schema_mechanism.data_structures import ReadOnlyECItemStats
 from schema_mechanism.data_structures import ReadOnlyERItemStats
 from schema_mechanism.data_structures import SchemaStats
@@ -107,6 +108,7 @@ class TestECItemStatistics(TestCase):
         self.assertTrue(is_hash_consistent(self.item_stats))
         self.assertTrue(is_hash_same_for_equal_objects(x=self.item_stats, y=self.item_stats.copy()))
 
+    @test_share.performance_test
     def test_performance_equal(self):
         self.item_stats.update(on=True, success=True)
         self.item_stats.update(on=False, success=False)
@@ -123,7 +125,7 @@ class TestECItemStatistics(TestCase):
             end = time()
             elapsed_time += end - start
 
-        print(f'Time for {n_iters:,} calls to ECItemStats.__eq__ (other IS NOT caller): {elapsed_time}s')
+        print(f'Time for {n_iters:,} calls to ECItemStats.__eq__ comparing unequal objects: {elapsed_time}s')
 
         elapsed_time = 0
         for _ in range(n_iters):
@@ -132,8 +134,9 @@ class TestECItemStatistics(TestCase):
             end = time()
             elapsed_time += end - start
 
-        print(f'Time for {n_iters:,} calls to ECItemStats.__eq__ (other IS caller): {elapsed_time}s')
+        print(f'Time for {n_iters:,} calls to ECItemStats.__eq__ comparing equal objects: {elapsed_time}s')
 
+    @test_share.performance_test
     def test_performance_hash(self):
         self.item_stats.update(on=True, success=True)
         self.item_stats.update(on=False, success=False)
@@ -239,6 +242,7 @@ class TestERItemStatistics(TestCase):
         self.assertTrue(is_hash_consistent(self.item_stats))
         self.assertTrue(is_hash_same_for_equal_objects(x=self.item_stats, y=self.item_stats.copy()))
 
+    @test_share.performance_test
     def test_performance_equal(self):
         self.item_stats.update(on=True, activated=True)
         self.item_stats.update(on=False, activated=False)
@@ -255,7 +259,7 @@ class TestERItemStatistics(TestCase):
             end = time()
             elapsed_time += end - start
 
-        print(f'Time for {n_iters:,} calls to ERItemStats.__eq__ (other IS NOT caller): {elapsed_time}s')
+        print(f'Time for {n_iters:,} calls to ERItemStats.__eq__ comparing unequal objects: {elapsed_time}s')
 
         elapsed_time = 0
         for _ in range(n_iters):
@@ -264,8 +268,9 @@ class TestERItemStatistics(TestCase):
             end = time()
             elapsed_time += end - start
 
-        print(f'Time for {n_iters:,} calls to ERItemStats.__eq__ (other IS caller): {elapsed_time}s')
+        print(f'Time for {n_iters:,} calls to ERItemStats.__eq__ comparing equal objects: {elapsed_time}s')
 
+    @test_share.performance_test
     def test_performance_hash(self):
         self.item_stats.update(on=True, activated=True)
         self.item_stats.update(on=False, activated=False)

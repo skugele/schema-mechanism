@@ -3,6 +3,9 @@ from __future__ import annotations
 from abc import ABC
 from abc import abstractmethod
 from collections import defaultdict
+from enum import Enum
+from enum import auto
+from enum import unique
 from functools import lru_cache
 from typing import Any
 from typing import Collection
@@ -15,10 +18,12 @@ from typing import Optional
 from typing import Type
 
 import numpy as np
+from anytree import NodeMixin
 
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
+from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import repr_str
 
 # Type Aliases
@@ -102,7 +107,7 @@ class ReadOnlyItemPool(ItemPool):
 
 # TODO: What to do if the underlying item pool changes?
 class ItemPoolStateView:
-    def __init__(self, state: Collection[StateElement]):
+    def __init__(self, state: Optional[Collection[StateElement]]):
         # The state to which this view corresponds
         self._state = state
         self._on_items = set([item for item in ReadOnlyItemPool() if item.is_on(state)]) if state else set()
@@ -191,7 +196,7 @@ class ItemAssertion(Item):
         return hash(self._item)
 
     def __str__(self) -> str:
-        return f'{"NOT" if self._negated else ""} {self._item.state_element}'
+        return f'{"~" if self._negated else ""}{self._item.state_element}'
 
     def __repr__(self) -> str:
         return repr_str(self, {'state_element': self.state_element,
@@ -575,13 +580,13 @@ NULL_EC_ITEM_STATS = ReadOnlyECItemStats(NULL_SCHEMA_STATS)
 NULL_ER_ITEM_STATS = ReadOnlyERItemStats(NULL_SCHEMA_STATS)
 
 
-class Action:
+class Action(UniqueIdMixin):
     _last_uid: int = 0
 
     def __init__(self, label: Optional[str] = None):
-        self._label = label
+        super().__init__()
 
-        self._uid = Action._gen_uid()
+        self._label = label
 
     @property
     def uid(self) -> int:
@@ -622,17 +627,11 @@ class Action:
         return repr_str(self, {'uid': self.uid,
                                'label': self.label})
 
-    @classmethod
-    def _gen_uid(cls) -> int:
-        # FIXME: not thread safe
-        cls._last_uid += 1
-        return cls._last_uid
-
 
 class StateAssertion:
 
     def __init__(self, item_asserts: Optional[Collection[ItemAssertion, ...]] = None):
-        self._item_asserts = item_asserts or set()
+        self._item_asserts = frozenset(item_asserts) if item_asserts else frozenset()
 
     def __iter__(self) -> Iterator[ItemAssertion]:
         return iter(self._item_asserts)
@@ -642,6 +641,24 @@ class StateAssertion:
 
     def __contains__(self, item_assert: ItemAssertion) -> bool:
         return item_assert in self._item_asserts
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, StateAssertion):
+            return self._item_asserts == other._item_asserts
+
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self._item_asserts)
+
+    def __str__(self) -> str:
+        return ','.join(map(str, self._item_asserts))
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'item_asserts': str(self._item_asserts)})
+
+    def copy(self) -> StateAssertion:
+        return StateAssertion(self._item_asserts)
 
     def is_satisfied(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         """ Satisfied when all non-negated items are On, and all negated items are Off.
@@ -852,7 +869,8 @@ class ExtendedContext(ExtendedItemCollection):
             self.notify_all(source=self)
 
 
-class Schema(Observer, Observable):
+# TODO: Candidate for the flyweight pattern
+class Schema(Observer, Observable, NodeMixin, UniqueIdMixin):
     """
     a three-component data structure used to express a prediction about the environmental state that
     will result from taking a particular action when in a given environmental state (i.e., context).
@@ -864,7 +882,16 @@ class Schema(Observer, Observable):
     action were taken.
     """
 
-    def __init__(self, action: Action, context: Optional[Context] = None, result: Optional[Result] = None):
+    @unique
+    class SpinOffType(Enum):
+        CONTEXT = auto(),  # (see Drescher, 1991, p. 73)
+        RESULT = auto()  # (see Drescher, 1991, p. 71)
+
+    def __init__(self,
+                 action: Action,
+                 context: Optional[Context] = None,
+                 result: Optional[Result] = None,
+                 spin_off_type: Optional[Schema.SpinOffType] = None):
         super().__init__()
 
         self._context: Optional[Context] = context
@@ -881,6 +908,8 @@ class Schema(Observer, Observable):
 
         # TODO: Need to update overriding conditions.
         self._overriding_conditions: Optional[StateAssertion] = None
+
+        self._spin_off_type = spin_off_type
 
         # This observer registration is used to notify the schema when a relevant item has been detected in its
         # extended context or extended result
@@ -940,6 +969,10 @@ class Schema(Observer, Observable):
         :return: the schema's reliability
         """
         return np.NAN if self.stats.n_activated == 0 else self.stats.n_success / self.stats.n_activated
+
+    @property
+    def spin_off_type(self) -> Schema.SpinOffType:
+        return self._spin_off_type
 
     @property
     def stats(self) -> SchemaStats:
@@ -1007,3 +1040,45 @@ class Schema(Observer, Observable):
         self.notify_all(source=self,
                         ext_source=ext_source,
                         relevant_items=relevant_items)
+
+    def copy(self) -> Schema:
+        """ Returns a copy of this schema that is equal to its parent.
+
+            Note: The copy returned from this method replicates the immutable components of this schema. As such,
+            it is essentially the parent schema before any learning.
+
+        :return: a copy of this Schema
+        """
+        new = Schema(context=self._context,
+                     action=self._action,
+                     result=self._result,
+                     spin_off_type=self._spin_off_type)
+
+        new._uid = self._uid
+
+        return new
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Schema):
+            return all({s == o for s, o in
+                        [[self._context, other._context],
+                         [self._action, other._action],
+                         [self._result, other._result]]})
+
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash((self._context,
+                     self._action,
+                     self._result,))
+
+    def __str__(self) -> str:
+        return f'[{str(self.uid)}: {self.context}/{self.action}/{self.result}]'
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'uid': self.uid,
+                               'context': self.context,
+                               'action': self.action,
+                               'result': self.result,
+                               'overriding_conditions': self.overriding_conditions,
+                               'reliability': self.reliability, })

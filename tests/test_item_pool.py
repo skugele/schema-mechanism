@@ -3,6 +3,7 @@ from random import sample
 from time import time
 from unittest import TestCase
 
+import test_share
 from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import ReadOnlyItemPool
@@ -81,6 +82,7 @@ class TestSharedItemPool(TestCase):
         self.assertEqual(100, len(encountered))
         self.assertTrue(all(encountered[i] == 1 for i in range(100)))
 
+    @test_share.performance_test
     def test_performance(self):
         n_items = 100_000
 
@@ -174,6 +176,7 @@ class TestItemPoolStateView(TestCase):
             else:
                 self.assertFalse(view.is_on(i))
 
+    @test_share.performance_test
     def test_performance(self):
         n_items = 100_000
 

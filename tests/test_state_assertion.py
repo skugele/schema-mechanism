@@ -2,9 +2,22 @@ from unittest import TestCase
 
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.func_api import make_assertion
+from schema_mechanism.func_api import make_assertions
+from test_share.test_func import is_eq_consistent
+from test_share.test_func import is_eq_reflexive
+from test_share.test_func import is_eq_symmetric
+from test_share.test_func import is_eq_transitive
+from test_share.test_func import is_eq_with_null_is_false
+from test_share.test_func import is_hash_consistent
+from test_share.test_func import is_hash_same_for_equal_objects
 
 
 class TestStateAssertion(TestCase):
+    def setUp(self) -> None:
+        self.sa = StateAssertion((make_assertion('1'),
+                                  make_assertion('2', negated=True),
+                                  make_assertion('3')))
+
     def test_init(self):
         # Allow empty StateAssertion (no items)
         sa = StateAssertion()
@@ -84,3 +97,22 @@ class TestStateAssertion(TestCase):
             self.fail('Did\'t raise ValueError as expected!')
         except ValueError as e:
             self.assertEqual(str(e), 'ItemAssertion already exists in StateAssertion')
+
+    def test_equal(self):
+        copy = self.sa.copy()
+        other = StateAssertion(make_assertions((4, 5, 6)))
+
+        self.assertEqual(self.sa, self.sa)
+        self.assertEqual(self.sa, copy)
+        self.assertNotEqual(self.sa, other)
+
+        self.assertTrue(is_eq_reflexive(self.sa))
+        self.assertTrue(is_eq_symmetric(x=self.sa, y=copy))
+        self.assertTrue(is_eq_transitive(x=self.sa, y=copy, z=copy.copy()))
+        self.assertTrue(is_eq_consistent(x=self.sa, y=copy))
+        self.assertTrue(is_eq_with_null_is_false(self.sa))
+
+    def test_hash(self):
+        self.assertIsInstance(hash(self.sa), int)
+        self.assertTrue(is_hash_consistent(self.sa))
+        self.assertTrue(is_hash_same_for_equal_objects(x=self.sa, y=self.sa.copy()))

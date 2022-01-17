@@ -2,6 +2,7 @@ from random import sample
 from time import time
 from unittest import TestCase
 
+import test_share
 from schema_mechanism.data_structures import SymbolicItem
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
@@ -40,6 +41,7 @@ class TestSymbolicItem(TestCase):
         copy = self.item.copy()
         other = SymbolicItem(123)
 
+        self.assertEqual(self.item, self.item)
         self.assertEqual(self.item, copy)
         self.assertNotEqual(self.item, other)
 
@@ -54,6 +56,7 @@ class TestSymbolicItem(TestCase):
         self.assertTrue(is_hash_consistent(self.item))
         self.assertTrue(is_hash_same_for_equal_objects(x=self.item, y=self.item.copy()))
 
+    @test_share.performance_test
     def test_performance(self):
         n_items = 100_000
         n_runs = 100_000

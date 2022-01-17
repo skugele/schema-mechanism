@@ -8,6 +8,25 @@ import numpy as np
 import sklearn.metrics as sk_metrics
 
 
+class UniqueIdMixin:
+    _last_uid: int = 0
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        self._uid = self._gen_uid()
+
+    @property
+    def uid(self) -> int:
+        return self._uid
+
+    @classmethod
+    def _gen_uid(cls) -> int:
+        # FIXME: not thread safe
+        cls._last_uid += 1
+        return cls._last_uid
+
+
 class Observer:
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)

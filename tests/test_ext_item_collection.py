@@ -20,12 +20,6 @@ class TestExtendedItemCollection(TestCase):
         self.assertRaises(AttributeError, lambda: self.eic.relevant_items.add('x'))
         self.assertRaises(AttributeError, lambda: self.eic.relevant_items.clear())
 
-    def test_update_relevant_items(self):
-        self.assertEqual(0, len(self.eic.relevant_items))
-
-        self.eic.update_relevant_items(make_assertion(1, negated=True))
-        self.assertEqual(1, len(self.eic.relevant_items))
-
     def test_known_relevant_item(self):
         a1 = make_assertion(1)
         self.eic.update_relevant_items(a1)

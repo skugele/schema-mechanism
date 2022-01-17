@@ -4,7 +4,10 @@ from unittest import TestCase
 from unittest.mock import MagicMock
 
 import numpy as np
+from anytree import AsciiStyle
+from anytree import RenderTree
 
+import test_share
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import Context
 from schema_mechanism.data_structures import ItemPool
@@ -15,10 +18,18 @@ from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import make_assertion
 from schema_mechanism.func_api import make_assertions
+from schema_mechanism.func_api import update_schema
+from schema_mechanism.modules import create_spin_off
 from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
-from schema_mechanism.modules import update_schema
 from test_share.test_classes import MockObserver
+from test_share.test_func import is_eq_consistent
+from test_share.test_func import is_eq_reflexive
+from test_share.test_func import is_eq_symmetric
+from test_share.test_func import is_eq_transitive
+from test_share.test_func import is_eq_with_null_is_false
+from test_share.test_func import is_hash_consistent
+from test_share.test_func import is_hash_same_for_equal_objects
 
 
 class TestSchema(TestCase):
@@ -80,6 +91,8 @@ class TestSchema(TestCase):
             self.fail('Schema\'s action is not immutable as expected')
         except Exception as e:
             pass
+
+        self.assertEqual(None, self.schema.spin_off_type)
 
     def test_is_context_satisfied(self):
         c = Context((
@@ -407,7 +420,64 @@ class TestSchema(TestCase):
         update_schema(self.schema, activated=False, s_prev=[0, 3], s_curr=[4, 7, 8], count=10)
         self.schema.notify_all.assert_called()
 
-    def test_performance(self):
+    def test_copy(self):
+        copy = self.schema.copy()
+
+        self.assertEqual(self.schema, copy)
+        self.assertIsNot(self.schema, copy)
+
+    def test_equal(self):
+        copy = self.schema.copy()
+        other = Schema(
+            context=Context(make_assertions((1, 2))),
+            action=Action(),
+            result=Result(make_assertions((3, 4, 5)))
+        )
+
+        self.assertEqual(self.schema, self.schema)
+        self.assertEqual(self.schema, copy)
+        self.assertNotEqual(self.schema, other)
+
+        self.assertTrue(is_eq_reflexive(self.schema))
+        self.assertTrue(is_eq_symmetric(x=self.schema, y=copy))
+        self.assertTrue(is_eq_transitive(x=self.schema, y=copy, z=copy.copy()))
+        self.assertTrue(is_eq_consistent(x=self.schema, y=copy))
+        self.assertTrue(is_eq_with_null_is_false(self.schema))
+
+    def test_hash(self):
+        self.assertIsInstance(hash(self.schema), int)
+        self.assertTrue(is_hash_consistent(self.schema))
+        self.assertTrue(is_hash_same_for_equal_objects(x=self.schema, y=self.schema.copy()))
+
+    @test_share.string_test
+    def test_graph(self):
+        parent = Schema(action=Action())
+
+        child1 = create_spin_off(parent, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(1))
+        child2 = create_spin_off(parent, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(2))
+        child3 = create_spin_off(parent, mode=Schema.SpinOffType.RESULT, item_assert=make_assertion(3))
+        child4 = create_spin_off(parent, mode=Schema.SpinOffType.RESULT, item_assert=make_assertion(4))
+
+        parent.children += (child1, child2, child3, child4)
+
+        child1_1 = create_spin_off(child1, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(2))
+        child1_2 = create_spin_off(child1, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(3))
+
+        child1.children += (child1_1, child1_2)
+
+        child2_1 = create_spin_off(child2, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(1))
+        child2_2 = create_spin_off(child2, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(3))
+
+        child2.children += (child2_1, child2_2)
+
+        child3_1 = create_spin_off(parent, mode=Schema.SpinOffType.RESULT, item_assert=make_assertion(1))
+
+        child3.children += (child3_1,)
+
+        print(RenderTree(parent, style=AsciiStyle()).by_attr(lambda s: str(s)))
+
+    @test_share.performance_test
+    def test_performance_1(self):
         n_items = 10_000
         n_state_elements = 25
 
@@ -436,3 +506,71 @@ class TestSchema(TestCase):
         elapsed_time = end - start
 
         print(f'Time updating a schema with {n_items:,} items : {elapsed_time}s ')
+
+    @test_share.performance_test
+    def test_performance_2(self):
+        # NOTE: n_items does not seem to impact performance much
+        n_items = 100_000
+
+        # NOTE: elapsed time seems to scale linearly with n_context_elements
+        n_context_elements = 3
+
+        # NOTE: elapsed time seems to scale linearly with n_schemas
+        n_schemas = 10_000
+
+        # populate item pool
+        self._item_pool.clear()
+        for i in range(n_items):
+            self._item_pool.get(i)
+
+        schemas = [Schema(context=Context(make_assertions(sample(range(n_items), k=n_context_elements))),
+                          action=Action()) for _ in range(n_schemas)]
+
+        state = sample(range(n_items), k=n_context_elements)
+
+        start = time()
+        for s in schemas:
+            s.is_applicable(state)
+        end = time()
+        elapsed_time = end - start
+
+        print(f'Time determining if {n_schemas:,} schemas are applicable: {elapsed_time}s ')
+
+    @test_share.performance_test
+    def test_performance_3(self):
+        n_iters = 100_000
+
+        copy = self.schema.copy()
+        other = Schema(
+            context=Context(make_assertions((1, 2))),
+            action=Action(),
+            result=Result(make_assertions((3, 4, 5)))
+        )
+
+        start = time()
+        for _ in range(n_iters):
+            _ = self.schema == other
+        end = time()
+        elapsed_time = end - start
+
+        print(f'Time for {n_iters:,} calls to Schema.__eq__ comparing unequal objects: {elapsed_time}s ')
+
+        start = time()
+        for _ in range(n_iters):
+            _ = self.schema == copy
+        end = time()
+        elapsed_time = end - start
+
+        print(f'Time for {n_iters:,} calls to Schema.__eq__ comparing equal objects: {elapsed_time}s ')
+
+    @test_share.performance_test
+    def test_performance_4(self):
+        n_iters = 100_000
+
+        start = time()
+        for _ in range(n_iters):
+            _ = hash(self.schema)
+        end = time()
+        elapsed_time = end - start
+
+        print(f'Time for {n_iters:,} calls to Schema.__hash__: {elapsed_time}s ')
