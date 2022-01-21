@@ -1,8 +1,12 @@
+from random import sample
+from time import time
 from unittest import TestCase
 
+import test_share
+from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import StateAssertion
-from schema_mechanism.func_api import make_assertion
-from schema_mechanism.func_api import make_assertions
+from schema_mechanism.func_api import sym_assert
+from schema_mechanism.func_api import sym_state
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -14,9 +18,7 @@ from test_share.test_func import is_hash_same_for_equal_objects
 
 class TestStateAssertion(TestCase):
     def setUp(self) -> None:
-        self.sa = StateAssertion((make_assertion('1'),
-                                  make_assertion('2', negated=True),
-                                  make_assertion('3')))
+        self.sa = StateAssertion((sym_assert('1'), sym_assert('~2'), sym_assert('3')))
 
     def test_init(self):
         # Allow empty StateAssertion (no items)
@@ -24,14 +26,14 @@ class TestStateAssertion(TestCase):
         self.assertEqual(0, len(sa))
 
         # Support multiple assertions
-        sa = StateAssertion((make_assertion('1'),
-                             make_assertion('2', negated=True),
-                             make_assertion('3')))
-
+        sa = StateAssertion((sym_assert('1'), sym_assert('~2'), sym_assert('3')))
         self.assertEqual(3, len(sa))
+        self.assertIn(sym_assert('1'), sa)
+        self.assertIn(sym_assert('~2'), sa)
+        self.assertIn(sym_assert('3'), sa)
 
     def test_is_satisfied(self):
-        state = ['1', '2']
+        state = sym_state('1,2')
 
         # an empty StateAssertion should always be satisfied
         c = StateAssertion()
@@ -41,66 +43,80 @@ class TestStateAssertion(TestCase):
         #######################
 
         # expected to be satisfied
-        c = StateAssertion((make_assertion('1'),))
+        c = StateAssertion((sym_assert('1'),))
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = StateAssertion((make_assertion('3'),))
+        c = StateAssertion((sym_assert('3'),))
         self.assertFalse(c.is_satisfied(state))
 
         # multiple discrete items (all must be matched)
         ###############################################
 
         # expected to be satisfied
-        c = StateAssertion((make_assertion('1'),
-                            make_assertion('2')))
+        c = StateAssertion((sym_assert('1'), sym_assert('2')))
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
-        c = StateAssertion((make_assertion('1'),
-                            make_assertion('3')))
+        c = StateAssertion((sym_assert('1'), sym_assert('~2')))
         self.assertFalse(c.is_satisfied(state))
 
-        c = StateAssertion((make_assertion('1'),
-                            make_assertion('2'),
-                            make_assertion('3')))
+        c = StateAssertion((sym_assert('1'),
+                            sym_assert('3')))
+        self.assertFalse(c.is_satisfied(state))
+
+        c = StateAssertion((sym_assert('1'),
+                            sym_assert('2'),
+                            sym_assert('3')))
         self.assertFalse(c.is_satisfied(state))
 
     def test_is_contained(self):
-        sa = StateAssertion((make_assertion('1'),
-                             make_assertion('2')))
-
         # expected to be contained (discrete)
-        self.assertTrue(make_assertion('1') in sa)
+        self.assertTrue(sym_assert('1') in self.sa)
+        self.assertTrue(sym_assert('~2') in self.sa)
 
         # expected to be NOT contained (discrete)
-        self.assertFalse(make_assertion('3') in sa)
+        self.assertFalse(sym_assert('2') in self.sa)
+        self.assertFalse(sym_assert('4') in self.sa)
 
     def test_replicate_with(self):
         sa = StateAssertion()
 
         # 1st discrete item should be added
-        sa1 = sa.replicate_with(make_assertion('1'))
+        sa1 = sa.replicate_with(sym_assert('1'))
         self.assertIsNot(sa, sa1)
-        self.assertTrue(make_assertion('1') in sa1)
+        self.assertTrue(sym_assert('1') in sa1)
         self.assertEqual(1, len(sa1))
 
         # 2nd discrete item should be added
-        sa2 = sa1.replicate_with(make_assertion('2'))
+        sa2 = sa1.replicate_with(sym_assert('2'))
         self.assertIsNot(sa1, sa2)
-        self.assertTrue(make_assertion('2') in sa2)
+        self.assertTrue(sym_assert('2') in sa2)
         self.assertEqual(2, len(sa2))
 
         # identical discrete item should NOT be added
         try:
-            sa2.replicate_with(make_assertion('2'))
+            sa2.replicate_with(sym_assert('2'))
             self.fail('Did\'t raise ValueError as expected!')
         except ValueError as e:
             self.assertEqual(str(e), 'ItemAssertion already exists in StateAssertion')
 
+    def test_iterable(self):
+        count = 0
+        for _ in self.sa:
+            count += 1
+
+        self.assertEqual(3, count)
+
+    def test_len(self):
+        self.assertEqual(0, len(StateAssertion()))
+        self.assertEqual(3, len(self.sa))
+
     def test_equal(self):
         copy = self.sa.copy()
-        other = StateAssertion(make_assertions((4, 5, 6)))
+        other = StateAssertion((sym_assert('4'),
+                                sym_assert('5'),
+                                sym_assert('6')))
 
         self.assertEqual(self.sa, self.sa)
         self.assertEqual(self.sa, copy)
@@ -116,3 +132,42 @@ class TestStateAssertion(TestCase):
         self.assertIsInstance(hash(self.sa), int)
         self.assertTrue(is_hash_consistent(self.sa))
         self.assertTrue(is_hash_same_for_equal_objects(x=self.sa, y=self.sa.copy()))
+
+    @test_share.performance_test
+    def test_performance_1(self):
+        n_items = 100
+
+        pool = ItemPool()
+        for state_element in range(n_items):
+            pool.get(state_element)
+
+        n_iters = 10_000
+
+        elapsed_time = 0
+        for _ in range(n_iters):
+            state = sample(range(100), k=5)
+            pos_asserts = [sym_assert(f'{i}') for i in sample(range(0, 50), k=5)]
+            neg_asserts = [sym_assert(f'~{i}') for i in sample(range(50, 100), k=3)]
+
+            sa = StateAssertion((*pos_asserts, *neg_asserts))
+            start = time()
+            sa.is_satisfied(state)
+            end = time()
+            elapsed_time += end - start
+
+        print(f'Time to call StateAssertion.is_satisfied {n_iters:,} times: {elapsed_time}s')
+
+        # TODO: This is killing the unit tests. I have NO CLUE WHY! It runs fine separately.
+        # elapsed_time = 0
+        # for _ in range(n_iters):
+        #     view = ItemPoolStateView(sample(range(100), k=5))
+        #     pos_asserts = make_assertions(sample(range(0, 50), k=5))
+        #     neg_asserts = make_assertions(sample(range(50, 100), k=3), negated=True)
+        #
+        #     sa = StateAssertion((*pos_asserts, *neg_asserts))
+        #     start = time()
+        #     sa.is_satisfied_in_view(view)
+        #     end = time()
+        #     elapsed_time += end - start
+        #
+        # print(f'Time to call StateAssertion.is_satisfied_in_view {n_iters:,} times: {elapsed_time}s')

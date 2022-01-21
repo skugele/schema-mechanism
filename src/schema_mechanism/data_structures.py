@@ -145,12 +145,10 @@ class SymbolicItem(Item):
         return hash(self.state_element)
 
 
-class ItemAssertion(Item):
+class ItemAssertion:
     def __init__(self, item: Item, negated: bool = False) -> None:
         self._item = item
         self._negated = negated
-
-        super().__init__(item.state_element)
 
     @property
     def item(self) -> Item:
@@ -187,19 +185,15 @@ class ItemAssertion(Item):
     def __hash__(self) -> int:
         """ Returns a hash of this object.
 
-            Note: this implementation will cause a collision between negated and non-negated item assertions that
-            contain the same item. This was a deliberate design choice since the same item should never exist in
-            a collection as both negated and non-negated.
-
         :return: an integer hash of this object
         """
-        return hash(self._item)
+        return hash((self._item, self._negated))
 
     def __str__(self) -> str:
         return f'{"~" if self._negated else ""}{self._item.state_element}'
 
     def __repr__(self) -> str:
-        return repr_str(self, {'state_element': self.state_element,
+        return repr_str(self, {'item': self.item,
                                'negated': self.negated})
 
 
@@ -608,20 +602,24 @@ class Action(UniqueIdMixin):
         # bypasses initializer to force reuse of uid
         copy = super().__new__(Action)
         copy._uid = self._uid
+        copy._label = self._label
 
         return copy
 
     def __eq__(self, other):
         if isinstance(other, Action):
-            return self._uid == other._uid
+            if self._label and other._label:
+                return self._label == other._label
+            else:
+                return self._uid == other._uid
 
         return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
-        return hash(self._uid)
+        return hash(self._label or self._uid)
 
     def __str__(self) -> str:
-        return str(self.uid)
+        return self._label or str(self.uid)
 
     def __repr__(self) -> str:
         return repr_str(self, {'uid': self.uid,
@@ -631,34 +629,47 @@ class Action(UniqueIdMixin):
 class StateAssertion:
 
     def __init__(self, item_asserts: Optional[Collection[ItemAssertion, ...]] = None):
-        self._item_asserts = frozenset(item_asserts) if item_asserts else frozenset()
+        self._pos_asserts = frozenset(filter(lambda ia: not ia.negated, item_asserts)) if item_asserts else frozenset()
+        self._neg_asserts = frozenset(filter(lambda ia: ia.negated, item_asserts)) if item_asserts else frozenset()
 
     def __iter__(self) -> Iterator[ItemAssertion]:
-        return iter(self._item_asserts)
+        yield from self._pos_asserts
+        yield from self._neg_asserts
 
     def __len__(self) -> int:
-        return len(self._item_asserts)
+        return len(self._pos_asserts) + len(self._neg_asserts)
 
     def __contains__(self, item_assert: ItemAssertion) -> bool:
-        return item_assert in self._item_asserts
+        return (item_assert in self._neg_asserts if item_assert.negated
+                else item_assert in self._pos_asserts)
 
     def __eq__(self, other) -> bool:
         if isinstance(other, StateAssertion):
-            return self._item_asserts == other._item_asserts
+            return (self._pos_asserts == other._pos_asserts
+                    and self._neg_asserts == other._neg_asserts)
 
         return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
-        return hash(self._item_asserts)
+        return hash((self._pos_asserts, self._neg_asserts))
 
     def __str__(self) -> str:
-        return ','.join(map(str, self._item_asserts))
+        return ','.join(map(str, self))
 
     def __repr__(self) -> str:
-        return repr_str(self, {'item_asserts': str(self._item_asserts)})
+        return repr_str(self, {'item_asserts': str(self)})
 
     def copy(self) -> StateAssertion:
-        return StateAssertion(self._item_asserts)
+        """ Returns a shallow copy of this object.
+
+        :return: the copy
+        """
+        new = super().__new__(StateAssertion)
+
+        new._pos_asserts = self._pos_asserts
+        new._neg_asserts = self._neg_asserts
+
+        return new
 
     def is_satisfied(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         """ Satisfied when all non-negated items are On, and all negated items are Off.
@@ -668,7 +679,7 @@ class StateAssertion:
         :param kwargs: optional keyword arguments
         :return: True if this state assertion is satisfied given the current state; False otherwise.
         """
-        return all({i.is_satisfied(state, *args, **kwargs) for i in self._item_asserts})
+        return all({ia.is_satisfied(state, *args, **kwargs) for ia in self})
 
     def is_satisfied_in_view(self, view: ItemPoolStateView) -> bool:
         """ Satisfied when all non-negated items are On, and all negated items are Off.
@@ -676,23 +687,16 @@ class StateAssertion:
         :param view: an item pool view
         :return: True if this state assertion is satisfied given the current state; False otherwise.
         """
-        return all({view.is_on(i) for i in self._item_asserts})
+        return all({not ia.negated and view.is_on(ia.item) for ia in self})
 
     def replicate_with(self, item_assert: ItemAssertion) -> StateAssertion:
         if self.__contains__(item_assert):
             raise ValueError('ItemAssertion already exists in StateAssertion')
 
-        return StateAssertion(item_asserts=(*self._item_asserts, item_assert))
+        return StateAssertion(item_asserts=(*self, item_assert))
 
 
-# TODO: This class can probably be removed. Existing Contexts can be changed to StateAssertions.
-class Context(StateAssertion):
-    pass
-
-
-# TODO: This class can probably be removed. Existing Results can be changed to StateAssertions.
-class Result(StateAssertion):
-    pass
+NULL_STATE_ASSERT = StateAssertion()
 
 
 # TODO: There will be many shared item assertions between extended contexts and extended results. It would
@@ -735,8 +739,8 @@ class ExtendedItemCollection(Observable):
             self._relevant_items.add(item_assert)
             self._new_relevant_items.add(item_assert)
 
-    def known_relevant_item(self, item: Item) -> bool:
-        return item in self._relevant_items
+    def known_relevant_item(self, item_assert: ItemAssertion) -> bool:
+        return item_assert in self._relevant_items
 
     def notify_all(self, *args, **kwargs) -> None:
         if 'source' not in kwargs:
@@ -889,14 +893,14 @@ class Schema(Observer, Observable, NodeMixin, UniqueIdMixin):
 
     def __init__(self,
                  action: Action,
-                 context: Optional[Context] = None,
-                 result: Optional[Result] = None,
+                 context: Optional[StateAssertion] = None,
+                 result: Optional[StateAssertion] = None,
                  spin_off_type: Optional[Schema.SpinOffType] = None):
         super().__init__()
 
-        self._context: Optional[Context] = context
+        self._context: Optional[StateAssertion] = context or NULL_STATE_ASSERT
         self._action: Action = action
-        self._result: Optional[Result] = result
+        self._result: Optional[StateAssertion] = result or NULL_STATE_ASSERT
 
         if self.action is None:
             raise ValueError('Action cannot be None')
@@ -927,7 +931,7 @@ class Schema(Observer, Observable, NodeMixin, UniqueIdMixin):
         # self.cost = Schema.INITIAL_COST
 
     @property
-    def context(self) -> Context:
+    def context(self) -> StateAssertion:
         return self._context
 
     @property
@@ -935,7 +939,7 @@ class Schema(Observer, Observable, NodeMixin, UniqueIdMixin):
         return self._action
 
     @property
-    def result(self) -> Result:
+    def result(self) -> StateAssertion:
         return self._result
 
     @property
@@ -993,6 +997,13 @@ class Schema(Observer, Observable, NodeMixin, UniqueIdMixin):
         if self.overriding_conditions is not None:
             overridden = self.overriding_conditions.is_satisfied(state, *args, **kwargs)
         return (not overridden) and self.context.is_satisfied(state, *args, **kwargs)
+
+    def is_primitive(self) -> bool:
+        """ Returns whether this instance is a primitive (action-only) schema.
+
+        :return: True if this is a primitive schema; False otherwise.
+        """
+        return self.context is NULL_STATE_ASSERT and self.result is NULL_STATE_ASSERT
 
     def update(self,
                activated: bool,
@@ -1073,7 +1084,7 @@ class Schema(Observer, Observable, NodeMixin, UniqueIdMixin):
                      self._result,))
 
     def __str__(self) -> str:
-        return f'[{str(self.uid)}: {self.context}/{self.action}/{self.result}]'
+        return f'{self.context}/{self.action}/{self.result}'
 
     def __repr__(self) -> str:
         return repr_str(self, {'uid': self.uid,

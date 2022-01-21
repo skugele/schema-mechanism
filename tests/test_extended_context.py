@@ -2,12 +2,13 @@ from random import sample
 from unittest import TestCase
 
 from schema_mechanism.data_structures import ExtendedContext
+from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_EC_ITEM_STATS
 from schema_mechanism.data_structures import SchemaStats
 from schema_mechanism.data_structures import SymbolicItem
-from schema_mechanism.func_api import create_item
+from schema_mechanism.func_api import sym_item
 from test_share.test_classes import ExtendedContextTestWrapper
 from test_share.test_classes import MockObserver
 
@@ -36,7 +37,7 @@ class TestExtendedContext(TestCase):
         state = sample(range(self.N_ITEMS), k=10)
 
         # update an item from this state assuming the action was taken
-        new_item = create_item(state[0])
+        new_item = sym_item(state[0])
         self.ec.update(new_item, on=True, success=True)
 
         item_stats = self.ec.stats[new_item]
@@ -94,7 +95,7 @@ class TestExtendedContext(TestCase):
         self.assertNotIn(observer, self.ec.observers)
 
     def test_relevant_items(self):
-        items = [create_item(i) for i in range(5)]
+        items = [sym_item(str(i)) for i in range(5)]
 
         i1 = items[0]
 
@@ -121,7 +122,7 @@ class TestExtendedContext(TestCase):
 
         # verify only one relevant item
         self.assertEqual(1, len(self.ec.relevant_items))
-        self.assertIn(i1, self.ec.relevant_items)
+        self.assertIn(ItemAssertion(i1, negated=False), self.ec.relevant_items)
 
         # should add a 2nd relevant item
         i2 = items[1]
@@ -130,7 +131,7 @@ class TestExtendedContext(TestCase):
         self.ec.update(i2, on=False, success=False)
 
         self.assertEqual(2, len(self.ec.relevant_items))
-        self.assertIn(i2, self.ec.relevant_items)
+        self.assertIn(ItemAssertion(i2), self.ec.relevant_items)
 
         # number of new relevant items SHOULD be reset to zero after notifying observers
         self.ec.notify_all()

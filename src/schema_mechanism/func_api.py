@@ -1,28 +1,58 @@
 from typing import Collection
-from typing import Iterable
-from typing import MutableSet
+from typing import List
 from typing import Optional
+from typing import Tuple
 
+from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import Item
 from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import Schema
+from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import StateElement
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
 
 
-def create_item(state_element: StateElement) -> Item:
-    return SymbolicItem(state_element)
+def sym_state(str_repr: str) -> Collection[StateElement]:
+    if not str_repr:
+        return []
+
+    # TODO: generalize the string -> int conversion to support other types
+    return [int(se) for se in str_repr.split(',')]
 
 
-def make_assertion(state_element: StateElement, negated: bool = False) -> ItemAssertion:
-    return ItemAssertion(item=create_item(state_element), negated=negated)
+def sym_item(str_repr: str) -> Item:
+    # TODO: generalize the string -> int conversion to support other types
+    return SymbolicItem(int(str_repr))
 
 
-def make_assertions(state_elements: Iterable[StateElement], negated: bool = False) -> MutableSet[ItemAssertion]:
-    return set([ItemAssertion(item=create_item(se), negated=negated) for se in state_elements])
+def sym_assert(str_repr: str) -> ItemAssertion:
+    negated = False
+    if '~' == str_repr[0]:
+        negated = True
+        str_repr = str_repr[1:]
+
+    return ItemAssertion(sym_item(str_repr), negated)
+
+
+def sym_state_assert(str_repr: str) -> StateAssertion:
+    if not str_repr:
+        return StateAssertion()
+    tokens = str_repr.split(',')
+    item_asserts = [sym_assert(ia_str) for ia_str in tokens]
+    return StateAssertion(item_asserts)
+
+
+def sym_schema(str_repr: str) -> Schema:
+    context_str, action_str, result_str = str_repr.split('/')
+    if not action_str:
+        raise ValueError('An action is required.')
+
+    return Schema(context=sym_state_assert(context_str),
+                  action=Action(action_str),
+                  result=sym_state_assert(result_str))
 
 
 def update_schema(schema: Schema,
@@ -48,3 +78,15 @@ def update_schema(schema: Schema,
                   count=count)
 
     return schema
+
+
+def actions(n: Optional[int] = None, labels: Optional[List] = None) -> Collection[Action]:
+    return (
+        [Action(label) for label in labels] if labels else
+        [Action(str(i)) for i in range(1, n + 1)] if n else
+        []
+    )
+
+
+def primitive_schemas(actions: Collection[Action]) -> Tuple[Schema]:
+    return tuple([Schema(action=a) for a in actions])

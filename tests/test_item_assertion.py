@@ -1,7 +1,7 @@
 from unittest import TestCase
 
 from schema_mechanism.data_structures import ItemAssertion
-from schema_mechanism.func_api import create_item
+from schema_mechanism.func_api import sym_item
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -14,7 +14,7 @@ from test_share.test_func import is_hash_same_for_equal_objects
 class TestItemAssertion(TestCase):
 
     def setUp(self) -> None:
-        self.item = create_item(1234)
+        self.item = sym_item('1234')
         self.ia = ItemAssertion(self.item)
         self.ia_neg = ItemAssertion(self.item, negated=True)
 
@@ -35,7 +35,7 @@ class TestItemAssertion(TestCase):
             pass
 
         try:
-            self.ia.item = create_item('illegal')
+            self.ia.item = sym_item('illegal')
             self.fail('ItemAssertion is not immutable as expected: able to set negated directly')
         except Exception:
             pass
@@ -74,7 +74,7 @@ class TestItemAssertion(TestCase):
 
     def test_equal(self):
         copy = self.ia.copy()
-        other = ItemAssertion(create_item(123))
+        other = ItemAssertion(sym_item('123'))
 
         self.assertEqual(self.ia, copy)
         self.assertNotEqual(self.ia, other)
@@ -96,7 +96,3 @@ class TestItemAssertion(TestCase):
         self.assertIsInstance(hash(self.ia), int)
         self.assertTrue(is_hash_consistent(self.ia))
         self.assertTrue(is_hash_same_for_equal_objects(x=self.ia, y=self.ia.copy()))
-        self.assertTrue(is_hash_same_for_equal_objects(x=self.ia, y=self.ia.item))
-
-        # hash of positive and negative assertions are the same
-        self.assertEqual(hash(self.ia), hash(self.ia_neg))

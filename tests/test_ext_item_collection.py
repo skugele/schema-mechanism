@@ -2,7 +2,7 @@ from unittest import TestCase
 
 from schema_mechanism.data_structures import ExtendedItemCollection
 from schema_mechanism.data_structures import SchemaStats
-from schema_mechanism.func_api import make_assertion
+from schema_mechanism.func_api import sym_assert
 from test_share.test_classes import MockObserver
 
 
@@ -21,11 +21,11 @@ class TestExtendedItemCollection(TestCase):
         self.assertRaises(AttributeError, lambda: self.eic.relevant_items.clear())
 
     def test_known_relevant_item(self):
-        a1 = make_assertion(1)
+        a1 = sym_assert('1')
         self.eic.update_relevant_items(a1)
         self.assertTrue(self.eic.known_relevant_item(a1))
 
-        a2 = make_assertion(2)
+        a2 = sym_assert('2')
         self.assertFalse(self.eic.known_relevant_item(a2))
 
     def test_register_and_unregister(self):
@@ -39,7 +39,7 @@ class TestExtendedItemCollection(TestCase):
 
     def test_update_relevant_items(self):
         self.assertEqual(0, len(self.eic.new_relevant_items))
-        self.eic.update_relevant_items(make_assertion(1))
+        self.eic.update_relevant_items(sym_assert('1'))
         self.assertEqual(1, len(self.eic.new_relevant_items))
 
     def test_notify_all(self):
@@ -59,7 +59,7 @@ class TestExtendedItemCollection(TestCase):
         self.assertIs('alternate', self.obs.last_message['kwargs']['source'])
 
         # test notify_all clears new_relevant_items
-        a1 = make_assertion(1)
+        a1 = sym_assert('1')
         self.eic.update_relevant_items(a1)
         self.assertEqual(1, len(self.eic.relevant_items))
         self.assertEqual(1, len(self.eic.new_relevant_items))

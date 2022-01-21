@@ -4,22 +4,18 @@ from unittest import TestCase
 from unittest.mock import MagicMock
 
 import numpy as np
-from anytree import AsciiStyle
-from anytree import RenderTree
 
 import test_share
 from schema_mechanism.data_structures import Action
-from schema_mechanism.data_structures import Context
 from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import ItemPoolStateView
-from schema_mechanism.data_structures import Result
+from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import SymbolicItem
-from schema_mechanism.func_api import make_assertion
-from schema_mechanism.func_api import make_assertions
+from schema_mechanism.func_api import sym_state
+from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.func_api import update_schema
-from schema_mechanism.modules import create_spin_off
 from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
 from test_share.test_classes import MockObserver
@@ -40,9 +36,9 @@ class TestSchema(TestCase):
         for i in range(10):
             _ = self._item_pool.get(i, SymbolicItem)
 
-        self.context = Context(make_assertions((0, 1)))
+        self.context = sym_state_assert('0,1')
         self.action = Action()
-        self.result = Result(make_assertions((2, 3, 4)))
+        self.result = sym_state_assert('2,3,4')
 
         self.schema = Schema(
             context=self.context,
@@ -64,24 +60,24 @@ class TestSchema(TestCase):
         # Context and Result CAN be None
         try:
             s = Schema(action=Action('My Action'))
-            self.assertIsNone(s.context)
-            self.assertIsNone(s.result)
+            self.assertIs(s.context, NULL_STATE_ASSERT)
+            self.assertIs(s.result, NULL_STATE_ASSERT)
         except Exception as e:
             self.fail(f'Unexpected exception raised: {e}')
 
         # Verify immutability
-        s = Schema(context=Context(item_asserts=(make_assertion('1'),)),
+        s = Schema(context=sym_state_assert('1'),
                    action=Action(),
-                   result=Result(item_asserts=(make_assertion('2'),)))
+                   result=sym_state_assert('2'))
 
         try:
-            s.context = Context()
+            s.context = StateAssertion()
             self.fail('Schema\'s context is not immutable as expected')
         except Exception as e:
             pass
 
         try:
-            s.result = Result()
+            s.result = StateAssertion()
             self.fail('Schema\'s result is not immutable as expected')
         except Exception as e:
             pass
@@ -95,75 +91,69 @@ class TestSchema(TestCase):
         self.assertEqual(None, self.schema.spin_off_type)
 
     def test_is_context_satisfied(self):
-        c = Context((
-            make_assertion('1'),
-            make_assertion('2', negated=True),
-            make_assertion('3')
-        ))
-
+        c = sym_state_assert('1,~2,3')
         schema = Schema(context=c, action=Action(), result=None)
 
         # expected to be satisfied
         ##########################
-        self.assertTrue(schema.context.is_satisfied(state=['1', '3']))
-        self.assertTrue(schema.context.is_satisfied(state=['1', '3', '4']))
+        self.assertTrue(schema.context.is_satisfied(state=sym_state('1,3')))
+        self.assertTrue(schema.context.is_satisfied(state=sym_state('1,3,4')))
 
         # expected to NOT be satisfied
         ##############################
         # case 1: present negated item
-        self.assertFalse(schema.context.is_satisfied(state=['1', '2', '3']))
+        self.assertFalse(schema.context.is_satisfied(state=sym_state('1,2,3')))
 
         # case 2: missing non-negated item
-        self.assertFalse(schema.context.is_satisfied(state=['1']))
-        self.assertFalse(schema.context.is_satisfied(state=['3']))
+        self.assertFalse(schema.context.is_satisfied(state=sym_state('1')))
+        self.assertFalse(schema.context.is_satisfied(state=sym_state('3')))
 
         # case 3 : both present negated item and missing non-negated item
-        self.assertFalse(schema.context.is_satisfied(state=['1', '2']))
-        self.assertFalse(schema.context.is_satisfied(state=['2', '3']))
+        self.assertFalse(schema.context.is_satisfied(state=sym_state('1,2')))
+        self.assertFalse(schema.context.is_satisfied(state=sym_state('2,3')))
 
     def test_is_applicable(self):
-        c = Context(
-            item_asserts=(
-                make_assertion('1'),
-                make_assertion('2', negated=True),
-                make_assertion('3'),
-            ))
+        # primitive schemas should always be applicable
+        schema = Schema(action=Action())
+        self.assertTrue(schema.is_applicable(state=['1']))
+
+        c = sym_state_assert('1,~2,3')
 
         schema = Schema(context=c, action=Action(), result=None)
 
         # expected to be applicable
         ##########################
-        self.assertTrue(schema.is_applicable(state=['1', '3']))
-        self.assertTrue(schema.is_applicable(state=['1', '3', '4']))
+        self.assertTrue(schema.is_applicable(state=sym_state('1,3')))
+        self.assertTrue(schema.is_applicable(state=sym_state('1,3,4')))
 
         # expected to NOT be applicable
         ###############################
 
         # case 1: present negated item
-        self.assertFalse(schema.is_applicable(state=['1', '2', '3']))
+        self.assertFalse(schema.is_applicable(state=sym_state('1,2,3')))
 
         # case 2: missing non-negated item
-        self.assertFalse(schema.is_applicable(state=['1']))
-        self.assertFalse(schema.is_applicable(state=['3']))
+        self.assertFalse(schema.is_applicable(state=sym_state('1')))
+        self.assertFalse(schema.is_applicable(state=sym_state('3')))
 
         # case 3 : both present negated item and missing non-negated item
-        self.assertFalse(schema.is_applicable(state=['1', '2']))
-        self.assertFalse(schema.is_applicable(state=['2', '3']))
+        self.assertFalse(schema.is_applicable(state=sym_state('1,2')))
+        self.assertFalse(schema.is_applicable(state=sym_state('2,3')))
 
         # Tests overriding conditions
         #############################
-        schema.overriding_conditions = StateAssertion((make_assertion('5'),))
+        schema.overriding_conditions = sym_state_assert('5')
 
         # expected to be applicable
-        self.assertTrue(schema.is_applicable(state=['1', '3', '4']))
+        self.assertTrue(schema.is_applicable(state=sym_state('1,3,4')))
 
         # expected to NOT be applicable (due to overriding condition)
-        self.assertFalse(schema.is_applicable(state=['1', '3', '4', '5']))
+        self.assertFalse(schema.is_applicable(state=sym_state('1,3,4,5')))
 
     def test_update_1(self):
         # activated + success
-        s_prev = [0, 1, 2, 3]
-        s_curr = [2, 3, 4, 5]
+        s_prev = sym_state('0,1,2,3')
+        s_curr = sym_state('2,3,4,5')
 
         v_prev = ItemPoolStateView(s_prev)
         v_curr = ItemPoolStateView(s_curr)
@@ -429,9 +419,9 @@ class TestSchema(TestCase):
     def test_equal(self):
         copy = self.schema.copy()
         other = Schema(
-            context=Context(make_assertions((1, 2))),
+            context=sym_state_assert('1,2'),
             action=Action(),
-            result=Result(make_assertions((3, 4, 5)))
+            result=sym_state_assert('3,4,5'),
         )
 
         self.assertEqual(self.schema, self.schema)
@@ -448,33 +438,6 @@ class TestSchema(TestCase):
         self.assertIsInstance(hash(self.schema), int)
         self.assertTrue(is_hash_consistent(self.schema))
         self.assertTrue(is_hash_same_for_equal_objects(x=self.schema, y=self.schema.copy()))
-
-    @test_share.string_test
-    def test_graph(self):
-        parent = Schema(action=Action())
-
-        child1 = create_spin_off(parent, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(1))
-        child2 = create_spin_off(parent, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(2))
-        child3 = create_spin_off(parent, mode=Schema.SpinOffType.RESULT, item_assert=make_assertion(3))
-        child4 = create_spin_off(parent, mode=Schema.SpinOffType.RESULT, item_assert=make_assertion(4))
-
-        parent.children += (child1, child2, child3, child4)
-
-        child1_1 = create_spin_off(child1, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(2))
-        child1_2 = create_spin_off(child1, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(3))
-
-        child1.children += (child1_1, child1_2)
-
-        child2_1 = create_spin_off(child2, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(1))
-        child2_2 = create_spin_off(child2, mode=Schema.SpinOffType.CONTEXT, item_assert=make_assertion(3))
-
-        child2.children += (child2_1, child2_2)
-
-        child3_1 = create_spin_off(parent, mode=Schema.SpinOffType.RESULT, item_assert=make_assertion(1))
-
-        child3.children += (child3_1,)
-
-        print(RenderTree(parent, style=AsciiStyle()).by_attr(lambda s: str(s)))
 
     @test_share.performance_test
     def test_performance_1(self):
@@ -523,8 +486,10 @@ class TestSchema(TestCase):
         for i in range(n_items):
             self._item_pool.get(i)
 
-        schemas = [Schema(context=Context(make_assertions(sample(range(n_items), k=n_context_elements))),
-                          action=Action()) for _ in range(n_schemas)]
+        schemas = [
+            Schema(context=sym_state_assert(','.join(str(i) for i in sample(range(n_items), k=n_context_elements))),
+                   action=Action()) for _ in range(n_schemas)
+        ]
 
         state = sample(range(n_items), k=n_context_elements)
 
@@ -542,9 +507,9 @@ class TestSchema(TestCase):
 
         copy = self.schema.copy()
         other = Schema(
-            context=Context(make_assertions((1, 2))),
+            context=sym_state_assert('1,2'),
             action=Action(),
-            result=Result(make_assertions((3, 4, 5)))
+            result=sym_state_assert('3,4,5'),
         )
 
         start = time()
@@ -574,3 +539,8 @@ class TestSchema(TestCase):
         elapsed_time = end - start
 
         print(f'Time for {n_iters:,} calls to Schema.__hash__: {elapsed_time}s ')
+
+    @test_share.string_test
+    def test_str(self):
+        schema = Schema(action=Action('A1'))
+        print(schema)

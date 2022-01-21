@@ -27,8 +27,9 @@ class TestAction(TestCase):
         self.assertEqual(a1, a1)
         self.assertNotEqual(a1, a2)
 
-        # labels should not be used for equality
-        self.assertNotEqual(Action('label 1'), Action('label 1'))
+        # labels are used for equality (if they exist)
+        self.assertEqual(Action('label 1'), Action('label 1'))
+        self.assertNotEqual(Action('label 1'), Action('label 2'))
 
         self.assertTrue(is_eq_with_null_is_false(a1))
 
