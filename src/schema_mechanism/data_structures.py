@@ -13,12 +13,12 @@ from typing import Dict
 from typing import FrozenSet
 from typing import Hashable
 from typing import Iterator
+from typing import List
 from typing import MutableSet
 from typing import Optional
 from typing import Type
 
 import numpy as np
-from anytree import NodeMixin
 
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
@@ -797,12 +797,14 @@ class ExtendedResult(ExtendedItemCollection):
         item_stats.update(on=on, activated=activated, count=count)
 
         if item_stats.positive_transition_corr > self.POS_CORR_RELEVANCE_THRESHOLD:
-            if not self.known_relevant_item(item):
-                self.update_relevant_items(ItemAssertion(item))
+            item_assert = ItemAssertion(item)
+            if not self.known_relevant_item(item_assert):
+                self.update_relevant_items(item_assert)
 
         elif item_stats.negative_transition_corr > self.NEG_CORR_RELEVANCE_THRESHOLD:
-            if not self.known_relevant_item(item):
-                self.update_relevant_items(ItemAssertion(item, negated=True))
+            item_assert = ItemAssertion(item, negated=True)
+            if not self.known_relevant_item(item_assert):
+                self.update_relevant_items(item_assert)
 
     # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
     # TODO: statistics.
@@ -856,12 +858,14 @@ class ExtendedContext(ExtendedItemCollection):
         item_stats.update(on, success, count)
 
         if item_stats.success_corr > self.POS_CORR_RELEVANCE_THRESHOLD:
-            if not self.known_relevant_item(item):
+            item_assert = ItemAssertion(item)
+            if not self.known_relevant_item(item_assert):
                 self.update_relevant_items(ItemAssertion(item))
 
         elif item_stats.failure_corr > self.NEG_CORR_RELEVANCE_THRESHOLD:
-            if not self.known_relevant_item(item):
-                self.update_relevant_items(ItemAssertion(item, negated=True))
+            item_assert = ItemAssertion(item, negated=True)
+            if not self.known_relevant_item(item_assert):
+                self.update_relevant_items(item_assert)
 
     # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
     # TODO: statistics.
@@ -874,7 +878,7 @@ class ExtendedContext(ExtendedItemCollection):
 
 
 # TODO: Candidate for the flyweight pattern
-class Schema(Observer, Observable, NodeMixin, UniqueIdMixin):
+class Schema(Observer, Observable, UniqueIdMixin):
     """
     a three-component data structure used to express a prediction about the environmental state that
     will result from taking a particular action when in a given environmental state (i.e., context).
@@ -894,8 +898,7 @@ class Schema(Observer, Observable, NodeMixin, UniqueIdMixin):
     def __init__(self,
                  action: Action,
                  context: Optional[StateAssertion] = None,
-                 result: Optional[StateAssertion] = None,
-                 spin_off_type: Optional[Schema.SpinOffType] = None):
+                 result: Optional[StateAssertion] = None):
         super().__init__()
 
         self._context: Optional[StateAssertion] = context or NULL_STATE_ASSERT
@@ -913,12 +916,12 @@ class Schema(Observer, Observable, NodeMixin, UniqueIdMixin):
         # TODO: Need to update overriding conditions.
         self._overriding_conditions: Optional[StateAssertion] = None
 
-        self._spin_off_type = spin_off_type
-
         # This observer registration is used to notify the schema when a relevant item has been detected in its
         # extended context or extended result
         self._extended_context.register(self)
         self._extended_result.register(self)
+
+        self._result_spinoffs: List[Schema] = list()
 
         # TODO: Are duration or cost needed?
 
@@ -975,12 +978,16 @@ class Schema(Observer, Observable, NodeMixin, UniqueIdMixin):
         return np.NAN if self.stats.n_activated == 0 else self.stats.n_success / self.stats.n_activated
 
     @property
-    def spin_off_type(self) -> Schema.SpinOffType:
-        return self._spin_off_type
-
-    @property
     def stats(self) -> SchemaStats:
         return self._stats
+
+    @property
+    def result_spinoffs(self) -> List[Schema]:
+        return self._result_spinoffs
+
+    @result_spinoffs.setter
+    def result_spinoffs(self, new_value) -> None:
+        self._result_spinoffs = new_value
 
     def is_applicable(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         """ A schema is applicable when its context is satisfied and there are no active overriding conditions.
@@ -1062,8 +1069,7 @@ class Schema(Observer, Observable, NodeMixin, UniqueIdMixin):
         """
         new = Schema(context=self._context,
                      action=self._action,
-                     result=self._result,
-                     spin_off_type=self._spin_off_type)
+                     result=self._result)
 
         new._uid = self._uid
 

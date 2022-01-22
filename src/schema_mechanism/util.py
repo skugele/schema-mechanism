@@ -1,4 +1,5 @@
 from abc import ABCMeta
+from itertools import tee
 from typing import Any
 from typing import Dict
 from typing import Iterable
@@ -103,3 +104,10 @@ def repr_str(obj: Any, attr_values: Dict[str, Any]) -> str:
     type_name = type(obj).__name__
 
     return f'{type_name}({attr_values})'
+
+
+# note: this is available in standard Python starting in 3.10
+def pairwise(iterable):
+    a, b = tee(iterable)
+    next(b, None)
+    return zip(a, b)

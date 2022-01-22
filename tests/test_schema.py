@@ -88,8 +88,6 @@ class TestSchema(TestCase):
         except Exception as e:
             pass
 
-        self.assertEqual(None, self.schema.spin_off_type)
-
     def test_is_context_satisfied(self):
         c = sym_state_assert('1,~2,3')
         schema = Schema(context=c, action=Action(), result=None)

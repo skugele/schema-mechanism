@@ -11,6 +11,7 @@ from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import StateElement
 from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.modules import SchemaTreeNode
 from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
 
@@ -43,6 +44,13 @@ def sym_state_assert(str_repr: str) -> StateAssertion:
     tokens = str_repr.split(',')
     item_asserts = [sym_assert(ia_str) for ia_str in tokens]
     return StateAssertion(item_asserts)
+
+
+def sym_schema_tree_node(str_repr: str) -> SchemaTreeNode:
+    context_str, action_str, _ = str_repr.split('/')
+    return SchemaTreeNode(
+        context=sym_state_assert(context_str) if context_str else None,
+        action=Action(action_str) if action_str else None, )
 
 
 def sym_schema(str_repr: str) -> Schema:

@@ -8,8 +8,10 @@ from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
+from schema_mechanism.func_api import sym_schema_tree_node
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
+from schema_mechanism.modules import SchemaTreeNode
 
 
 class TestFunctionalApi(unittest.TestCase):
@@ -67,6 +69,31 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertIn(sym_assert('3'), sa)
         self.assertIn(sym_assert('~4'), sa)
         self.assertIn(sym_assert('5'), sa)
+
+    def test_sym_schema_tree_node(self):
+        # blank node should be allowed
+        stn = sym_schema_tree_node('//')
+        self.assertIsInstance(stn, SchemaTreeNode)
+        self.assertIs(None, stn.context)
+        self.assertIs(None, stn.action)
+
+        # action only node
+        stn = sym_schema_tree_node('/A1/')
+        self.assertIsInstance(stn, SchemaTreeNode)
+        self.assertIs(None, stn.context)
+        self.assertEqual(Action('A1'), stn.action)
+
+        # context and action node
+        stn = sym_schema_tree_node('1,2,~3/A1/')
+        self.assertIsInstance(stn, SchemaTreeNode)
+        self.assertEqual(sym_state_assert('1,2,~3'), stn.context)
+        self.assertEqual(Action('A1'), stn.action)
+
+        # should work even if a result is given
+        stn = sym_schema_tree_node('1,2,~3/A1/4,5')
+        self.assertIsInstance(stn, SchemaTreeNode)
+        self.assertEqual(sym_state_assert('1,2,~3'), stn.context)
+        self.assertEqual(Action('A1'), stn.action)
 
     def test_sym_schema(self):
         # no action should return error
