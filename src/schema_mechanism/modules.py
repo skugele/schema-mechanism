@@ -45,11 +45,16 @@ from schema_mechanism.util import repr_str
 
 # TODO: This might serve as a more general COMPOSITE (design pattern) that implements part of the Schema interface
 class SchemaTreeNode(NodeMixin):
-    def __init__(self, context: Optional[StateAssertion] = None, action: Optional[Action] = None):
+    def __init__(self,
+                 context: Optional[StateAssertion] = None,
+                 action: Optional[Action] = None,
+                 label: str = None) -> None:
         self._context = context
         self._action = action
 
         self._schemas = set()
+
+        self.label = label
 
     @property
     def context(self) -> Optional[StateAssertion]:
@@ -85,7 +90,7 @@ class SchemaTreeNode(NodeMixin):
             return self._action == other._action and self._context == other._context
 
     def __str__(self) -> str:
-        return f'{self._context}/{self._action}/'
+        return self.label if self.label else f'{self._context}/{self._action}/'
 
     def __repr__(self) -> str:
         return repr_str(self, {'context': self._context,
@@ -108,7 +113,7 @@ class SchemaTree:
     """
 
     def __init__(self, primitives: Optional[Collection[Schema]] = None) -> None:
-        self._root = SchemaTreeNode()
+        self._root = SchemaTreeNode(label='root')
         self._nodes: Dict[Tuple[StateAssertion, Action], SchemaTreeNode] = dict()
 
         self._n_schemas = 0

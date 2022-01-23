@@ -53,7 +53,7 @@ class TestSchemaMemory(TestCase):
 
         # Tree contents:
         #
-        # [ROOT]
+        # root
         # |-- /A1/
         # |   |-- 2/A1/
         # |   |-- 3/A1/

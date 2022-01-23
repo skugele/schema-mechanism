@@ -86,10 +86,11 @@ class TestFunctionalApi(unittest.TestCase):
 
     def test_sym_schema_tree_node(self):
         # blank node should be allowed
-        stn = sym_schema_tree_node('//')
+        stn = sym_schema_tree_node('//', label='blank')
         self.assertIsInstance(stn, SchemaTreeNode)
         self.assertIs(None, stn.context)
         self.assertIs(None, stn.action)
+        self.assertEqual('blank', stn.label)
 
         # action only node
         stn = sym_schema_tree_node('/A1/')

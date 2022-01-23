@@ -51,11 +51,13 @@ def sym_state_assert(str_repr: str) -> StateAssertion:
     return StateAssertion(item_asserts)
 
 
-def sym_schema_tree_node(str_repr: str) -> SchemaTreeNode:
+def sym_schema_tree_node(str_repr: str, label: str = None) -> SchemaTreeNode:
     context_str, action_str, _ = str_repr.split('/')
     return SchemaTreeNode(
         context=sym_state_assert(context_str) if context_str else None,
-        action=Action(action_str) if action_str else None, )
+        action=Action(action_str) if action_str else None,
+        label=label
+    )
 
 
 def sym_schema(str_repr: str) -> Schema:
