@@ -16,6 +16,7 @@ from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
 
 
+# TODO: Need to remove whitespace from all of these string representations?
 def sym_state(str_repr: str) -> Collection[StateElement]:
     if not str_repr:
         return []
@@ -36,6 +37,10 @@ def sym_assert(str_repr: str) -> ItemAssertion:
         str_repr = str_repr[1:]
 
     return ItemAssertion(sym_item(str_repr), negated)
+
+
+def sym_asserts(str_repr: str) -> Collection[ItemAssertion]:
+    return [sym_assert(token) for token in str_repr.split(',')]
 
 
 def sym_state_assert(str_repr: str) -> StateAssertion:

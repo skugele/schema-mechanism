@@ -6,6 +6,7 @@ from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.func_api import sym_assert
+from schema_mechanism.func_api import sym_asserts
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_schema_tree_node
@@ -41,6 +42,19 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertIsInstance(ia, ItemAssertion)
         self.assertEqual(sym_item('1'), ia.item)
         self.assertEqual(True, ia.negated)
+
+    def test_sym_asserts(self):
+        # single item assertions
+        ias = sym_asserts('1')
+        self.assertEqual(1, len(ias))
+        self.assertIn(sym_assert('1'), ias)
+
+        # multiple, mixed item assertions
+        ias = sym_asserts('~1,2,7')
+        self.assertEqual(3, len(ias))
+        self.assertIn(sym_assert('~1'), ias)
+        self.assertIn(sym_assert('2'), ias)
+        self.assertIn(sym_assert('7'), ias)
 
     def test_sym_state_assert(self):
         # empty state assertion

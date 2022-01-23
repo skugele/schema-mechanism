@@ -43,6 +43,7 @@ from schema_mechanism.util import Observer
 from schema_mechanism.util import repr_str
 
 
+# TODO: This might serve as a more general COMPOSITE (design pattern) that implements part of the Schema interface
 class SchemaTreeNode(NodeMixin):
     def __init__(self, context: Optional[StateAssertion] = None, action: Optional[Action] = None):
         self._context = context
@@ -94,21 +95,38 @@ class SchemaTreeNode(NodeMixin):
 # TODO: How do I prevent the same schema from being added multiple times from spin-offs of different parents
 
 class SchemaTree:
-    # TODO: Rewrite this description. Its awful.
     """ A search tree of SchemaTreeNodes with the following special properties:
 
-    1. Each tree node corresponds to a set of schemas with the same context and action, differing only in result.
-    2. The depth a tree node is equal to the number of item assertions in its context plus one; for example, the tree
-     node corresponding to primitive schemas (which have empty contexts) has a tree height of one.
+    1. Each tree node contains a set of schemas with identical contexts and actions.
+    2. Each tree node (except the root) has the same action as their descendants.
+    3. Each tree node's depth equals the number of item assertions in its context plus one; for example, the
+    tree nodes corresponding to primitive (action only) schemas would have a tree height of one.
+    4. Each tree node's context contains all of the item assertions in their ancestors plus one new item assertion
+    not found in ANY ancestor. For example, if a node's parent's context contains item assertions 1,2,3, then it
+    will contain 1,2,and 3 plus a new item assertion (say 4).
+
     """
 
-    def __init__(self) -> None:
+    def __init__(self, primitives: Optional[Collection[Schema]] = None) -> None:
         self._root = SchemaTreeNode()
         self._nodes: Dict[Tuple[StateAssertion, Action], SchemaTreeNode] = dict()
+
+        self._n_schemas = 0
+
+        if primitives:
+            self.add_primitives(primitives)
 
     @property
     def root(self) -> SchemaTreeNode:
         return self._root
+
+    @property
+    def n_schemas(self) -> int:
+        return self._n_schemas
+
+    @property
+    def height(self) -> int:
+        return self.root.height
 
     def __iter__(self) -> Iterator[SchemaTreeNode]:
         iter_ = LevelOrderIter(node=self.root)
@@ -131,66 +149,58 @@ class SchemaTree:
 
         return False
 
-    @property
-    def height(self) -> int:
-        return self.root.height
+    def __str__(self) -> str:
+        return RenderTree(self._root, style=AsciiStyle()).by_attr(lambda s: str(s))
 
     def get(self, schema: Schema) -> SchemaTreeNode:
         """ Retrieves the SchemaTreeNode matching this schema's context and action (if it exists).
 
-        :param schema: the schema on which this retrieval is based
-
+        :param schema: the schema (in particular, the context and action) on which this retrieval is based
         :return: a SchemaTreeNode (if found) or raises a KeyError
         """
         return self._nodes[(schema.context, schema.action)]
 
-    def add(self,
-            parent: Union[Schema, SchemaTreeNode],
-            schemas: Collection[Schema],
-            spinoff_type: Optional[Schema.SpinOffType] = None) -> SchemaTreeNode:
-        """ Adds schemas to the schema tree.
+    def add_primitives(self, primitives: Collection[Schema]) -> None:
+        """ Adds primitive schemas to this tree.
 
-        :param parent: the schema generating these spinoff schemas
-        :param schemas: the collection of spinoff schemas
-        :param spinoff_type: the schema spinoff type
-
-        :return: the parent node for which the add operation occurred
+        :param primitives: a collection of primitive schemas
+        :return: None
         """
-        if not schemas:
-            raise ValueError('Schemas to add cannot be empty or None')
+        self.add(self.root, frozenset(primitives))
 
-        try:
-            node = parent if isinstance(parent, SchemaTreeNode) else self.get(parent)
-            if Schema.SpinOffType.RESULT is spinoff_type:
-                node.schemas |= set(schemas)
-            # for context spin-offs and primitive schemas
-            else:
-                # FIXME: This loop is ugly! There has to be a better way!
-                for s in schemas:
-                    new_node = SchemaTreeNode(s.context, s.action)
-                    new_node.schemas.add(s)
-                    node.children += (new_node,)
-                    self._nodes[(s.context, s.action)] = new_node
-            return node
-        except KeyError:
-            raise ValueError('Source schema does not have a corresponding tree node.')
+    def add_context_spinoffs(self, source: Schema, spinoffs: Collection[Schema]) -> None:
+        """ Adds context spinoff schemas to this tree.
+
+        :param source: the source schema that resulted in these spinoff schemas.
+        :param spinoffs: the spinoff schemas.
+        :return: None
+        """
+        self.add(source, frozenset(spinoffs), Schema.SpinOffType.CONTEXT)
+
+    def add_result_spinoffs(self, source: Schema, spinoffs: Collection[Schema]):
+        """ Adds result spinoff schemas to this tree.
+
+        :param source: the source schema that resulted in these spinoff schemas.
+        :param spinoffs: the spinoff schemas.
+        :return: None
+        """
+        self.add(source, frozenset(spinoffs), Schema.SpinOffType.RESULT)
 
     # TODO: Change this to use a view rather than state
     # TODO: Rename to something more meaningful
-    def find(self, state: Collection[StateElement], *args, **kwargs) -> Collection[Schema]:
-        """ Finds a collection tree nodes containing schemas with contexts that are satisfied by this state.
+    def find_all_satisfied(self, state: Collection[StateElement], *args, **kwargs) -> Collection[SchemaTreeNode]:
+        """ Returns a collection of tree nodes containing schemas with contexts that are satisfied by this state.
 
         :param state: the state
-
         :return: a collection of schemas
         """
-        matches: MutableSet[Schema] = set()
+        matches: MutableSet[SchemaTreeNode] = set()
 
         nodes_to_process = list(self._root.children)
         while nodes_to_process:
             node = nodes_to_process.pop()
             if node.context.is_satisfied(state, *args, **kwargs):
-                matches |= node.schemas
+                matches.add(node)
                 if node.children:
                     nodes_to_process += node.children
 
@@ -258,44 +268,110 @@ class SchemaTree:
         return set([node for node in LevelOrderIter(self._root,
                                                     filter_=lambda n: not self.is_valid_node(n, raise_on_invalid))])
 
-    def __str__(self) -> str:
-        return RenderTree(self._root, style=AsciiStyle()).by_attr(lambda s: str(s))
+    def add(self,
+            source: Union[Schema, SchemaTreeNode],
+            schemas: FrozenSet[Schema],
+            spinoff_type: Optional[Schema.SpinOffType] = None) -> SchemaTreeNode:
+        """ Adds schemas to this schema tree.
+
+        :param source: the "source" schema that generated the given (primitive or spinoff) schemas, or the previously
+        added tree node containing that "source" schema.
+        :param schemas: a collection of (primitive or spinoff) schemas
+        :param spinoff_type: the schema spinoff type (CONTEXT or RESULT), or None when adding primitive schemas
+
+        Note: The source can also be the tree root. This can be used for adding primitive schemas to the tree. In
+        this case, the spinoff_type should be None or CONTEXT.
+
+        :return: the parent node for which the add operation occurred
+        """
+        if not schemas:
+            raise ValueError('Schemas to add cannot be empty or None')
+
+        try:
+            node = source if isinstance(source, SchemaTreeNode) else self.get(source)
+            if Schema.SpinOffType.RESULT is spinoff_type:
+                # needed because schemas to add may already exist in set reducing total new count
+                len_before_add = len(node.schemas)
+                node.schemas |= schemas
+                self._n_schemas += len(node.schemas) - len_before_add
+            # for context spin-offs and primitive schemas
+            else:
+                for s in schemas:
+                    key = (s.context, s.action)
+
+                    # node already exists in tree (generated from different source)
+                    if key in self._nodes:
+                        continue
+
+                    new_node = SchemaTreeNode(s.context, s.action)
+                    new_node.schemas.add(s)
+
+                    node.children += (new_node,)
+
+                    self._nodes[key] = new_node
+
+                    self._n_schemas += len(new_node.schemas)
+            return node
+        except KeyError:
+            raise ValueError('Source schema does not have a corresponding tree node.')
 
 
 class SchemaMemoryStats:
     def __init__(self):
         self.n_updates = 0
-        self.n_schemas = 0
 
 
 class SchemaMemory(Observer):
-    def __init__(self, primitive_schemas: Collection[Schema]):
+    def __init__(self, primitives: Optional[Collection[Schema]] = None):
         super().__init__()
 
-        if not primitive_schemas:
-            raise ValueError('SchemaMemory must have at least one primitive schema.')
+        self._schema_tree = SchemaTree(primitives)
+        self._schema_tree.validate(raise_on_invalid=True)
 
-        self._schema_tree: SchemaTree = SchemaTree()
-        self._schema_tree.add(self._schema_tree.root, primitive_schemas)
+        # register listeners for primitives
+        if primitives:
+            for schema in primitives:
+                schema.register(self)
 
         # previous and current state
         self._s_prev: Optional[Collection[StateElement]] = None
         self._s_curr: Optional[Collection[StateElement]] = None
 
         self._stats: SchemaMemoryStats = SchemaMemoryStats()
-        self._stats.n_schemas += len(self._schema_tree)
-
-        self._schema_tree.validate(raise_on_invalid=True)
 
     def __len__(self) -> int:
-        return self._stats.n_schemas
+        return self._schema_tree.n_schemas
+
+    def __contains__(self, schema: Schema) -> bool:
+        return schema in self._schema_tree
+
+    def __str__(self):
+        return str(self._schema_tree)
+
+    @staticmethod
+    def from_tree(tree: SchemaTree) -> SchemaMemory:
+        """ A factory method to initialize a SchemaMemory instance from a SchemaTree.
+
+        Note: This method can be used to initialize SchemaMemory with arbitrary built-in schemas.
+
+        :param tree: a SchemaTree pre-loaded with schemas.
+        :return: a tree-initialized SchemaMemory instance
+        """
+        sm = SchemaMemory()
+
+        sm._schema_tree = tree
+        sm._schema_tree.validate(raise_on_invalid=True)
+
+        # register listeners for schemas in tree
+        for node in sm._schema_tree:
+            for schema in node.schemas:
+                schema.register(sm)
+
+        return sm
 
     @property
     def stats(self) -> SchemaMemoryStats:
         return self._stats
-
-    def __contains__(self, schema: Schema) -> bool:
-        return schema in self._schema_tree
 
     def update_all(self, schema: Schema, applicable: Collection[Schema], state: Collection[StateElement]) -> None:
         """ Updates schemas based on results of previous action.
@@ -306,9 +382,6 @@ class SchemaMemory(Observer):
 
         :return: None
         """
-
-        # TODO: Update item pool from state???
-
         # update current and previous state attributes
         self._s_prev = self._s_curr
         self._s_curr = state
@@ -346,28 +419,25 @@ class SchemaMemory(Observer):
                            new=new,
                            lost=lost)
 
-    # TODO: Change to using a state view
-    def all_applicable(self, state: Collection[StateElement]) -> Collection[Schema]:
-        return self._schema_tree.find(state)
+    # TODO: Should SchemaTreeNodes be exposed or should this be Schemas instead?
+    def all_applicable(self, state: Collection[StateElement]) -> Collection[SchemaTreeNode]:
+        # TODO: Where do I add the items to the item pool???
+        # TODO: Where do I create the item state view?
+
+        return self._schema_tree.find_all_satisfied(state)
 
     def receive(self, *args, **kwargs) -> None:
         source: Schema = kwargs['source']
         mode: Schema.SpinOffType = kwargs['mode']
         relevant_items: Collection[ItemAssertion] = kwargs['relevant_items']
 
-        spinoffs = [create_spin_off(schema=source, mode=mode, item_assert=ia) for ia in relevant_items]
+        spinoffs = frozenset([create_spin_off(source, mode, ia) for ia in relevant_items])
 
         # register listeners for spin-offs
         for s in spinoffs:
             s.register(self)
 
         self._schema_tree.add(source, spinoffs, mode)
-
-        # update global statistics
-        self._stats.n_schemas += len(spinoffs)
-
-    def __str__(self):
-        return str(self._schema_tree)
 
 
 class SchemaSelection:
@@ -425,6 +495,8 @@ def lost_state(s_prev: Optional[Collection[StateElement]],
 # TODO: schema already exists. Seems like schema comparisons will be necessary, but maybe there is a better way. Some
 # TODO: kind of a graph traversal may also be possible, where the graph contains the "family tree" of schemas
 
+# TODO: Rename mode to spinoff_type, or whatever I have used elsewhere.
+# TODO: Globally change spinoff to spin_off, to be consistent with this use
 def create_spin_off(schema: Schema, mode: Schema.SpinOffType, item_assert: ItemAssertion) -> Schema:
     """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
 
@@ -456,3 +528,23 @@ def create_spin_off(schema: Schema, mode: Schema.SpinOffType, item_assert: ItemA
 
     else:
         raise ValueError(f'Unsupported spin-off mode: {mode}')
+
+
+def create_context_spin_off(source: Schema, item_assert: ItemAssertion) -> Schema:
+    """ Creates a CONTEXT spin-off schema from the given source schema.
+
+    :param source: the source schema
+    :param item_assert: the new item assertion to include in the spin-off's context
+    :return: a new context spin-off
+    """
+    return create_spin_off(source, Schema.SpinOffType.CONTEXT, item_assert)
+
+
+def create_result_spin_off(source: Schema, item_assert: ItemAssertion) -> Schema:
+    """ Creates a RESULT spin-off schema from the given source schema.
+
+    :param source: the source schema
+    :param item_assert: the new item assertion to include in the spin-off's result
+    :return: a new result spin-off
+    """
+    return create_spin_off(source, Schema.SpinOffType.RESULT, item_assert)
