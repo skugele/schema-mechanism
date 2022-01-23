@@ -9,6 +9,7 @@ from schema_mechanism.data_structures import NULL_EC_ITEM_STATS
 from schema_mechanism.data_structures import SchemaStats
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import sym_item
+from schema_mechanism.func_api import sym_state_assert
 from test_share.test_classes import ExtendedContextTestWrapper
 from test_share.test_classes import MockObserver
 
@@ -23,15 +24,19 @@ class TestExtendedContext(TestCase):
         for i in range(self.N_ITEMS):
             pool.get(i, SymbolicItem)
 
-        self.ec = ExtendedContextTestWrapper()
+        self.context = sym_state_assert('100,101')
+        self.ec = ExtendedContextTestWrapper(context=self.context)
 
         self.obs = MockObserver()
         self.ec.register(self.obs)
 
     def test_init(self):
-        ec = ExtendedContext(SchemaStats())
+        ec = ExtendedContext(SchemaStats(), self.context)
         for i in ItemPool():
             self.assertIs(NULL_EC_ITEM_STATS, ec.stats[i])
+
+        for ia in self.context:
+            self.assertIn(ia.item, ec.suppress_list)
 
     def test_update(self):
         state = sample(range(self.N_ITEMS), k=10)
@@ -67,6 +72,7 @@ class TestExtendedContext(TestCase):
         # test that all items in the state have been updated
         for i in ItemPool():
             item_stats = self.ec.stats[i]
+
             if i.state_element in state:
                 self.assertEqual(1, item_stats.n_on)
                 self.assertEqual(1, item_stats.n_success_and_on)
@@ -77,11 +83,12 @@ class TestExtendedContext(TestCase):
                 self.assertEqual(0, item_stats.n_fail_and_on)
                 self.assertEqual(0, item_stats.n_fail_and_off)
             else:
-                self.assertEqual(1, item_stats.n_off)
-                self.assertEqual(1, item_stats.n_success_and_off)
 
                 self.assertEqual(0, item_stats.n_on)
                 self.assertEqual(0, item_stats.n_success_and_on)
+
+                self.assertEqual(1, item_stats.n_off)
+                self.assertEqual(1, item_stats.n_success_and_off)
 
                 self.assertEqual(0, item_stats.n_fail_and_on)
                 self.assertEqual(0, item_stats.n_fail_and_off)
@@ -94,7 +101,7 @@ class TestExtendedContext(TestCase):
         self.ec.unregister(observer)
         self.assertNotIn(observer, self.ec.observers)
 
-    def test_relevant_items(self):
+    def test_relevant_items_1(self):
         items = [sym_item(str(i)) for i in range(5)]
 
         i1 = items[0]
@@ -136,3 +143,20 @@ class TestExtendedContext(TestCase):
         # number of new relevant items SHOULD be reset to zero after notifying observers
         self.ec.notify_all()
         self.assertEqual(0, len(self.ec.new_relevant_items))
+
+    def test_relevant_items_2(self):
+        i1 = sym_item('100')
+
+        self.assertIn(i1, self.ec.suppress_list)
+
+        # test updates that SHOULD NOT result in relevant item determination
+        self.ec.update(i1, on=True, success=True, count=10)
+        self.ec.update(i1, on=False, success=False, count=10)
+
+        i1_stats = self.ec.stats[i1]
+        self.assertTrue(i1_stats.success_corr > self.ec.POS_CORR_RELEVANCE_THRESHOLD)
+        self.assertTrue(i1_stats.failure_corr <= self.ec.NEG_CORR_RELEVANCE_THRESHOLD)
+
+        # verify suppressed item NOT in relevant items list
+        self.assertEqual(0, len(self.ec.relevant_items))
+        self.assertNotIn(ItemAssertion(i1), self.ec.relevant_items)

@@ -9,6 +9,7 @@ from schema_mechanism.data_structures import ExtendedResult
 from schema_mechanism.data_structures import Item
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import SchemaStats
+from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import StateElement
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
@@ -59,9 +60,9 @@ class ERItemStatsTestWrapper(ERItemStats):
 
 
 class ExtendedContextTestWrapper(ExtendedContext):
-    def __init__(self, schema_stats: SchemaStats = None):
+    def __init__(self, schema_stats: SchemaStats = None, context: StateAssertion = None):
         ss = schema_stats or SchemaStats()
-        super().__init__(schema_stats=SchemaStats())
+        super().__init__(schema_stats=SchemaStats(), context=context)
 
     def update(self, item: Item, on: bool, success: bool, count: int = 1) -> None:
         # activated is not used in ExtendedResult statistical calculations
@@ -75,9 +76,9 @@ class ExtendedContextTestWrapper(ExtendedContext):
 
 
 class ExtendedResultTestWrapper(ExtendedResult):
-    def __init__(self, schema_stats: SchemaStats = None):
+    def __init__(self, schema_stats: SchemaStats = None, result: StateAssertion = None):
         ss = schema_stats or SchemaStats()
-        super().__init__(schema_stats=ss)
+        super().__init__(schema_stats=ss, result=result)
 
     def update(self, item: Item, on: bool, activated=False, count: int = 1) -> None:
         # success is not used in ExtendedResult statistical calculations

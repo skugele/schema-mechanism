@@ -3,15 +3,20 @@ from unittest import TestCase
 from schema_mechanism.data_structures import ExtendedItemCollection
 from schema_mechanism.data_structures import SchemaStats
 from schema_mechanism.func_api import sym_assert
+from schema_mechanism.func_api import sym_items
 from test_share.test_classes import MockObserver
 
 
 class TestExtendedItemCollection(TestCase):
     def setUp(self) -> None:
-        self.eic = ExtendedItemCollection(schema_stats=SchemaStats())
+        self.eic = ExtendedItemCollection(schema_stats=SchemaStats(),
+                                          suppress_list=sym_items('1,2,3'))
 
         self.obs = MockObserver()
         self.eic.register(self.obs)
+
+    def test_suppress_list(self):
+        self.assertListEqual(list(self.eic.suppress_list), list(sym_items('1,2,3')))
 
     def test_relevant_items(self):
         self.assertEqual(0, len(self.eic.relevant_items))

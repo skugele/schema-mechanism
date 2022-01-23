@@ -16,18 +16,20 @@ from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
 
 
-# TODO: Need to remove whitespace from all of these string representations?
+# TODO: generalize the current string -> int conversions in the sym_* methods to support other conversion types
 def sym_state(str_repr: str) -> Collection[StateElement]:
     if not str_repr:
         return []
 
-    # TODO: generalize the string -> int conversion to support other types
     return [int(se) for se in str_repr.split(',')]
 
 
 def sym_item(str_repr: str) -> Item:
-    # TODO: generalize the string -> int conversion to support other types
     return SymbolicItem(int(str_repr))
+
+
+def sym_items(str_repr: str) -> Collection[Item]:
+    return [sym_item(token) for token in str_repr.split(',')]
 
 
 def sym_assert(str_repr: str) -> ItemAssertion:
@@ -103,5 +105,5 @@ def actions(n: Optional[int] = None, labels: Optional[List] = None) -> Collectio
     )
 
 
-def primitive_schemas(actions: Collection[Action]) -> Tuple[Schema]:
-    return tuple([Schema(action=a) for a in actions])
+def primitive_schemas(actions_: Collection[Action]) -> Tuple[Schema]:
+    return tuple([Schema(action=a) for a in actions_])

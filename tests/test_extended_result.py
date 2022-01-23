@@ -7,6 +7,7 @@ from schema_mechanism.data_structures import NULL_ER_ITEM_STATS
 from schema_mechanism.data_structures import SchemaStats
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import sym_item
+from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
 from test_share.test_classes import ExtendedResultTestWrapper
@@ -23,7 +24,8 @@ class TestExtendedResult(TestCase):
         for i in range(self.N_ITEMS):
             self._item_pool.get(i, SymbolicItem)
 
-        self.er = ExtendedResultTestWrapper(SchemaStats())
+        self.result = sym_state_assert('100,101')
+        self.er = ExtendedResultTestWrapper(SchemaStats(), result=self.result)
 
         # for convenience, register a single observer
         self.obs = MockObserver()
@@ -32,6 +34,9 @@ class TestExtendedResult(TestCase):
     def test_init(self):
         for i in ItemPool():
             self.assertIs(NULL_ER_ITEM_STATS, self.er.stats[i])
+
+        for ia in self.result:
+            self.assertIn(ia.item, self.er.suppress_list)
 
     def test_update(self):
         state = sample(range(self.N_ITEMS), k=10)
@@ -98,7 +103,7 @@ class TestExtendedResult(TestCase):
         self.er.unregister(observer)
         self.assertNotIn(observer, self.er.observers)
 
-    def test_relevant_items(self):
+    def test_relevant_items_1(self):
         items = [sym_item(str(i)) for i in range(5)]
 
         i1 = items[0]
@@ -140,3 +145,20 @@ class TestExtendedResult(TestCase):
         # number of new relevant items SHOULD be reset to zero after notifying observers
         self.er.notify_all()
         self.assertEqual(0, len(self.er.new_relevant_items))
+
+    def test_relevant_items_2(self):
+        i1 = sym_item('100')
+
+        self.assertIn(i1, self.er.suppress_list)
+
+        # test updates that SHOULD NOT result in relevant item determination
+        self.er.update(i1, on=True, activated=True, count=10)
+        self.er.update(i1, on=False, activated=False, count=10)
+
+        i1_stats = self.er.stats[i1]
+        self.assertTrue(i1_stats.positive_transition_corr > self.er.POS_CORR_RELEVANCE_THRESHOLD)
+        self.assertTrue(i1_stats.negative_transition_corr <= self.er.NEG_CORR_RELEVANCE_THRESHOLD)
+
+        # verify suppressed item NOT in relevant items list
+        self.assertEqual(0, len(self.er.relevant_items))
+        self.assertNotIn(ItemAssertion(i1), self.er.relevant_items)

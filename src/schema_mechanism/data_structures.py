@@ -84,6 +84,7 @@ class ItemPool(metaclass=Singleton):
 
         self.get.cache_clear()
 
+    # TODO: Is this cache useful???
     @lru_cache
     def get(self, state_element: StateElement, item_type: Optional[Type[Item]] = None, **kwargs) -> Item:
         obj = self._items.get(state_element)
@@ -104,7 +105,6 @@ class ReadOnlyItemPool(ItemPool):
         raise NotImplementedError('ReadOnlyItemPool does not support clear operation.')
 
 
-# TODO: What to do if the underlying item pool changes?
 class ItemPoolStateView:
     def __init__(self, state: Optional[Collection[StateElement]]):
         # The state to which this view corresponds
@@ -658,6 +658,10 @@ class StateAssertion:
     def __repr__(self) -> str:
         return repr_str(self, {'item_asserts': str(self)})
 
+    @property
+    def items(self) -> Collection[Item]:
+        return [ia.item for ia in self]
+
     def copy(self) -> StateAssertion:
         """ Returns a shallow copy of this object.
 
@@ -698,8 +702,6 @@ class StateAssertion:
 NULL_STATE_ASSERT = StateAssertion()
 
 
-# TODO: There will be many shared item assertions between extended contexts and extended results. It would
-# TODO: be very beneficial to have a pool for these as well.
 class ItemAssertionPool:
     pass
 
@@ -709,17 +711,18 @@ class ExtendedItemCollection(Observable):
     POS_CORR_RELEVANCE_THRESHOLD = 0.65
     NEG_CORR_RELEVANCE_THRESHOLD = 0.65
 
-    def __init__(self, schema_stats: SchemaStats, null_member: ItemStats = None):
+    def __init__(self,
+                 schema_stats: SchemaStats,
+                 suppress_list: Collection[Item] = None,
+                 null_member: ItemStats = None):
         super().__init__()
 
         self._schema_stats = schema_stats
+        self._suppress_list = suppress_list or []
         self._null_member = null_member
 
         self._stats: Dict[Item, ItemStats] = defaultdict(lambda: self._null_member)
 
-        # TODO: Should this really be a mutable Item Pool??? What is in place upstream to guarantee that all
-        # TODO: state elements in the current state have been added to the item pool? Wouldn't it be better
-        # TODO: just to allow new items to be added "in passing"
         self._item_pool = ItemPool()
 
         self._relevant_items: MutableSet[ItemAssertion] = set()
@@ -728,6 +731,10 @@ class ExtendedItemCollection(Observable):
     @property
     def stats(self) -> Dict[Item, Any]:
         return self._stats
+
+    @property
+    def suppress_list(self) -> Collection[Item]:
+        return self._suppress_list
 
     @property
     def relevant_items(self) -> FrozenSet[ItemAssertion]:
@@ -774,15 +781,10 @@ class ExtendedItemCollection(Observable):
         return repr_str(self, attr_values)
 
 
-# TODO: Need to suppress item relevance when those items appear in the parent schema's result (THIS MIGHT BE SOMEThING
-# TODO: FOR THE SUPERCLASS)
-
-# TODO: ExtendedContext and ExtendedResult test_share many attributes and a lot of behavior. It may be beneficial
-# TODO: to create a shared parent class from which they both inherit.
 class ExtendedResult(ExtendedItemCollection):
 
-    def __init__(self, schema_stats: SchemaStats) -> None:
-        super().__init__(schema_stats, null_member=NULL_ER_ITEM_STATS)
+    def __init__(self, schema_stats: SchemaStats, result: StateAssertion) -> None:
+        super().__init__(schema_stats, suppress_list=result.items, null_member=NULL_ER_ITEM_STATS)
 
     @property
     def stats(self) -> Dict[Item, ERItemStats]:
@@ -795,15 +797,8 @@ class ExtendedResult(ExtendedItemCollection):
 
         item_stats.update(on=on, activated=activated, count=count)
 
-        if item_stats.positive_transition_corr > self.POS_CORR_RELEVANCE_THRESHOLD:
-            item_assert = ItemAssertion(item)
-            if not self.known_relevant_item(item_assert):
-                self.update_relevant_items(item_assert)
-
-        elif item_stats.negative_transition_corr > self.NEG_CORR_RELEVANCE_THRESHOLD:
-            item_assert = ItemAssertion(item, negated=True)
-            if not self.known_relevant_item(item_assert):
-                self.update_relevant_items(item_assert)
+        if item not in self.suppress_list:
+            self._check_for_relevance(item, item_stats)
 
     # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
     # TODO: statistics.
@@ -822,9 +817,17 @@ class ExtendedResult(ExtendedItemCollection):
         if self.new_relevant_items:
             self.notify_all(source=self)
 
+    def _check_for_relevance(self, item: Item, item_stats: ERItemStats) -> None:
+        if item_stats.positive_transition_corr > self.POS_CORR_RELEVANCE_THRESHOLD:
+            item_assert = ItemAssertion(item)
+            if not self.known_relevant_item(item_assert):
+                self.update_relevant_items(item_assert)
 
-# TODO: Need to suppress item relevance when those items appear in the parent schema's context (THIS MIGHT BE SOMEThING
-# TODO: FOR THE SUPERCLASS)
+        elif item_stats.negative_transition_corr > self.NEG_CORR_RELEVANCE_THRESHOLD:
+            item_assert = ItemAssertion(item, negated=True)
+            if not self.known_relevant_item(item_assert):
+                self.update_relevant_items(item_assert)
+
 
 class ExtendedContext(ExtendedItemCollection):
     """
@@ -842,8 +845,8 @@ class ExtendedContext(ExtendedItemCollection):
             conditions for turning Off a synthetic item (see Drescher, 1991, Section 4.2.2)
     """
 
-    def __init__(self, schema_stats: SchemaStats) -> None:
-        super().__init__(schema_stats, null_member=NULL_EC_ITEM_STATS)
+    def __init__(self, schema_stats: SchemaStats, context: StateAssertion) -> None:
+        super().__init__(schema_stats, suppress_list=context.items, null_member=NULL_EC_ITEM_STATS)
 
     @property
     def stats(self) -> Dict[Item, ECItemStats]:
@@ -856,15 +859,8 @@ class ExtendedContext(ExtendedItemCollection):
 
         item_stats.update(on, success, count)
 
-        if item_stats.success_corr > self.POS_CORR_RELEVANCE_THRESHOLD:
-            item_assert = ItemAssertion(item)
-            if not self.known_relevant_item(item_assert):
-                self.update_relevant_items(ItemAssertion(item))
-
-        elif item_stats.failure_corr > self.NEG_CORR_RELEVANCE_THRESHOLD:
-            item_assert = ItemAssertion(item, negated=True)
-            if not self.known_relevant_item(item_assert):
-                self.update_relevant_items(item_assert)
+        if item not in self.suppress_list:
+            self._check_for_relevance(item, item_stats)
 
     # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
     # TODO: statistics.
@@ -875,8 +871,19 @@ class ExtendedContext(ExtendedItemCollection):
         if self.new_relevant_items:
             self.notify_all(source=self)
 
+    def _check_for_relevance(self, item: Item, item_stats: ECItemStats) -> None:
+        if item_stats.success_corr > self.POS_CORR_RELEVANCE_THRESHOLD:
+            item_assert = ItemAssertion(item)
+            if not self.known_relevant_item(item_assert):
+                self.update_relevant_items(ItemAssertion(item))
 
-# TODO: Candidate for the flyweight pattern
+        elif item_stats.failure_corr > self.NEG_CORR_RELEVANCE_THRESHOLD:
+            item_assert = ItemAssertion(item, negated=True)
+            if not self.known_relevant_item(item_assert):
+                self.update_relevant_items(item_assert)
+
+
+# TODO: Candidate for the flyweight pattern?
 class Schema(Observer, Observable, UniqueIdMixin):
     """
     a three-component data structure used to express a prediction about the environmental state that
@@ -909,8 +916,8 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         self._stats: SchemaStats = SchemaStats()
 
-        self._extended_context: ExtendedContext = ExtendedContext(self._stats)
-        self._extended_result: ExtendedResult = ExtendedResult(self._stats)
+        self._extended_context: ExtendedContext = ExtendedContext(self._stats, self._context)
+        self._extended_result: ExtendedResult = ExtendedResult(self._stats, self._result)
 
         # TODO: Need to update overriding conditions.
         self._overriding_conditions: Optional[StateAssertion] = None

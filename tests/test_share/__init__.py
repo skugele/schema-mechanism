@@ -1,7 +1,7 @@
 from typing import Callable
 
-SUPPRESS_PERFORMANCE = False
-SUPPRESS_STRING_OUTPUT = False
+SUPPRESS_PERFORMANCE = True
+SUPPRESS_STRING_OUTPUT = True
 
 
 def performance_test(test_case: Callable) -> Callable:
