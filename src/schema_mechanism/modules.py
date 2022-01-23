@@ -168,23 +168,23 @@ class SchemaTree:
         """
         self.add(self.root, frozenset(primitives))
 
-    def add_context_spinoffs(self, source: Schema, spinoffs: Collection[Schema]) -> None:
+    def add_context_spinoffs(self, source: Schema, spin_offs: Collection[Schema]) -> None:
         """ Adds context spinoff schemas to this tree.
 
         :param source: the source schema that resulted in these spinoff schemas.
-        :param spinoffs: the spinoff schemas.
+        :param spin_offs: the spinoff schemas.
         :return: None
         """
-        self.add(source, frozenset(spinoffs), Schema.SpinOffType.CONTEXT)
+        self.add(source, frozenset(spin_offs), Schema.SpinOffType.CONTEXT)
 
-    def add_result_spinoffs(self, source: Schema, spinoffs: Collection[Schema]):
+    def add_result_spinoffs(self, source: Schema, spin_offs: Collection[Schema]):
         """ Adds result spinoff schemas to this tree.
 
         :param source: the source schema that resulted in these spinoff schemas.
-        :param spinoffs: the spinoff schemas.
+        :param spin_offs: the spinoff schemas.
         :return: None
         """
-        self.add(source, frozenset(spinoffs), Schema.SpinOffType.RESULT)
+        self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
 
     # TODO: Change this to use a view rather than state
     # TODO: Rename to something more meaningful
@@ -271,13 +271,13 @@ class SchemaTree:
     def add(self,
             source: Union[Schema, SchemaTreeNode],
             schemas: FrozenSet[Schema],
-            spinoff_type: Optional[Schema.SpinOffType] = None) -> SchemaTreeNode:
+            spin_off_type: Optional[Schema.SpinOffType] = None) -> SchemaTreeNode:
         """ Adds schemas to this schema tree.
 
         :param source: the "source" schema that generated the given (primitive or spinoff) schemas, or the previously
         added tree node containing that "source" schema.
         :param schemas: a collection of (primitive or spinoff) schemas
-        :param spinoff_type: the schema spinoff type (CONTEXT or RESULT), or None when adding primitive schemas
+        :param spin_off_type: the schema spinoff type (CONTEXT or RESULT), or None when adding primitive schemas
 
         Note: The source can also be the tree root. This can be used for adding primitive schemas to the tree. In
         this case, the spinoff_type should be None or CONTEXT.
@@ -289,7 +289,7 @@ class SchemaTree:
 
         try:
             node = source if isinstance(source, SchemaTreeNode) else self.get(source)
-            if Schema.SpinOffType.RESULT is spinoff_type:
+            if Schema.SpinOffType.RESULT is spin_off_type:
                 # needed because schemas to add may already exist in set reducing total new count
                 len_before_add = len(node.schemas)
                 node.schemas |= schemas
@@ -428,16 +428,16 @@ class SchemaMemory(Observer):
 
     def receive(self, *args, **kwargs) -> None:
         source: Schema = kwargs['source']
-        mode: Schema.SpinOffType = kwargs['mode']
+        spin_off_type: Schema.SpinOffType = kwargs['spin_off_type']
         relevant_items: Collection[ItemAssertion] = kwargs['relevant_items']
 
-        spinoffs = frozenset([create_spin_off(source, mode, ia) for ia in relevant_items])
+        spin_offs = frozenset([create_spin_off(source, spin_off_type, ia) for ia in relevant_items])
 
         # register listeners for spin-offs
-        for s in spinoffs:
+        for s in spin_offs:
             s.register(self)
 
-        self._schema_tree.add(source, spinoffs, mode)
+        self._schema_tree.add(source, spin_offs, spin_off_type)
 
 
 class SchemaSelection:
@@ -495,18 +495,17 @@ def lost_state(s_prev: Optional[Collection[StateElement]],
 # TODO: schema already exists. Seems like schema comparisons will be necessary, but maybe there is a better way. Some
 # TODO: kind of a graph traversal may also be possible, where the graph contains the "family tree" of schemas
 
-# TODO: Rename mode to spinoff_type, or whatever I have used elsewhere.
 # TODO: Globally change spinoff to spin_off, to be consistent with this use
-def create_spin_off(schema: Schema, mode: Schema.SpinOffType, item_assert: ItemAssertion) -> Schema:
+def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, item_assert: ItemAssertion) -> Schema:
     """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
 
     :param schema: the schema from which the new spin-off schema will be based
-    :param mode: a supported Schema.SpinOffType
+    :param spin_off_type: a supported Schema.SpinOffType
     :param item_assert: the item assertion to add to the context or result of a spin-off schema
 
     :return: a spin-off schema based on this one
     """
-    if Schema.SpinOffType.CONTEXT == mode:
+    if Schema.SpinOffType.CONTEXT == spin_off_type:
         new_context = (
             StateAssertion(item_asserts=(item_assert,))
             if schema.context is NULL_STATE_ASSERT
@@ -516,7 +515,7 @@ def create_spin_off(schema: Schema, mode: Schema.SpinOffType, item_assert: ItemA
                       context=new_context,
                       result=schema.result)
 
-    elif Schema.SpinOffType.RESULT == mode:
+    elif Schema.SpinOffType.RESULT == spin_off_type:
         new_result = (
             StateAssertion(item_asserts=(item_assert,))
             if schema.result is NULL_STATE_ASSERT
@@ -527,7 +526,7 @@ def create_spin_off(schema: Schema, mode: Schema.SpinOffType, item_assert: ItemA
                       result=new_result)
 
     else:
-        raise ValueError(f'Unsupported spin-off mode: {mode}')
+        raise ValueError(f'Unsupported spin-off mode: {spin_off_type}')
 
 
 def create_context_spin_off(source: Schema, item_assert: ItemAssertion) -> Schema:

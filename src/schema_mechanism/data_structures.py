@@ -13,7 +13,6 @@ from typing import Dict
 from typing import FrozenSet
 from typing import Hashable
 from typing import Iterator
-from typing import List
 from typing import MutableSet
 from typing import Optional
 from typing import Type
@@ -921,8 +920,6 @@ class Schema(Observer, Observable, UniqueIdMixin):
         self._extended_context.register(self)
         self._extended_result.register(self)
 
-        self._result_spinoffs: List[Schema] = list()
-
         # TODO: Are duration or cost needed?
 
         # The duration is the average time from the activation to the completion of an action.
@@ -980,14 +977,6 @@ class Schema(Observer, Observable, UniqueIdMixin):
     @property
     def stats(self) -> SchemaStats:
         return self._stats
-
-    @property
-    def result_spinoffs(self) -> List[Schema]:
-        return self._result_spinoffs
-
-    @result_spinoffs.setter
-    def result_spinoffs(self, new_value) -> None:
-        self._result_spinoffs = new_value
 
     def is_applicable(self, state: Collection[StateElement], *args, **kwargs) -> bool:
         """ A schema is applicable when its context is satisfied and there are no active overriding conditions.
@@ -1055,9 +1044,16 @@ class Schema(Observer, Observable, UniqueIdMixin):
         ext_source: ExtendedItemCollection = kwargs['source']
         relevant_items: Collection[ItemAssertion] = ext_source.new_relevant_items
 
-        self.notify_all(source=self,
-                        ext_source=ext_source,
-                        relevant_items=relevant_items)
+        spin_off_type = (
+            Schema.SpinOffType.CONTEXT if isinstance(ext_source, ExtendedContext) else
+            Schema.SpinOffType.RESULT if isinstance(ext_source, ExtendedResult) else
+            None
+        )
+
+        if not spin_off_type:
+            raise ValueError(f'Unrecognized source in receive: {type(ext_source)}')
+
+        self.notify_all(source=self, spin_off_type=spin_off_type, relevant_items=relevant_items)
 
     def copy(self) -> Schema:
         """ Returns a copy of this schema that is equal to its parent.

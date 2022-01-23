@@ -22,14 +22,14 @@ class TestModuleFunctions(TestCase):
         s1 = Schema(action=Action())
 
         # context spin-off
-        s2 = create_spin_off(schema=s1, mode=Schema.SpinOffType.CONTEXT, item_assert=sym_assert('1'))
+        s2 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.CONTEXT, item_assert=sym_assert('1'))
 
         self.assertEqual(1, len(s2.context))
         self.assertTrue(sym_assert('1') in s2.context)
         self.assertIs(NULL_STATE_ASSERT, s2.result)
 
         # result spin-off
-        s3 = create_spin_off(schema=s1, mode=Schema.SpinOffType.RESULT, item_assert=sym_assert('1'))
+        s3 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, item_assert=sym_assert('1'))
 
         self.assertEqual(s1.action, s2.action)
         self.assertEqual(1, len(s3.result))
@@ -41,7 +41,7 @@ class TestModuleFunctions(TestCase):
         s1 = Schema(action=Action(), context=sym_state_assert('1'))
 
         # context spin-off
-        s2 = create_spin_off(schema=s1, mode=Schema.SpinOffType.CONTEXT, item_assert=sym_assert('2'))
+        s2 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.CONTEXT, item_assert=sym_assert('2'))
 
         self.assertEqual(2, len(s2.context))
         self.assertTrue(sym_assert('1') in s2.context)
@@ -49,7 +49,7 @@ class TestModuleFunctions(TestCase):
         self.assertIs(NULL_STATE_ASSERT, s2.result)
 
         # result spin-off
-        s3 = create_spin_off(schema=s1, mode=Schema.SpinOffType.RESULT, item_assert=sym_assert('1'))
+        s3 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, item_assert=sym_assert('1'))
 
         self.assertEqual(1, len(s3.result))
         self.assertTrue(sym_assert('1') in s3.result)
@@ -61,7 +61,7 @@ class TestModuleFunctions(TestCase):
         s1 = Schema(action=Action(), result=sym_state_assert('1'))
 
         # context spin-off
-        s2 = create_spin_off(schema=s1, mode=Schema.SpinOffType.CONTEXT, item_assert=sym_assert('1'))
+        s2 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.CONTEXT, item_assert=sym_assert('1'))
 
         self.assertEqual(1, len(s2.context))
         self.assertTrue(sym_assert('1') in s2.context)
@@ -69,7 +69,7 @@ class TestModuleFunctions(TestCase):
         self.assertTrue(sym_assert('1') in s2.result)
 
         # result spin-off
-        s3 = create_spin_off(schema=s1, mode=Schema.SpinOffType.RESULT, item_assert=sym_assert('2'))
+        s3 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, item_assert=sym_assert('2'))
 
         self.assertIs(NULL_STATE_ASSERT, s3.context)
         self.assertEqual(2, len(s3.result))
@@ -83,7 +83,7 @@ class TestModuleFunctions(TestCase):
                     result=sym_state_assert('1'))
 
         # context spin-off
-        s2 = create_spin_off(schema=s1, mode=Schema.SpinOffType.CONTEXT, item_assert=sym_assert('2'))
+        s2 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.CONTEXT, item_assert=sym_assert('2'))
 
         self.assertEqual(2, len(s2.context))
         self.assertTrue(sym_assert('1') in s2.context)
@@ -92,7 +92,7 @@ class TestModuleFunctions(TestCase):
         self.assertTrue(sym_assert('1') in s2.result)
 
         # result spin-off
-        s3 = create_spin_off(schema=s1, mode=Schema.SpinOffType.RESULT, item_assert=sym_assert('2'))
+        s3 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, item_assert=sym_assert('2'))
 
         self.assertEqual(2, len(s3.result))
         self.assertTrue(sym_assert('1') in s3.result)
@@ -101,12 +101,12 @@ class TestModuleFunctions(TestCase):
         self.assertTrue(sym_assert('1') in s3.context)
 
         try:
-            create_spin_off(schema=s3, mode=Schema.SpinOffType.CONTEXT, item_assert=sym_assert('1'))
+            create_spin_off(schema=s3, spin_off_type=Schema.SpinOffType.CONTEXT, item_assert=sym_assert('1'))
         except ValueError as e:
             self.assertEqual(str(e), 'ItemAssertion already exists in StateAssertion')
 
         try:
-            create_spin_off(schema=s3, mode=Schema.SpinOffType.RESULT, item_assert=sym_assert('2'))
+            create_spin_off(schema=s3, spin_off_type=Schema.SpinOffType.RESULT, item_assert=sym_assert('2'))
         except ValueError as e:
             self.assertEqual(str(e), 'ItemAssertion already exists in StateAssertion')
 

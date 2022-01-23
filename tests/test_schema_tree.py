@@ -104,7 +104,7 @@ class TestSchemaTree(TestCase):
 
     def test_add_context_spinoffs(self):
         # ValueError raised if list of context spinoffs is empty
-        self.assertRaises(ValueError, lambda: self.tree.add_context_spinoffs(self.s1, spinoffs=[]))
+        self.assertRaises(ValueError, lambda: self.tree.add_context_spinoffs(self.s1, spin_offs=[]))
 
         source = self.s1_1_2_3_1
         spinoffs = [create_context_spin_off(source, sym_assert(f'{i}')) for i in range(10, 15)]
@@ -131,7 +131,7 @@ class TestSchemaTree(TestCase):
 
     def test_add_result_spinoffs(self):
         # ValueError raised if list of result spinoffs is empty
-        self.assertRaises(ValueError, lambda: self.tree.add_result_spinoffs(self.s1, spinoffs=[]))
+        self.assertRaises(ValueError, lambda: self.tree.add_result_spinoffs(self.s1, spin_offs=[]))
 
         source = self.s1_1_2_3_1
         spinoffs = [create_result_spin_off(source, sym_assert(f'{i}')) for i in range(5)]
@@ -238,7 +238,7 @@ class TestSchemaTree(TestCase):
         self.assertNotIn(another, tree)
 
         # after adding, another schema should be contained in tree
-        tree.add_context_spinoffs(p_schemas[0], spinoffs=(another,))
+        tree.add_context_spinoffs(p_schemas[0], spin_offs=(another,))
         self.assertIn(another, tree)
 
         # contains should work for SchemaTreeNodes as well

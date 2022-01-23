@@ -143,7 +143,7 @@ class TestSchemaMemory(TestCase):
         self.assertNotIn(sym_schema('1,3,7,~9,11/A1/'), self.sm)
         self.sm.receive(
             source=sym_schema('1,3,7,~9/A1/'),
-            mode=Schema.SpinOffType.CONTEXT,
+            spin_off_type=Schema.SpinOffType.CONTEXT,
             relevant_items=[sym_assert('11')]
         )
         self.assertIn(sym_schema('1,3,7,~9,11/A1/'), self.sm)
@@ -156,7 +156,7 @@ class TestSchemaMemory(TestCase):
         self.assertNotIn(sym_schema('1,3,7,~9/A1/100'), self.sm)
         self.sm.receive(
             source=sym_schema('1,3,7,~9/A1/'),
-            mode=Schema.SpinOffType.RESULT,
+            spin_off_type=Schema.SpinOffType.RESULT,
             relevant_items=[sym_assert('100')]
         )
         self.assertIn(sym_schema('1,3,7,~9/A1/100'), self.sm)
@@ -170,7 +170,7 @@ class TestSchemaMemory(TestCase):
         self.assertNotIn(sym_schema('1,3,7,~9,13/A1/'), self.sm)
         self.sm.receive(
             source=sym_schema('1,3,7,~9/A1/'),
-            mode=Schema.SpinOffType.CONTEXT,
+            spin_off_type=Schema.SpinOffType.CONTEXT,
             relevant_items=sym_asserts('11,13')
         )
         self.assertIn(sym_schema('1,3,7,~9,11/A1/'), self.sm)
@@ -185,7 +185,7 @@ class TestSchemaMemory(TestCase):
         self.assertNotIn(sym_schema('1,3,7,~9/A1/101'), self.sm)
         self.sm.receive(
             source=sym_schema('1,3,7,~9/A1/'),
-            mode=Schema.SpinOffType.RESULT,
+            spin_off_type=Schema.SpinOffType.RESULT,
             relevant_items=sym_asserts('100,101')
         )
         self.assertIn(sym_schema('1,3,7,~9/A1/100'), self.sm)
@@ -200,7 +200,7 @@ class TestSchemaMemory(TestCase):
         self.assertNotIn(sym_schema('3,6/A1/'), self.sm)
         self.sm.receive(
             source=sym_schema('3/A1/'),
-            mode=Schema.SpinOffType.CONTEXT,
+            spin_off_type=Schema.SpinOffType.CONTEXT,
             relevant_items=sym_asserts('1,6')
         )
         self.assertIn(sym_schema('1,3/A1/'), self.sm)
@@ -217,7 +217,7 @@ class TestSchemaMemory(TestCase):
         self.assertNotIn(sym_schema('1/A1/101'), self.sm)
         self.sm.receive(
             source=sym_schema('1/A1/'),
-            mode=Schema.SpinOffType.RESULT,
+            spin_off_type=Schema.SpinOffType.RESULT,
             relevant_items=sym_asserts('100,101')
         )
         self.assertIn(sym_schema('1/A1/100'), self.sm)
