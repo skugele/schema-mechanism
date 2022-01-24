@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 from collections import Collection
 from typing import Dict
 from typing import FrozenSet
@@ -335,6 +336,10 @@ class SchemaMemory(Observer):
     def __str__(self):
         return str(self._schema_tree)
 
+    @property
+    def schemas(self) -> Collection[Schema]:
+        return list(itertools.chain.from_iterable([n.schemas for n in self._schema_tree]))
+
     @staticmethod
     def from_tree(tree: SchemaTree) -> SchemaMemory:
         """ A factory method to initialize a SchemaMemory instance from a SchemaTree.
@@ -381,17 +386,15 @@ class SchemaMemory(Observer):
         new = new_state(self._s_prev, self._s_curr)
         lost = lost_state(self._s_prev, self._s_curr)
 
-        # TODO: My guess is that statistics updates should only occur for non-activated schemas that are applicable. This
-        # TODO: is based on the assumption that all of the probabilities within a schema are really conditioned on the context
-        # TODO: being satisfied, even though this fact is implicit.
-
         # update global statistics
         self._stats.n_updates += len(applicable)
 
-        # TODO: Still need to update the result schemas.
+        # I'm assuming that only APPLICABLE schemas should be updated. This is based on the belief that all
+        # of the probabilities within a schema are really conditioned on the context being satisfied, even
+        # though this fact is implicit.
         for app in applicable:
             # activated
-            if app.action is schema.action:
+            if app.action == schema.action:
                 app.update(activated=True,
                            v_prev=v_prev,
                            v_curr=v_curr,
@@ -407,11 +410,11 @@ class SchemaMemory(Observer):
                            lost=lost)
 
     # TODO: Should SchemaTreeNodes be exposed or should this be Schemas instead?
-    def all_applicable(self, state: Collection[StateElement]) -> Collection[SchemaTreeNode]:
+    def all_applicable(self, state: Collection[StateElement]) -> Collection[Schema]:
         # TODO: Where do I add the items to the item pool???
         # TODO: Where do I create the item state view?
 
-        return self._schema_tree.find_all_satisfied(state)
+        return list(itertools.chain.from_iterable(n.schemas for n in self._schema_tree.find_all_satisfied(state)))
 
     def receive(self, *args, **kwargs) -> None:
         source: Schema = kwargs['source']
@@ -478,11 +481,6 @@ def lost_state(s_prev: Optional[Collection[StateElement]],
     return frozenset([se for se in s_prev if se not in s_curr])
 
 
-# TODO: Need a way to suppress the creation of a new spin-off schema when a new relevant item is detected, but that
-# TODO: schema already exists. Seems like schema comparisons will be necessary, but maybe there is a better way. Some
-# TODO: kind of a graph traversal may also be possible, where the graph contains the "family tree" of schemas
-
-# TODO: Globally change spinoff to spin_off, to be consistent with this use
 def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, item_assert: ItemAssertion) -> Schema:
     """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
 

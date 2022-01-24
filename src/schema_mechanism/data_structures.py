@@ -808,11 +808,13 @@ class ExtendedResult(ExtendedItemCollection):
         # "a trial for which the result was already satisfied before the action was taken does not count as a
         # positive-transition trial; and one for which the result was already unsatisfied does not count
         # as a negative-transition trial" (see Drescher, 1991, p. 72)
-        for se in new:
-            self.update(item=self._item_pool.get(se), on=True, activated=activated, count=count)
+        if new:
+            for se in new:
+                self.update(item=self._item_pool.get(se), on=True, activated=activated, count=count)
 
-        for se in lost:
-            self.update(item=self._item_pool.get(se), on=False, activated=activated, count=count)
+        if lost:
+            for se in lost:
+                self.update(item=self._item_pool.get(se), on=False, activated=activated, count=count)
 
         if self.new_relevant_items:
             self.notify_all(source=self)
@@ -1029,6 +1031,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         :return: None
         """
 
+        # TODO: Is this correct? Can I find a Drescher quote to support this interpretation?
         # True if this schema was activated AND its result obtained; False otherwise
         success: bool = activated and self.result.is_satisfied_in_view(v_curr)
 
@@ -1036,8 +1039,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         self._stats.update(activated=activated, success=success, count=count)
 
         # update extended result stats
-        if not all((new, lost)):
-            self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
+        self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
 
         # update extended context stats
         if activated and v_prev:

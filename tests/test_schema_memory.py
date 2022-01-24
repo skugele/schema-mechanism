@@ -1,4 +1,6 @@
 from unittest import TestCase
+from unittest.mock import ANY
+from unittest.mock import MagicMock
 
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.func_api import actions
@@ -128,13 +130,37 @@ class TestSchemaMemory(TestCase):
         # case 3: includes nodes with context assertions that are negated
         state = sym_state('1,3,5,7')
         nodes = self.sm.all_applicable(state)
-        self.assertEqual(11, len(nodes))
+        self.assertEqual(12, len(nodes))
 
         for node in nodes:
             self.assertTrue(node.context.is_satisfied(state))
 
     def test_update_all(self):
-        pass
+        prev_state = sym_state('1,3,5,7,12')
+        new_state = sym_state('10,11,12')
+
+        all_schemas = set(self.sm.schemas)
+        applicable_schemas = set(self.sm.all_applicable(prev_state))
+        non_applicable_schemas = all_schemas - applicable_schemas
+
+        for s in all_schemas:
+            s.update = MagicMock()
+
+        selected_schema = sym_schema('1,3,5,7/A1/10')
+
+        self.sm.update_all(selected_schema, applicable_schemas, new_state)
+
+        for s in applicable_schemas:
+            s.update.assert_called()
+
+            if s.action == selected_schema.action:
+                s.update.assert_called_with(activated=True, v_prev=ANY, v_curr=ANY, new=ANY, lost=ANY)
+
+            else:
+                s.update.assert_called_with(activated=False, v_prev=ANY, v_curr=ANY, new=ANY, lost=ANY)
+
+        for s in non_applicable_schemas:
+            s.update.assert_not_called()
 
     def test_receive_1(self):
         # create a context spin-off
