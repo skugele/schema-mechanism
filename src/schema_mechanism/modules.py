@@ -2,310 +2,27 @@ from __future__ import annotations
 
 import itertools
 from collections import Collection
+from collections import Sequence
 from collections import deque
-from typing import Dict
+from random import sample
 from typing import FrozenSet
-from typing import Iterator
-from typing import MutableSet
 from typing import NamedTuple
 from typing import Optional
-from typing import Tuple
-from typing import Union
-
-from anytree import AsciiStyle
-from anytree import LevelOrderIter
-from anytree import NodeMixin
-from anytree import RenderTree
 
 from schema_mechanism.data_structures import Action
+from schema_mechanism.data_structures import Item
 from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import Schema
+from schema_mechanism.data_structures import SchemaTree
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import StateElement
+from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
-from schema_mechanism.util import repr_str
 
 
-# TODO: This might serve as a more general COMPOSITE (design pattern) that implements part of the Schema interface
-class SchemaTreeNode(NodeMixin):
-    def __init__(self,
-                 context: Optional[StateAssertion] = None,
-                 action: Optional[Action] = None,
-                 label: str = None) -> None:
-        self._context = context
-        self._action = action
-
-        self._schemas = set()
-
-        self.label = label
-
-    @property
-    def context(self) -> Optional[StateAssertion]:
-        return self._context
-
-    @property
-    def action(self) -> Optional[Action]:
-        return self._action
-
-    @property
-    def schemas(self) -> MutableSet[Schema]:
-        return self._schemas
-
-    @schemas.setter
-    def schemas(self, value) -> None:
-        self._schemas = value
-
-    def copy(self) -> SchemaTreeNode:
-        """ Returns a new SchemaTreeNode with the same context and action.
-
-        Note: any schemas associated with the original will be lost.
-
-        :return: A SchemaTreeNode with the same context and action as this instance.
-        """
-        return SchemaTreeNode(context=self.context,
-                              action=self.action)
-
-    def __hash__(self) -> int:
-        return hash((self._context, self._action))
-
-    def __eq__(self, other) -> bool:
-        if isinstance(other, SchemaTreeNode):
-            return self._action == other._action and self._context == other._context
-
-    def __str__(self) -> str:
-        return self.label if self.label else f'{self._context}/{self._action}/'
-
-    def __repr__(self) -> str:
-        return repr_str(self, {'context': self._context,
-                               'action': self._action, })
-
-
-# TODO: How do I prevent the same schema from being added multiple times from spin-offs of different parents
-
-class SchemaTree:
-    """ A search tree of SchemaTreeNodes with the following special properties:
-
-    1. Each tree node contains a set of schemas with identical contexts and actions.
-    2. Each tree node (except the root) has the same action as their descendants.
-    3. Each tree node's depth equals the number of item assertions in its context plus one; for example, the
-    tree nodes corresponding to primitive (action only) schemas would have a tree height of one.
-    4. Each tree node's context contains all of the item assertions in their ancestors plus one new item assertion
-    not found in ANY ancestor. For example, if a node's parent's context contains item assertions 1,2,3, then it
-    will contain 1,2,and 3 plus a new item assertion (say 4).
-
-    """
-
-    def __init__(self, primitives: Optional[Collection[Schema]] = None) -> None:
-        self._root = SchemaTreeNode(label='root')
-        self._nodes: Dict[Tuple[StateAssertion, Action], SchemaTreeNode] = dict()
-
-        self._n_schemas = 0
-
-        if primitives:
-            self.add_primitives(primitives)
-
-    @property
-    def root(self) -> SchemaTreeNode:
-        return self._root
-
-    @property
-    def n_schemas(self) -> int:
-        return self._n_schemas
-
-    @property
-    def height(self) -> int:
-        return self.root.height
-
-    def __iter__(self) -> Iterator[SchemaTreeNode]:
-        iter_ = LevelOrderIter(node=self.root)
-        next(iter_)  # skips root
-        return iter_
-
-    def __len__(self) -> int:
-        """ Returns the number of SchemaTreeNodes (not the number of schemas).
-
-        :return: The number of SchemaTreeNodes in this tree.
-        """
-        return len(self._nodes)
-
-    def __contains__(self, s: Union[SchemaTreeNode, Schema]) -> bool:
-        if isinstance(s, SchemaTreeNode):
-            return (s.context, s.action) in self._nodes
-        elif isinstance(s, Schema):
-            node = self._nodes.get((s.context, s.action))
-            return s in node.schemas if node else False
-
-        return False
-
-    def __str__(self) -> str:
-        return RenderTree(self._root, style=AsciiStyle()).by_attr(lambda s: str(s))
-
-    def get(self, schema: Schema) -> SchemaTreeNode:
-        """ Retrieves the SchemaTreeNode matching this schema's context and action (if it exists).
-
-        :param schema: the schema (in particular, the context and action) on which this retrieval is based
-        :return: a SchemaTreeNode (if found) or raises a KeyError
-        """
-        return self._nodes[(schema.context, schema.action)]
-
-    def add_primitives(self, primitives: Collection[Schema]) -> None:
-        """ Adds primitive schemas to this tree.
-
-        :param primitives: a collection of primitive schemas
-        :return: None
-        """
-        self.add(self.root, frozenset(primitives))
-
-    def add_context_spinoffs(self, source: Schema, spin_offs: Collection[Schema]) -> None:
-        """ Adds context spinoff schemas to this tree.
-
-        :param source: the source schema that resulted in these spinoff schemas.
-        :param spin_offs: the spinoff schemas.
-        :return: None
-        """
-        self.add(source, frozenset(spin_offs), Schema.SpinOffType.CONTEXT)
-
-    def add_result_spinoffs(self, source: Schema, spin_offs: Collection[Schema]):
-        """ Adds result spinoff schemas to this tree.
-
-        :param source: the source schema that resulted in these spinoff schemas.
-        :param spin_offs: the spinoff schemas.
-        :return: None
-        """
-        self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
-
-    # TODO: Change this to use a view rather than state
-    # TODO: Rename to something more meaningful
-    def find_all_satisfied(self, state: Collection[StateElement], *args, **kwargs) -> Collection[SchemaTreeNode]:
-        """ Returns a collection of tree nodes containing schemas with contexts that are satisfied by this state.
-
-        :param state: the state
-        :return: a collection of schemas
-        """
-        matches: MutableSet[SchemaTreeNode] = set()
-
-        nodes_to_process = list(self._root.children)
-        while nodes_to_process:
-            node = nodes_to_process.pop()
-            if node.context.is_satisfied(state, *args, **kwargs):
-                matches.add(node)
-                if node.children:
-                    nodes_to_process += node.children
-
-        return matches
-
-    def is_valid_node(self, node: SchemaTreeNode, raise_on_invalid: bool = False) -> bool:
-        if node is self._root:
-            return True
-
-        # 1. node is in tree (path from root to node)
-        if node not in self:
-            if raise_on_invalid:
-                raise ValueError('invalid node: no path from node to root')
-            return False
-
-        # 2. node has proper depth for context
-        if len(node.context) != node.depth - 1:
-            if raise_on_invalid:
-                raise ValueError('invalid node: depth must equal the number of item assertions in context minus 1')
-            return False
-
-        # checks that apply to nodes that contain non-primitive schemas (context + action)
-        if node.parent is not self.root:
-
-            # 3. node has same action as parent
-            if node.action != node.parent.action:
-                if raise_on_invalid:
-                    raise ValueError('invalid node: must have same action as parent')
-                return False
-
-            # 4. node's context contains all of parents
-            if not all({ia in node.context for ia in node.parent.context}):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: context should contain all of parent\'s item assertions')
-                return False
-
-            # 5. node's context contains exactly one item assertion not in parent's context
-            if len(node.parent.context) + 1 != len(node.context):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: context must differ from parent in exactly one assertion.')
-                return False
-
-        # consistency checks between node and its schemas
-        if node.schemas:
-
-            # 6. actions should be identical across all contained schemas, and equal to node's action
-            if not all({node.action == s.action for s in node.schemas}):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: all schemas must have the same action')
-                return False
-
-            # 7. contexts should be identical across all contained schemas, and equal to node's context
-            if not all({node.context == s.context for s in node.schemas}):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: all schemas must have the same context')
-                return False
-
-        return True
-
-    def validate(self, raise_on_invalid: bool = False) -> Collection[SchemaTreeNode]:
-        """ Validates that all nodes in the tree comply with its invariant properties and returns invalid nodes.
-
-        :return: A set of invalid nodes (if any).
-        """
-        return set([node for node in LevelOrderIter(self._root,
-                                                    filter_=lambda n: not self.is_valid_node(n, raise_on_invalid))])
-
-    def add(self,
-            source: Union[Schema, SchemaTreeNode],
-            schemas: FrozenSet[Schema],
-            spin_off_type: Optional[Schema.SpinOffType] = None) -> SchemaTreeNode:
-        """ Adds schemas to this schema tree.
-
-        :param source: the "source" schema that generated the given (primitive or spinoff) schemas, or the previously
-        added tree node containing that "source" schema.
-        :param schemas: a collection of (primitive or spinoff) schemas
-        :param spin_off_type: the schema spinoff type (CONTEXT or RESULT), or None when adding primitive schemas
-
-        Note: The source can also be the tree root. This can be used for adding primitive schemas to the tree. In
-        this case, the spinoff_type should be None or CONTEXT.
-
-        :return: the parent node for which the add operation occurred
-        """
-        if not schemas:
-            raise ValueError('Schemas to add cannot be empty or None')
-
-        try:
-            node = source if isinstance(source, SchemaTreeNode) else self.get(source)
-            if Schema.SpinOffType.RESULT is spin_off_type:
-                # needed because schemas to add may already exist in set reducing total new count
-                len_before_add = len(node.schemas)
-                node.schemas |= schemas
-                self._n_schemas += len(node.schemas) - len_before_add
-            # for context spin-offs and primitive schemas
-            else:
-                for s in schemas:
-                    key = (s.context, s.action)
-
-                    # node already exists in tree (generated from different source)
-                    if key in self._nodes:
-                        continue
-
-                    new_node = SchemaTreeNode(s.context, s.action)
-                    new_node.schemas.add(s)
-
-                    node.children += (new_node,)
-
-                    self._nodes[key] = new_node
-
-                    self._n_schemas += len(new_node.schemas)
-            return node
-        except KeyError:
-            raise ValueError('Source schema does not have a corresponding tree node.')
-
-
+# TODO: Move into SchemaMemory as an inner class?
 class SchemaMemoryStats:
     def __init__(self):
         self.n_updates = 0
@@ -327,7 +44,7 @@ class SchemaMemory(Observer):
 
         # TODO: Need to experiment with multiple (recent) updates. This was not in the original schema mechanism but
         # TODO: seems highly useful in many environments.
-        self._as_selections: deque[ActionSelection.Selection] = deque([], maxlen=1)
+        self._as_selections: deque[ActionSelection.SelectionDetails] = deque([], maxlen=1)
 
     def __len__(self) -> int:
         return self._schema_tree.n_schemas
@@ -343,7 +60,7 @@ class SchemaMemory(Observer):
         return list(itertools.chain.from_iterable([n.schemas for n in self._schema_tree]))
 
     @property
-    def as_selections(self) -> Collection[ActionSelection.Selection]:
+    def as_selections(self) -> Collection[ActionSelection.SelectionDetails]:
         return self._as_selections
 
     @staticmethod
@@ -415,7 +132,7 @@ class SchemaMemory(Observer):
                            new=new,
                            lost=lost)
 
-    def all_applicable(self, state: Collection[StateElement]) -> Collection[Schema]:
+    def all_applicable(self, state: Collection[StateElement]) -> Sequence[Schema]:
         # TODO: Where do I add the items to the item pool???
         # TODO: Where do I create the item state view?
 
@@ -442,13 +159,14 @@ class SchemaMemory(Observer):
         self._schema_tree.add(schema, spin_offs, spin_off_type)
 
     def _receive_from_action_selection(self, act_select: ActionSelection, *args, **kwargs):
-        selection: ActionSelection.Selection = kwargs['selection']
+        selection: ActionSelection.SelectionDetails = kwargs['selection']
 
         self._as_selections.append(selection)
 
 
-class ActionSelection:
-    class Selection(NamedTuple):
+# TODO: Need to register SchemaMemory as a listener of ActionSelection
+class ActionSelection(Observable):
+    class SelectionDetails(NamedTuple):
         state: Collection[StateElement]
         applicable: Collection[Schema]
         schema: Schema
@@ -456,7 +174,42 @@ class ActionSelection:
     """
         See Drescher, 1991, section 3.4
     """
-    pass
+
+    def select(self, sm: SchemaMemory, state: Collection[StateElement]) -> Schema:
+        applicable = sm.all_applicable(state)
+
+        # TODO: add logic to select a schema
+        schema = sample(applicable, k=1)[0]
+
+        # These details are needed by SchemaMemory (for example, to support learning)
+        sd = self.SelectionDetails(state, applicable, schema)
+        self.notify_all(source=ActionSelection, selection=sd)
+
+        return schema
+
+
+class SchemaMechanism(Observer, Observable):
+    def __init__(self, primitive_actions: Collection[Action], primitive_items: Collection[Item]):
+        super().__init__()
+
+        self._primitive_actions = primitive_actions
+        self._primitive_items = primitive_items
+
+        self._primitive_schemas = [Schema(action=a) for a in self._primitive_actions]
+
+        self._schema_memory = SchemaMemory(self._primitive_schemas)
+        self._action_selection = ActionSelection()
+
+    def receive(self, *args, **kwargs) -> None:
+        state: Collection[StateElement] = kwargs['state']
+
+        # learn from results of previous actions (if any)
+        self._schema_memory.update_all(state)
+
+        # select schema
+        schema = self._action_selection.select(self._schema_memory, state)
+
+        self.notify_all(source=self, selection=schema)
 
 
 def held_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement]) -> FrozenSet[StateElement]:
@@ -554,3 +307,29 @@ def create_result_spin_off(source: Schema, item_assert: ItemAssertion) -> Schema
     :return: a new result spin-off
     """
     return create_spin_off(source, Schema.SpinOffType.RESULT, item_assert)
+
+
+# TODO: Is this function needed???
+def update_schema(schema: Schema,
+                  activated: bool,
+                  s_prev: Optional[Collection[StateElement]],
+                  s_curr: Collection[StateElement],
+                  count: int = 1) -> Schema:
+    """ Update the schema based on the previous and current state.
+
+    :param schema: the schema to update
+    :param activated: a bool indicated whether the schema was activated (explicitly or implicitly)
+    :param s_prev: a collection containing the previous state elements
+    :param s_curr: a collection containing the current state elements
+    :param count: the number of times to perform this update
+
+    :return: the updated schema
+    """
+    schema.update(activated=activated,
+                  v_prev=ItemPoolStateView(s_prev),
+                  v_curr=ItemPoolStateView(s_curr),
+                  new=new_state(s_prev, s_curr),
+                  lost=lost_state(s_prev, s_curr),
+                  count=count)
+
+    return schema

@@ -7,6 +7,8 @@ import test_share
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import Schema
+from schema_mechanism.data_structures import SchemaTree
+from schema_mechanism.data_structures import SchemaTreeNode
 from schema_mechanism.func_api import actions
 from schema_mechanism.func_api import primitive_schemas
 from schema_mechanism.func_api import sym_assert
@@ -14,8 +16,6 @@ from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_schema_tree_node
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
-from schema_mechanism.modules import SchemaTree
-from schema_mechanism.modules import SchemaTreeNode
 from schema_mechanism.modules import create_context_spin_off
 from schema_mechanism.modules import create_result_spin_off
 from schema_mechanism.modules import create_spin_off

@@ -4,6 +4,7 @@ from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import Schema
+from schema_mechanism.data_structures import SchemaTreeNode
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_asserts
@@ -12,7 +13,6 @@ from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_schema_tree_node
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
-from schema_mechanism.modules import SchemaTreeNode
 
 
 class TestFunctionalApi(unittest.TestCase):

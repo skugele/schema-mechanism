@@ -15,9 +15,9 @@ from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
-from schema_mechanism.func_api import update_schema
 from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
+from schema_mechanism.modules import update_schema
 from test_share.test_classes import MockObserver
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
