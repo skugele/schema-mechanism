@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import itertools
 from collections import Collection
+from collections import deque
 from typing import Dict
 from typing import FrozenSet
 from typing import Iterator
 from typing import MutableSet
+from typing import NamedTuple
 from typing import Optional
 from typing import Tuple
 from typing import Union
@@ -310,7 +312,7 @@ class SchemaMemoryStats:
 
 
 class SchemaMemory(Observer):
-    def __init__(self, primitives: Optional[Collection[Schema]] = None):
+    def __init__(self, primitives: Optional[Collection[Schema]] = None) -> None:
         super().__init__()
 
         self._schema_tree = SchemaTree(primitives)
@@ -321,11 +323,11 @@ class SchemaMemory(Observer):
             for schema in primitives:
                 schema.register(self)
 
-        # previous and current state
-        self._s_prev: Optional[Collection[StateElement]] = None
-        self._s_curr: Optional[Collection[StateElement]] = None
-
         self._stats: SchemaMemoryStats = SchemaMemoryStats()
+
+        # TODO: Need to experiment with multiple (recent) updates. This was not in the original schema mechanism but
+        # TODO: seems highly useful in many environments.
+        self._as_selections: deque[ActionSelection.Selection] = deque([], maxlen=1)
 
     def __len__(self) -> int:
         return self._schema_tree.n_schemas
@@ -339,6 +341,10 @@ class SchemaMemory(Observer):
     @property
     def schemas(self) -> Collection[Schema]:
         return list(itertools.chain.from_iterable([n.schemas for n in self._schema_tree]))
+
+    @property
+    def as_selections(self) -> Collection[ActionSelection.Selection]:
+        return self._as_selections
 
     @staticmethod
     def from_tree(tree: SchemaTree) -> SchemaMemory:
@@ -365,26 +371,26 @@ class SchemaMemory(Observer):
     def stats(self) -> SchemaMemoryStats:
         return self._stats
 
-    def update_all(self, schema: Schema, applicable: Collection[Schema], state: Collection[StateElement]) -> None:
+    def update_all(self, result_state: Collection[StateElement]) -> None:
         """ Updates schemas based on results of previous action.
 
-        :param schema: the explicitly activated schema
-        :param applicable: the set of all applicable schemas (including the explicitly activated schema)
-        :param state: the current state (which includes the explicitly activated schema's results)
+        :param result_state: the state following the execution of the schema's action
 
         :return: None
         """
-        # update current and previous state attributes
-        self._s_prev = self._s_curr
-        self._s_curr = state
+        if len(self._as_selections) == 0:
+            return
+
+        # TODO: Change this when the mechanism can support updates based on multiple selections
+        activation_state, applicable, schema = self._as_selections[0]
 
         # create previous and current state views
-        v_prev = ItemPoolStateView(self._s_prev)
-        v_curr = ItemPoolStateView(self._s_curr)
+        v_act = ItemPoolStateView(activation_state)
+        v_result = ItemPoolStateView(result_state)
 
         # create new and lost state element collections
-        new = new_state(self._s_prev, self._s_curr)
-        lost = lost_state(self._s_prev, self._s_curr)
+        new = new_state(activation_state, result_state)
+        lost = lost_state(activation_state, result_state)
 
         # update global statistics
         self._stats.n_updates += len(applicable)
@@ -396,20 +402,19 @@ class SchemaMemory(Observer):
             # activated
             if app.action == schema.action:
                 app.update(activated=True,
-                           v_prev=v_prev,
-                           v_curr=v_curr,
+                           v_prev=v_act,
+                           v_curr=v_result,
                            new=new,
                            lost=lost)
 
             # non-activated
             else:
                 app.update(activated=False,
-                           v_prev=v_prev,
-                           v_curr=v_curr,
+                           v_prev=v_act,
+                           v_curr=v_result,
                            new=new,
                            lost=lost)
 
-    # TODO: Should SchemaTreeNodes be exposed or should this be Schemas instead?
     def all_applicable(self, state: Collection[StateElement]) -> Collection[Schema]:
         # TODO: Where do I add the items to the item pool???
         # TODO: Where do I create the item state view?
@@ -418,19 +423,36 @@ class SchemaMemory(Observer):
 
     def receive(self, *args, **kwargs) -> None:
         source: Schema = kwargs['source']
+
+        if isinstance(source, Schema):
+            self._receive_from_schema(schema=source, *args, **kwargs)
+        elif isinstance(source, ActionSelection):
+            self._receive_from_action_selection(act_select=source, *args, **kwargs)
+
+    def _receive_from_schema(self, schema: Schema, *args, **kwargs) -> None:
         spin_off_type: Schema.SpinOffType = kwargs['spin_off_type']
         relevant_items: Collection[ItemAssertion] = kwargs['relevant_items']
 
-        spin_offs = frozenset([create_spin_off(source, spin_off_type, ia) for ia in relevant_items])
+        spin_offs = frozenset([create_spin_off(schema, spin_off_type, ia) for ia in relevant_items])
 
         # register listeners for spin-offs
         for s in spin_offs:
             s.register(self)
 
-        self._schema_tree.add(source, spin_offs, spin_off_type)
+        self._schema_tree.add(schema, spin_offs, spin_off_type)
+
+    def _receive_from_action_selection(self, act_select: ActionSelection, *args, **kwargs):
+        selection: ActionSelection.Selection = kwargs['selection']
+
+        self._as_selections.append(selection)
 
 
-class SchemaSelection:
+class ActionSelection:
+    class Selection(NamedTuple):
+        state: Collection[StateElement]
+        applicable: Collection[Schema]
+        schema: Schema
+
     """
         See Drescher, 1991, section 3.4
     """
