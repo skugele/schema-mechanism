@@ -4,6 +4,7 @@ from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.func_api import sym_assert
+from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import create_spin_off
 from schema_mechanism.modules import held_state
@@ -113,8 +114,8 @@ class TestModuleFunctions(TestCase):
 
 class TestStateFunctions(TestCase):
     def setUp(self) -> None:
-        self.s_1 = [1, 2, 3, 4, 5]
-        self.s_2 = [4, 5, 6, 7, 8]
+        self.s_1 = sym_state('1,2,3,4,5')
+        self.s_2 = sym_state('4,5,6,7,8')
         self.s_empty = []
         self.s_none = None
 
@@ -124,8 +125,8 @@ class TestStateFunctions(TestCase):
         self.assertEqual(0, len(held_state(s_prev=self.s_empty, s_curr=self.s_none)))
         self.assertEqual(0, len(held_state(s_prev=self.s_none, s_curr=self.s_none)))
 
-        self.assertSetEqual({4, 5}, held_state(s_prev=self.s_1, s_curr=self.s_2))
-        self.assertSetEqual({4, 5}, held_state(s_prev=self.s_2, s_curr=self.s_1))
+        self.assertSetEqual(set(sym_state('4,5')), held_state(s_prev=self.s_1, s_curr=self.s_2))
+        self.assertSetEqual(set(sym_state('4,5')), held_state(s_prev=self.s_2, s_curr=self.s_1))
 
     def test_lost_state(self):
         self.assertEqual(0, len(lost_state(s_prev=self.s_empty, s_curr=self.s_empty)))
@@ -133,8 +134,8 @@ class TestStateFunctions(TestCase):
         self.assertEqual(0, len(lost_state(s_prev=self.s_empty, s_curr=self.s_none)))
         self.assertEqual(0, len(lost_state(s_prev=self.s_none, s_curr=self.s_none)))
 
-        self.assertSetEqual({1, 2, 3}, lost_state(s_prev=self.s_1, s_curr=self.s_2))
-        self.assertSetEqual({6, 7, 8}, lost_state(s_prev=self.s_2, s_curr=self.s_1))
+        self.assertSetEqual(set(sym_state('1,2,3')), lost_state(s_prev=self.s_1, s_curr=self.s_2))
+        self.assertSetEqual(set(sym_state('6,7,8')), lost_state(s_prev=self.s_2, s_curr=self.s_1))
 
     def test_new_state(self):
         self.assertEqual(0, len(new_state(s_prev=self.s_empty, s_curr=self.s_empty)))
@@ -142,5 +143,5 @@ class TestStateFunctions(TestCase):
         self.assertEqual(0, len(new_state(s_prev=self.s_empty, s_curr=self.s_none)))
         self.assertEqual(0, len(new_state(s_prev=self.s_none, s_curr=self.s_none)))
 
-        self.assertSetEqual({6, 7, 8}, new_state(s_prev=self.s_1, s_curr=self.s_2))
-        self.assertSetEqual({1, 2, 3}, new_state(s_prev=self.s_2, s_curr=self.s_1))
+        self.assertSetEqual(set(sym_state('6,7,8')), new_state(s_prev=self.s_1, s_curr=self.s_2))
+        self.assertSetEqual(set(sym_state('1,2,3')), new_state(s_prev=self.s_2, s_curr=self.s_1))

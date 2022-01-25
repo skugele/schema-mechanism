@@ -6,11 +6,9 @@ from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_EC_ITEM_STATS
-from schema_mechanism.data_structures import SchemaStats
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
-from test_share.test_classes import ExtendedContextTestWrapper
 from test_share.test_classes import MockObserver
 
 
@@ -22,16 +20,16 @@ class TestExtendedContext(TestCase):
         pool.clear()
 
         for i in range(self.N_ITEMS):
-            pool.get(i, SymbolicItem)
+            pool.get(str(i), SymbolicItem)
 
         self.context = sym_state_assert('100,101')
-        self.ec = ExtendedContextTestWrapper(context=self.context)
+        self.ec = ExtendedContext(context=self.context)
 
         self.obs = MockObserver()
         self.ec.register(self.obs)
 
     def test_init(self):
-        ec = ExtendedContext(SchemaStats(), self.context)
+        ec = ExtendedContext(self.context)
         for i in ItemPool():
             self.assertIs(NULL_EC_ITEM_STATS, ec.stats[i])
 

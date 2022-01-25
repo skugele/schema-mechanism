@@ -13,6 +13,7 @@ from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import lost_state
@@ -34,17 +35,9 @@ class TestSchema(TestCase):
 
         # populate pool
         for i in range(10):
-            _ = self._item_pool.get(i, SymbolicItem)
+            _ = self._item_pool.get(str(i), SymbolicItem)
 
-        self.context = sym_state_assert('0,1')
-        self.action = Action()
-        self.result = sym_state_assert('2,3,4')
-
-        self.schema = Schema(
-            context=self.context,
-            action=self.action,
-            result=self.result
-        )
+        self.schema = sym_schema('0,1/A1/2,3,4')
 
         self.obs = MockObserver()
         self.schema.register(self.obs)
@@ -113,7 +106,7 @@ class TestSchema(TestCase):
     def test_is_applicable(self):
         # primitive schemas should always be applicable
         schema = Schema(action=Action())
-        self.assertTrue(schema.is_applicable(state=['1']))
+        self.assertTrue(schema.is_applicable(state=sym_state('1')))
 
         c = sym_state_assert('1,~2,3')
 
@@ -197,8 +190,8 @@ class TestSchema(TestCase):
 
     def test_update_2(self):
         # activated and not success
-        s_prev = [0, 1, 2, 3]
-        s_curr = [2, 5]
+        s_prev = sym_state('0,1,2,3')
+        s_curr = sym_state('2,5')
 
         v_prev = ItemPoolStateView(s_prev)
         v_curr = ItemPoolStateView(s_curr)
@@ -244,8 +237,8 @@ class TestSchema(TestCase):
 
     def test_update_3(self):
         # not activated
-        s_prev = [0, 3]
-        s_curr = [2, 4, 5]
+        s_prev = sym_state('0,3')
+        s_curr = sym_state('2,4,5')
 
         v_prev = ItemPoolStateView(s_prev)
         v_curr = ItemPoolStateView(s_curr)
@@ -292,7 +285,7 @@ class TestSchema(TestCase):
     def test_update_4(self):
 
         s_prev = None
-        s_curr = [2, 4, 5]
+        s_curr = sym_state('2,4,5')
 
         v_prev = ItemPoolStateView(s_prev)
         v_curr = ItemPoolStateView(s_curr)
@@ -342,70 +335,78 @@ class TestSchema(TestCase):
 
     def test_reliability_1(self):
         # success update
-        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=1)
+        update_schema(self.schema, activated=True, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,4,5'), count=1)
         self.assertEqual(1.0, self.schema.reliability)
 
         # failure update
-        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 5], count=1)
+        update_schema(self.schema, activated=True, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,5'), count=1)
         self.assertEqual(0.5, self.schema.reliability)
 
         # failure update
-        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 5], count=2)
+        update_schema(self.schema, activated=True, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,5'), count=2)
         self.assertEqual(0.25, self.schema.reliability)
 
     def test_reliability_2(self):
         # failure update
-        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 5], count=1)
+        update_schema(self.schema, activated=True, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,5'), count=1)
         self.assertEqual(0.0, self.schema.reliability)
 
         # success update
-        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=1)
+        update_schema(self.schema, activated=True, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,4,5'), count=1)
         self.assertEqual(0.5, self.schema.reliability)
 
         # success update
-        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=2)
+        update_schema(self.schema, activated=True, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,4,5'), count=2)
         self.assertEqual(0.75, self.schema.reliability)
 
     def test_reliability_3(self):
         # reliability stats SHOULD NOT affected when schema not activated
 
         # failure update WITHOUT activation
-        update_schema(self.schema, activated=False, s_prev=[0, 1], s_curr=[2, 3, 5], count=1)
+        update_schema(self.schema, activated=False, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,5'), count=1)
         self.assertIs(np.NAN, self.schema.reliability)
 
         # success update WITHOUT activation
-        update_schema(self.schema, activated=False, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=1)
+        update_schema(self.schema, activated=False, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,4,5'), count=1)
         self.assertIs(np.NAN, self.schema.reliability)
 
         # failure update WITHOUT activation
-        update_schema(self.schema, activated=False, s_prev=[0, 1], s_curr=[2, 3, 5], count=1)
+        update_schema(self.schema, activated=False, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,5'), count=1)
         self.assertIs(np.NAN, self.schema.reliability)
 
         # success update WITHOUT activation
-        update_schema(self.schema, activated=False, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=1)
+        update_schema(self.schema, activated=False, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,4,5'), count=1)
         self.assertIs(np.NAN, self.schema.reliability)
 
         # success update WITH activation
-        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=1)
+        update_schema(self.schema, activated=True, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,4,5'), count=1)
         self.assertEqual(1.0, self.schema.reliability)
 
         # failure update WITHOUT activation
-        update_schema(self.schema, activated=False, s_prev=[0, 1], s_curr=[2, 3, 5], count=1)
+        update_schema(self.schema, activated=False, s_prev=sym_state('0,1'), s_curr=sym_state('2,3,5'), count=1)
         self.assertEqual(1.0, self.schema.reliability)
 
     def test_notify_all(self):
         self.schema.notify_all = MagicMock()
 
-        # activated + success
-        update_schema(self.schema, activated=True, s_prev=[0, 1], s_curr=[2, 3, 4, 5], count=10)
-        self.schema.notify_all.assert_not_called()
+        act_state = sym_state('0,1,8')
+        result_state = sym_state('2,3,4,7')
 
-        # activated and not success
-        update_schema(self.schema, activated=True, s_prev=[0, 1, 7], s_curr=[3, 4, 7], count=10)
+        # activated + success
+        update_schema(self.schema, activated=True, s_prev=act_state, s_curr=result_state, count=1)
+
+        act_state = sym_state('0,1')
+        result_state = sym_state('2,3,7')
+
+        # activated + not success
+        update_schema(self.schema, activated=True, s_prev=act_state, s_curr=result_state, count=1)
         self.schema.notify_all.assert_called()
 
-        # not activated
-        update_schema(self.schema, activated=False, s_prev=[0, 3], s_curr=[4, 7, 8], count=10)
+        act_state = sym_state('0,1,7')
+        result_state = sym_state('2')
+
+        # not activated and not success
+        update_schema(self.schema, activated=False, s_prev=act_state, s_curr=result_state, count=1)
         self.schema.notify_all.assert_called()
 
     def test_copy(self):

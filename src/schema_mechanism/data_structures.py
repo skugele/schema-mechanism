@@ -291,10 +291,7 @@ class ECItemStats(ItemStats):
         of success if that item is Off when the schema is activated." (Drescher, 1991, p. 73)
     """
 
-    def __init__(self, schema_stats: SchemaStats):
-        # FIXME: Not used at the moment. Kept in the interface for consistency with ERItemStats.
-        self._schema_stats = schema_stats
-
+    def __init__(self):
         self._n_success_and_on = 0
         self._n_success_and_off = 0
         self._n_fail_and_on = 0
@@ -370,7 +367,7 @@ class ECItemStats(ItemStats):
         return self._n_fail_and_off
 
     def copy(self) -> ECItemStats:
-        new = ECItemStats(self._schema_stats)
+        new = ECItemStats()
 
         new._n_success_and_on = self._n_success_and_on
         new._n_success_and_off = self._n_success_and_off
@@ -422,9 +419,7 @@ class ECItemStats(ItemStats):
 class ERItemStats(ItemStats):
     """ Extended result item-level statistics """
 
-    def __init__(self, schema_stats: SchemaStats):
-        self._schema_stats = schema_stats
-
+    def __init__(self):
         self._n_on_and_activated = 0
         self._n_on_and_not_activated = 0
         self._n_off_and_activated = 0
@@ -455,8 +450,8 @@ class ERItemStats(ItemStats):
         """
         try:
             # calculate conditional probabilities
-            p_on_given_activated = self.n_on_and_activated / self._schema_stats.n_activated
-            p_on_given_not_activated = self.n_on_and_not_activated / self._schema_stats.n_not_activated
+            p_on_given_activated = self.n_on_and_activated / self.n_activated
+            p_on_given_not_activated = self.n_on_and_not_activated / self.n_not_activated
 
             # the part-to-part ratio between p(on AND activated) : p(on AND NOT activated)
             positive_trans_corr = p_on_given_activated / (p_on_given_activated + p_on_given_not_activated)
@@ -475,8 +470,8 @@ class ERItemStats(ItemStats):
         :return: the negative-transition correlation
         """
         try:
-            p_off_given_activated = self.n_off_and_activated / self._schema_stats.n_activated
-            p_off_given_not_activated = self.n_off_and_not_activated / self._schema_stats.n_not_activated
+            p_off_given_activated = self.n_off_and_activated / self.n_activated
+            p_off_given_not_activated = self.n_off_and_not_activated / self.n_not_activated
 
             # the part-to-part ratio between p(off AND activated) : p(off AND NOT activated)
             negative_trans_corr = p_off_given_activated / (p_off_given_activated + p_off_given_not_activated)
@@ -491,6 +486,14 @@ class ERItemStats(ItemStats):
     @property
     def n_off(self) -> int:
         return self._n_off_and_activated + self._n_off_and_not_activated
+
+    @property
+    def n_activated(self) -> int:
+        return self._n_on_and_activated + self._n_off_and_activated
+
+    @property
+    def n_not_activated(self) -> int:
+        return self._n_on_and_not_activated + self._n_off_and_not_activated
 
     @property
     def n_on_and_activated(self) -> int:
@@ -509,7 +512,7 @@ class ERItemStats(ItemStats):
         return self._n_off_and_not_activated
 
     def copy(self) -> ERItemStats:
-        new = ERItemStats(self._schema_stats)
+        new = ERItemStats()
 
         new._n_on_and_activated = self._n_on_and_activated
         new._n_on_and_not_activated = self._n_on_and_not_activated
@@ -575,8 +578,8 @@ class ReadOnlyERItemStats(ERItemStats):
 
 # A single immutable object that is meant to be used for all item instances that have never had stats updates
 NULL_SCHEMA_STATS = ReadOnlySchemaStats()
-NULL_EC_ITEM_STATS = ReadOnlyECItemStats(NULL_SCHEMA_STATS)
-NULL_ER_ITEM_STATS = ReadOnlyERItemStats(NULL_SCHEMA_STATS)
+NULL_EC_ITEM_STATS = ReadOnlyECItemStats()
+NULL_ER_ITEM_STATS = ReadOnlyERItemStats()
 
 
 class Action(UniqueIdMixin):
@@ -717,13 +720,9 @@ class ExtendedItemCollection(Observable):
     POS_CORR_RELEVANCE_THRESHOLD = 0.65
     NEG_CORR_RELEVANCE_THRESHOLD = 0.65
 
-    def __init__(self,
-                 schema_stats: SchemaStats,
-                 suppress_list: Collection[Item] = None,
-                 null_member: ItemStats = None):
+    def __init__(self, suppress_list: Collection[Item] = None, null_member: ItemStats = None):
         super().__init__()
 
-        self._schema_stats = schema_stats
         self._suppress_list = suppress_list or []
         self._null_member = null_member
 
@@ -789,8 +788,8 @@ class ExtendedItemCollection(Observable):
 
 class ExtendedResult(ExtendedItemCollection):
 
-    def __init__(self, schema_stats: SchemaStats, result: StateAssertion) -> None:
-        super().__init__(schema_stats, suppress_list=result.items, null_member=NULL_ER_ITEM_STATS)
+    def __init__(self, result: StateAssertion) -> None:
+        super().__init__(suppress_list=result.items, null_member=NULL_ER_ITEM_STATS)
 
     @property
     def stats(self) -> Dict[Item, ERItemStats]:
@@ -799,7 +798,7 @@ class ExtendedResult(ExtendedItemCollection):
     def update(self, item: Item, on: bool, activated=False, count: int = 1) -> None:
         item_stats = self._stats[item]
         if item_stats is NULL_ER_ITEM_STATS:
-            self._stats[item] = item_stats = ERItemStats(schema_stats=self._schema_stats)
+            self._stats[item] = item_stats = ERItemStats()
 
         item_stats.update(on=on, activated=activated, count=count)
 
@@ -853,8 +852,8 @@ class ExtendedContext(ExtendedItemCollection):
             conditions for turning Off a synthetic item (see Drescher, 1991, Section 4.2.2)
     """
 
-    def __init__(self, schema_stats: SchemaStats, context: StateAssertion) -> None:
-        super().__init__(schema_stats, suppress_list=context.items, null_member=NULL_EC_ITEM_STATS)
+    def __init__(self, context: StateAssertion) -> None:
+        super().__init__(suppress_list=context.items, null_member=NULL_EC_ITEM_STATS)
 
     @property
     def stats(self) -> Dict[Item, ECItemStats]:
@@ -863,7 +862,7 @@ class ExtendedContext(ExtendedItemCollection):
     def update(self, item: Item, on: bool, success: bool, count: int = 1) -> None:
         item_stats = self._stats[item]
         if item_stats is NULL_EC_ITEM_STATS:
-            self._stats[item] = item_stats = ECItemStats(schema_stats=self._schema_stats)
+            self._stats[item] = item_stats = ECItemStats()
 
         item_stats.update(on, success, count)
 
@@ -924,8 +923,8 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         self._stats: SchemaStats = SchemaStats()
 
-        self._extended_context: ExtendedContext = ExtendedContext(self._stats, self._context)
-        self._extended_result: ExtendedResult = ExtendedResult(self._stats, self._result)
+        self._extended_context: ExtendedContext = ExtendedContext(self._context)
+        self._extended_result: ExtendedResult = ExtendedResult(self._result)
 
         # TODO: Need to update overriding conditions.
         self._overriding_conditions: Optional[StateAssertion] = None

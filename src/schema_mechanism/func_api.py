@@ -18,11 +18,11 @@ def sym_state(str_repr: str) -> Collection[StateElement]:
     if not str_repr:
         return []
 
-    return [int(se) for se in str_repr.split(',')]
+    return [se for se in str_repr.split(',')]
 
 
 def sym_item(str_repr: str) -> Item:
-    return SymbolicItem(int(str_repr))
+    return SymbolicItem(str_repr)
 
 
 def sym_items(str_repr: str) -> Collection[Item]:

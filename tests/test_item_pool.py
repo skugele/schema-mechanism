@@ -8,6 +8,7 @@ from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import ReadOnlyItemPool
 from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.func_api import sym_state
 
 
 class TestSharedItemPool(TestCase):
@@ -26,19 +27,19 @@ class TestSharedItemPool(TestCase):
         pool = ItemPool()
 
         # test case: verify correct item type
-        item1 = pool.get(1, SymbolicItem)
+        item1 = pool.get('1', SymbolicItem)
         self.assertIsInstance(item1, SymbolicItem)
-        self.assertEqual(1, item1.state_element)
+        self.assertEqual('1', item1.state_element)
 
         # test case: duplicated state elements return identical instances
-        item1_again = pool.get(1, SymbolicItem)
+        item1_again = pool.get('1', SymbolicItem)
         self.assertIs(item1, item1_again)
 
         # test case: duplicate state elements do not increase pool size
         self.assertEqual(1, len(pool))
 
         # test case: unique items increment pool size by one per item
-        item2 = pool.get(2, SymbolicItem)
+        item2 = pool.get('2', SymbolicItem)
         self.assertEqual(2, len(pool))
         self.assertNotEqual(item1, item2)
 
@@ -59,28 +60,28 @@ class TestSharedItemPool(TestCase):
         pool = ItemPool()
 
         for value in range(100):
-            _ = pool.get(value, SymbolicItem)
+            _ = pool.get(str(value), SymbolicItem)
 
         self.assertEqual(100, len(pool))
 
         for value in range(100):
-            self.assertIn(value, pool)
+            self.assertIn(str(value), pool)
 
-        self.assertNotIn(100, pool)
+        self.assertNotIn('100', pool)
 
     def test_iterator(self):
         pool = ItemPool()
 
         for value in range(100):
-            _ = pool.get(value, SymbolicItem)
+            _ = pool.get(str(value), SymbolicItem)
 
         encountered = defaultdict(lambda: 0)
         for item in pool:
             self.assertIsInstance(item, SymbolicItem)
-            encountered[item.state_element] += 1
+            encountered[item] += 1
 
         self.assertEqual(100, len(encountered))
-        self.assertTrue(all(encountered[i] == 1 for i in range(100)))
+        self.assertTrue(all({encountered[k] == 1 for k in encountered.keys()}))
 
     @test_share.performance_test
     def test_performance(self):
@@ -92,7 +93,7 @@ class TestSharedItemPool(TestCase):
 
         for element in range(n_items):
             start = time()
-            pool.get(element, SymbolicItem)
+            pool.get(str(element), SymbolicItem)
             end = time()
             elapsed_time += end - start
 
@@ -119,7 +120,7 @@ class TestSharedItemPool(TestCase):
         for _ in range(n_repeats):
             for element in state:
                 start = time()
-                pool.get(element, SymbolicItem)
+                pool.get(str(element), SymbolicItem)
                 end = time()
                 elapsed_time += end - start
 
@@ -165,9 +166,9 @@ class TestItemPoolStateView(TestCase):
     def test(self):
         pool = ItemPool()
         for i in range(100):
-            _ = pool.get(i, SymbolicItem)
+            _ = pool.get(str(i), SymbolicItem)
 
-        state = [1, 2, 3]
+        state = sym_state('1,2,3')
         view = ItemPoolStateView(state=state)
 
         for i in pool:
@@ -182,7 +183,7 @@ class TestItemPoolStateView(TestCase):
 
         pool = ItemPool()
         for i in range(n_items):
-            _ = pool.get(i, SymbolicItem)
+            _ = pool.get(str(i), SymbolicItem)
 
         n_distinct_states = n_items
         n_state_elements = 10

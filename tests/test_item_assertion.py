@@ -2,6 +2,7 @@ from unittest import TestCase
 
 from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.func_api import sym_item
+from schema_mechanism.func_api import sym_state
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -52,25 +53,25 @@ class TestItemAssertion(TestCase):
         #############
 
         # item expected to be ON for these states
-        self.assertTrue(self.ia.is_satisfied(state=[1234]))
-        self.assertTrue(self.ia.is_satisfied(state=[123, 1234]))
+        self.assertTrue(self.ia.is_satisfied(sym_state('1234')))
+        self.assertTrue(self.ia.is_satisfied(sym_state('123,1234')))
 
         # item expected to be OFF for these states
-        self.assertFalse(self.ia.is_satisfied(state=[]))
-        self.assertFalse(self.ia.is_satisfied(state=[123]))
-        self.assertFalse(self.ia.is_satisfied(state=[123, 4321]))
+        self.assertFalse(self.ia.is_satisfied(sym_state('')))
+        self.assertFalse(self.ia.is_satisfied(sym_state('123')))
+        self.assertFalse(self.ia.is_satisfied(sym_state('123,4321')))
 
         # negated
         #########
 
         # item expected to be ON for these states
-        self.assertFalse(self.ia_neg.is_satisfied(state=[1234]))
-        self.assertFalse(self.ia_neg.is_satisfied(state=[123, 1234]))
+        self.assertFalse(self.ia_neg.is_satisfied(sym_state('1234')))
+        self.assertFalse(self.ia_neg.is_satisfied(sym_state('123,1234')))
 
         # item expected to be OFF for these states
-        self.assertTrue(self.ia_neg.is_satisfied(state=[]))
-        self.assertTrue(self.ia_neg.is_satisfied(state=[123]))
-        self.assertTrue(self.ia_neg.is_satisfied(state=[123, 4321]))
+        self.assertTrue(self.ia_neg.is_satisfied(sym_state('')))
+        self.assertTrue(self.ia_neg.is_satisfied(sym_state('123')))
+        self.assertTrue(self.ia_neg.is_satisfied(sym_state('123,4321')))
 
     def test_equal(self):
         copy = self.ia.copy()

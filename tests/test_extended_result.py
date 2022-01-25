@@ -1,16 +1,15 @@
 from random import sample
 from unittest import TestCase
 
+from schema_mechanism.data_structures import ExtendedResult
 from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import NULL_ER_ITEM_STATS
-from schema_mechanism.data_structures import SchemaStats
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
-from test_share.test_classes import ExtendedResultTestWrapper
 from test_share.test_classes import MockObserver
 
 
@@ -25,7 +24,7 @@ class TestExtendedResult(TestCase):
             self._item_pool.get(i, SymbolicItem)
 
         self.result = sym_state_assert('100,101')
-        self.er = ExtendedResultTestWrapper(SchemaStats(), result=self.result)
+        self.er = ExtendedResult(result=self.result)
 
         # for convenience, register a single observer
         self.obs = MockObserver()

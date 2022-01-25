@@ -23,12 +23,12 @@ class TestFunctionalApi(unittest.TestCase):
         # single state element
         state = sym_state('1')
         self.assertEqual(1, len(state))
-        self.assertIn(1, state)
+        self.assertIn('1', state)
 
         # multiple state element
         state = sym_state('1,2,3,4,5')
         self.assertEqual(5, len(state))
-        self.assertTrue(all({se in state for se in range(1, 6)}))
+        self.assertTrue(all({str(se) in state for se in range(1, 6)}))
 
     def test_sym_assert(self):
         # non-negated item assertion

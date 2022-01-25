@@ -4,11 +4,11 @@ from unittest import TestCase
 import numpy as np
 
 import test_share
+from schema_mechanism.data_structures import ECItemStats
+from schema_mechanism.data_structures import ERItemStats
 from schema_mechanism.data_structures import ReadOnlyECItemStats
 from schema_mechanism.data_structures import ReadOnlyERItemStats
 from schema_mechanism.data_structures import SchemaStats
-from test_share.test_classes import ECItemStatsTestWrapper
-from test_share.test_classes import ERItemStatsTestWrapper
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -20,7 +20,7 @@ from test_share.test_func import is_hash_same_for_equal_objects
 
 class TestECItemStatistics(TestCase):
     def setUp(self) -> None:
-        self.item_stats = ECItemStatsTestWrapper()
+        self.item_stats = ECItemStats()
 
     def test_init(self):
         self.assertEqual(self.item_stats.n_success_and_on, 0)
@@ -89,7 +89,7 @@ class TestECItemStatistics(TestCase):
         self.item_stats.update(on=False, success=False)
 
         copy = self.item_stats.copy()
-        other = ECItemStatsTestWrapper()
+        other = ECItemStats()
 
         self.assertEqual(self.item_stats, copy)
         self.assertNotEqual(self.item_stats, other)
@@ -114,7 +114,7 @@ class TestECItemStatistics(TestCase):
         self.item_stats.update(on=False, success=False)
 
         copy = self.item_stats.copy()
-        other = ECItemStatsTestWrapper()
+        other = ECItemStats()
 
         n_iters = 100_000
 
@@ -155,7 +155,7 @@ class TestECItemStatistics(TestCase):
 
 class TestERItemStatistics(TestCase):
     def setUp(self) -> None:
-        self.item_stats = ERItemStatsTestWrapper()
+        self.item_stats = ERItemStats()
 
     def test_init(self):
         self.assertEqual(self.item_stats.n_on_and_activated, 0)
@@ -223,7 +223,7 @@ class TestERItemStatistics(TestCase):
         self.item_stats.update(on=False, activated=False)
 
         copy = self.item_stats.copy()
-        other = ERItemStatsTestWrapper()
+        other = ERItemStats()
 
         self.assertEqual(self.item_stats, copy)
         self.assertNotEqual(self.item_stats, other)
@@ -248,7 +248,7 @@ class TestERItemStatistics(TestCase):
         self.item_stats.update(on=False, activated=False)
 
         copy = self.item_stats.copy()
-        other = ECItemStatsTestWrapper()
+        other = ECItemStats()
 
         n_iters = 100_000
 
@@ -359,11 +359,11 @@ class TestSchemaStats(TestCase):
 
 class TestReadOnlyECItemStats(TestCase):
     def test_update(self):
-        item_stats = ReadOnlyECItemStats(SchemaStats())
+        item_stats = ReadOnlyECItemStats()
         self.assertRaises(NotImplementedError, lambda: item_stats.update(True, True))
 
 
 class TestReadOnlyERItemStats(TestCase):
     def test_update(self):
-        item_stats = ReadOnlyERItemStats(SchemaStats())
+        item_stats = ReadOnlyERItemStats()
         self.assertRaises(NotImplementedError, lambda: item_stats.update(True, True))
