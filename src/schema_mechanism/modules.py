@@ -4,9 +4,8 @@ import itertools
 from collections import Collection
 from collections import Sequence
 from collections import deque
+from collections import namedtuple
 from random import sample
-from typing import FrozenSet
-from typing import NamedTuple
 from typing import Optional
 
 from schema_mechanism.data_structures import Action
@@ -166,7 +165,7 @@ class SchemaMemory(Observer):
 
 # TODO: Need to register SchemaMemory as a listener of ActionSelection
 class ActionSelection(Observable):
-    class SelectionDetails(NamedTuple):
+    class SelectionDetails(namedtuple):
         state: Collection[StateElement]
         applicable: Collection[Schema]
         schema: Schema
@@ -212,7 +211,7 @@ class SchemaMechanism(Observer, Observable):
         self.notify_all(source=self, selection=schema)
 
 
-def held_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement]) -> FrozenSet[StateElement]:
+def held_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement]) -> frozenset[StateElement]:
     """ Returns the set of state elements that are in both previous and current state
 
     :param s_prev: a collection of the previous state's elements
@@ -227,7 +226,7 @@ def held_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement
 
 
 def new_state(s_prev: Optional[Collection[StateElement]],
-              s_curr: Optional[Collection[StateElement]]) -> FrozenSet[StateElement]:
+              s_curr: Optional[Collection[StateElement]]) -> frozenset[StateElement]:
     """ Returns the set of state elements that are in current state but not previous
 
     :param s_prev: a collection of the previous state's elements
@@ -242,7 +241,7 @@ def new_state(s_prev: Optional[Collection[StateElement]],
 
 
 def lost_state(s_prev: Optional[Collection[StateElement]],
-               s_curr: Optional[Collection[StateElement]]) -> FrozenSet[StateElement]:
+               s_curr: Optional[Collection[StateElement]]) -> frozenset[StateElement]:
     """ Returns the set of state elements that are in previous state but not current
 
     :param s_prev: a collection of the previous state's elements

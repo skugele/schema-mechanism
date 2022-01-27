@@ -1,5 +1,5 @@
+from collections import Hashable
 from typing import Any
-from typing import Hashable
 
 
 def is_eq_reflexive(x: Any) -> bool:

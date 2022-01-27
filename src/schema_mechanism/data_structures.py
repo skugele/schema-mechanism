@@ -2,20 +2,17 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from collections import Collection
+from collections import Hashable
+from collections import Iterator
+from collections import MutableSet
 from collections import defaultdict
 from enum import Enum
 from enum import auto
 from enum import unique
 from functools import lru_cache
 from typing import Any
-from typing import Collection
-from typing import Dict
-from typing import FrozenSet
-from typing import Hashable
-from typing import Iterator
-from typing import MutableSet
 from typing import Optional
-from typing import Tuple
 from typing import Type
 from typing import Union
 
@@ -74,7 +71,7 @@ class Item(ABC):
 
 
 class ItemPool(metaclass=Singleton):
-    _items: Dict[StateElement, Item] = dict()
+    _items: dict[StateElement, Item] = dict()
 
     def __contains__(self, state_element: StateElement):
         return state_element in self._items
@@ -726,7 +723,7 @@ class ExtendedItemCollection(Observable):
         self._suppress_list = suppress_list or []
         self._null_member = null_member
 
-        self._stats: Dict[Item, ItemStats] = defaultdict(lambda: self._null_member)
+        self._stats: dict[Item, ItemStats] = defaultdict(lambda: self._null_member)
 
         self._item_pool = ItemPool()
 
@@ -734,7 +731,7 @@ class ExtendedItemCollection(Observable):
         self._new_relevant_items: MutableSet[ItemAssertion] = set()
 
     @property
-    def stats(self) -> Dict[Item, Any]:
+    def stats(self) -> dict[Item, Any]:
         return self._stats
 
     @property
@@ -742,7 +739,7 @@ class ExtendedItemCollection(Observable):
         return self._suppress_list
 
     @property
-    def relevant_items(self) -> FrozenSet[ItemAssertion]:
+    def relevant_items(self) -> frozenset[ItemAssertion]:
         return frozenset(self._relevant_items)
 
     def update_relevant_items(self, item_assert: ItemAssertion):
@@ -763,7 +760,7 @@ class ExtendedItemCollection(Observable):
         self._new_relevant_items = set()
 
     @property
-    def new_relevant_items(self) -> FrozenSet[ItemAssertion]:
+    def new_relevant_items(self) -> frozenset[ItemAssertion]:
         return frozenset(self._new_relevant_items)
 
     def __str__(self) -> str:
@@ -786,13 +783,20 @@ class ExtendedItemCollection(Observable):
         return repr_str(self, attr_values)
 
 
+# FIXME: "the schema mechanism does not build conjunctive results incrementally; only a schema with an empty result can
+# FIXME: spin off a schema with a new result item. (Such a result will be bare, since an empty result implies an
+# FIXME: empty context. Chaining to contexts that have more than one item is made possible by permitting a schema to
+# FIXME: spawn a multiple-item spin-off all at once, as follows."
+# FIXME:
+
+# TODO: Add a description for the purpose of the extended result
 class ExtendedResult(ExtendedItemCollection):
 
     def __init__(self, result: StateAssertion) -> None:
         super().__init__(suppress_list=result.items, null_member=NULL_ER_ITEM_STATS)
 
     @property
-    def stats(self) -> Dict[Item, ERItemStats]:
+    def stats(self) -> dict[Item, ERItemStats]:
         return super().stats
 
     def update(self, item: Item, on: bool, activated=False, count: int = 1) -> None:
@@ -838,7 +842,7 @@ class ExtendedResult(ExtendedItemCollection):
 
 class ExtendedContext(ExtendedItemCollection):
     """
-        a schema’s extended context tried to identify conditions under which the result more
+        a schema’s extended context is used to identify conditions under which the result more
         reliably follows the action. Each extended context slot keeps track of whether the schema
         is significantly more reliable when the associated item is On (or Off). When the mechanism
         thus discovers an item whose state is relevant to the schema’s reliability, it adds that
@@ -856,7 +860,7 @@ class ExtendedContext(ExtendedItemCollection):
         super().__init__(suppress_list=context.items, null_member=NULL_EC_ITEM_STATS)
 
     @property
-    def stats(self) -> Dict[Item, ECItemStats]:
+    def stats(self) -> dict[Item, ECItemStats]:
         return super().stats
 
     def update(self, item: Item, on: bool, success: bool, count: int = 1) -> None:
@@ -889,6 +893,22 @@ class ExtendedContext(ExtendedItemCollection):
             if not self.known_relevant_item(item_assert):
                 self.update_relevant_items(item_assert)
 
+
+# TODO: Enhancement #1: "The machinery's sensitivity to results is amplified by an embellishment of marginal
+# TODO: attribution: when a given schema is idle (i.e., it has not just completed an activation), the updating of its
+# TODO: extended result data is suppressed for any state transition which is explained--meaning that the transition is
+# TODO: predicted as the result of a reliable schema whose activation has just completed." (see Drescher, 1991, p. 73)
+
+# TODO: Enhancement #2: "There is an embellishment of the marginal attribution algorithm--deferring to a more specific
+# TODO: applicable schema--that often enables the discovery of an item who relevance has been obscured." (see Drescher,
+# TODO: 1991, pp. 75-76)
+
+# TODO: Enhancement #3: "[another] embellishment also reduces redundancy: when a schema's extended context
+# TODO: simultaneously detects the relevance of several items--that is, their statistics pass the significance
+# TODO: threshold on the same trial--the most specific is chosen as the one for inclusion in a spin-off from that
+# TODO: schema." (see Drescher, 1991, p. 77)
+
+# The implication is that usually the extended result statistics are updated even when that schema was not not activated
 
 # TODO: Candidate for the flyweight pattern?
 class Schema(Observer, Observable, UniqueIdMixin):
@@ -1180,7 +1200,7 @@ class SchemaTree:
 
     def __init__(self, primitives: Optional[Collection[Schema]] = None) -> None:
         self._root = SchemaTreeNode(label='root')
-        self._nodes: Dict[Tuple[StateAssertion, Action], SchemaTreeNode] = dict()
+        self._nodes: dict[tuple[StateAssertion, Action], SchemaTreeNode] = dict()
 
         self._n_schemas = 0
 
@@ -1239,20 +1259,20 @@ class SchemaTree:
         """
         self.add(self.root, frozenset(primitives))
 
-    def add_context_spinoffs(self, source: Schema, spin_offs: Collection[Schema]) -> None:
-        """ Adds context spinoff schemas to this tree.
+    def add_context_spin_offs(self, source: Schema, spin_offs: Collection[Schema]) -> None:
+        """ Adds context spin-off schemas to this tree.
 
-        :param source: the source schema that resulted in these spinoff schemas.
-        :param spin_offs: the spinoff schemas.
+        :param source: the source schema that resulted in these spin-off schemas.
+        :param spin_offs: the spin-off schemas.
         :return: None
         """
         self.add(source, frozenset(spin_offs), Schema.SpinOffType.CONTEXT)
 
-    def add_result_spinoffs(self, source: Schema, spin_offs: Collection[Schema]):
-        """ Adds result spinoff schemas to this tree.
+    def add_result_spin_offs(self, source: Schema, spin_offs: Collection[Schema]):
+        """ Adds result spin-off schemas to this tree.
 
-        :param source: the source schema that resulted in these spinoff schemas.
-        :param spin_offs: the spinoff schemas.
+        :param source: the source schema that resulted in these spin-off schemas.
+        :param spin_offs: the spin-off schemas.
         :return: None
         """
         self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
@@ -1341,17 +1361,17 @@ class SchemaTree:
 
     def add(self,
             source: Union[Schema, SchemaTreeNode],
-            schemas: FrozenSet[Schema],
+            schemas: frozenset[Schema],
             spin_off_type: Optional[Schema.SpinOffType] = None) -> SchemaTreeNode:
         """ Adds schemas to this schema tree.
 
-        :param source: the "source" schema that generated the given (primitive or spinoff) schemas, or the previously
+        :param source: the "source" schema that generated the given (primitive or spin-off) schemas, or the previously
         added tree node containing that "source" schema.
-        :param schemas: a collection of (primitive or spinoff) schemas
-        :param spin_off_type: the schema spinoff type (CONTEXT or RESULT), or None when adding primitive schemas
+        :param schemas: a collection of (primitive or spin-off) schemas
+        :param spin_off_type: the schema spin-off type (CONTEXT or RESULT), or None when adding primitive schemas
 
         Note: The source can also be the tree root. This can be used for adding primitive schemas to the tree. In
-        this case, the spinoff_type should be None or CONTEXT.
+        this case, the spin_off_type should be None or CONTEXT.
 
         :return: the parent node for which the add operation occurred
         """

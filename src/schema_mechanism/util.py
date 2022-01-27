@@ -1,9 +1,7 @@
 from abc import ABCMeta
+from collections import Iterable
 from itertools import tee
 from typing import Any
-from typing import Dict
-from typing import Iterable
-from typing import List
 
 import numpy as np
 import sklearn.metrics as sk_metrics
@@ -44,12 +42,12 @@ class Observable:
     """ An observable subject. """
 
     def __init__(self, *args, **kwargs) -> None:
-        self._observers: List[Observer] = list()
+        self._observers: list[Observer] = list()
 
         super().__init__(*args, **kwargs)
 
     @property
-    def observers(self) -> List[Observer]:
+    def observers(self) -> list[Observer]:
         return self._observers
 
     def register(self, observer: Observer) -> None:
@@ -100,7 +98,7 @@ def get_orthogonal_vector(v: np.ndarray):
     return v_orth
 
 
-def repr_str(obj: Any, attr_values: Dict[str, Any]) -> str:
+def repr_str(obj: Any, attr_values: dict[str, Any]) -> str:
     type_name = type(obj).__name__
 
     return f'{type_name}({attr_values})'

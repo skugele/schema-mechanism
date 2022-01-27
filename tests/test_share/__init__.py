@@ -1,4 +1,4 @@
-from typing import Callable
+from collections import Callable
 
 SUPPRESS_PERFORMANCE = True
 SUPPRESS_STRING_OUTPUT = True

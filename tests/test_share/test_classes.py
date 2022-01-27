@@ -1,5 +1,4 @@
 from typing import Any
-from typing import Dict
 
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
@@ -16,7 +15,7 @@ class MockObserver(Observer):
         return len(self.messages)
 
     @property
-    def last_message(self) -> Dict[str, Any]:
+    def last_message(self) -> dict[str, Any]:
         return {} if not self.messages else self.messages[-1]
 
     def receive(self, *args, **kwargs) -> None:

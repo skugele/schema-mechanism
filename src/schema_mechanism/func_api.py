@@ -1,7 +1,5 @@
-from typing import Collection
-from typing import List
+from collections import Collection
 from typing import Optional
-from typing import Tuple
 
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import Item
@@ -69,7 +67,7 @@ def sym_schema(str_repr: str) -> Schema:
                   result=sym_state_assert(result_str))
 
 
-def actions(n: Optional[int] = None, labels: Optional[List] = None) -> Collection[Action]:
+def actions(n: Optional[int] = None, labels: Optional[list] = None) -> Collection[Action]:
     return (
         [Action(label) for label in labels] if labels else
         [Action(str(i)) for i in range(1, n + 1)] if n else
@@ -77,5 +75,5 @@ def actions(n: Optional[int] = None, labels: Optional[List] = None) -> Collectio
     )
 
 
-def primitive_schemas(actions_: Collection[Action]) -> Tuple[Schema]:
+def primitive_schemas(actions_: Collection[Action]) -> tuple[Schema]:
     return tuple([Schema(action=a) for a in actions_])

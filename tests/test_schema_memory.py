@@ -28,31 +28,31 @@ class TestSchemaMemory(TestCase):
         s1_2 = sym_schema('2/A1/')
         s1_3 = sym_schema('3/A1/')
         s1_4 = sym_schema('4/A1/')
-        self.tree.add_context_spinoffs(s1, (s1_1, s1_2, s1_3, s1_4))
+        self.tree.add_context_spin_offs(s1, (s1_1, s1_2, s1_3, s1_4))
 
         s2_1 = sym_schema('1/A2/')
         s2_2 = sym_schema('2/A2/')
-        self.tree.add_context_spinoffs(s2, (s2_1, s2_2))
+        self.tree.add_context_spin_offs(s2, (s2_1, s2_2))
 
         s1_1_1 = sym_schema('1,2/A1/')
         s1_1_2 = sym_schema('1,3/A1/')
         s1_1_3 = sym_schema('1,4/A1/')
         s1_1_4 = sym_schema('1,5/A1/')
-        self.tree.add_context_spinoffs(s1_1, (s1_1_1, s1_1_2, s1_1_3, s1_1_4))
+        self.tree.add_context_spin_offs(s1_1, (s1_1_1, s1_1_2, s1_1_3, s1_1_4))
 
         s1_1_2_1 = sym_schema('1,3,5/A1/')
         s1_1_2_2 = sym_schema('1,3,6/A1/')
         s1_1_2_3 = sym_schema('1,3,7/A1/')
-        self.tree.add_context_spinoffs(s1_1_2, (s1_1_2_1, s1_1_2_2, s1_1_2_3))
+        self.tree.add_context_spin_offs(s1_1_2, (s1_1_2_1, s1_1_2_2, s1_1_2_3))
 
         s1_1_2_1_1 = sym_schema('1,3,5,7/A1/')
-        self.tree.add_context_spinoffs(s1_1_2_1, (s1_1_2_1_1,))
+        self.tree.add_context_spin_offs(s1_1_2_1, (s1_1_2_1_1,))
 
         s1_1_2_3_1 = sym_schema('1,3,7,~9/A1/')
-        self.tree.add_context_spinoffs(s1_1_2_3, (s1_1_2_3_1,))
+        self.tree.add_context_spin_offs(s1_1_2_3, (s1_1_2_3_1,))
 
         s1_1_r100 = sym_schema('1/A1/100')
-        self.tree.add_result_spinoffs(s1_1, (s1_1_r100,))
+        self.tree.add_result_spin_offs(s1_1, (s1_1_r100,))
 
         # Tree contents:
         #
@@ -91,11 +91,11 @@ class TestSchemaMemory(TestCase):
 
         s1_1 = create_context_spin_off(primitives[0], sym_assert('1'))
         s1_2 = create_context_spin_off(primitives[0], sym_assert('2'))
-        tree.add_context_spinoffs(primitives[0], (s1_1, s1_2))
+        tree.add_context_spin_offs(primitives[0], (s1_1, s1_2))
 
         s1_1r1 = create_result_spin_off(s1_1, sym_assert('3'))
         s1_1r2 = create_result_spin_off(s1_1, sym_assert('4'))
-        tree.add_result_spinoffs(s1_1, (s1_1r1, s1_1r2))
+        tree.add_result_spin_offs(s1_1, (s1_1r1, s1_1r2))
 
         sm = SchemaMemory.from_tree(tree)
         self.assertEqual(tree.n_schemas, len(sm))

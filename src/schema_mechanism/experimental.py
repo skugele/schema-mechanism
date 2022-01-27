@@ -1,5 +1,5 @@
+from collections import Collection
 from typing import Any
-from typing import Collection
 
 import numpy as np
 

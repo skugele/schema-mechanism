@@ -58,12 +58,12 @@ class TestSchemaTree(TestCase):
 
         self.tree = SchemaTree()
         self.tree.add_primitives((self.s1, self.s2))
-        self.tree.add_context_spinoffs(self.s1, (self.s1_1, self.s1_2, self.s1_3, self.s1_4))
-        self.tree.add_context_spinoffs(self.s2, (self.s2_1, self.s2_2))
-        self.tree.add_context_spinoffs(self.s1_1, (self.s1_1_1, self.s1_1_2, self.s1_1_3, self.s1_1_4))
-        self.tree.add_context_spinoffs(self.s1_1_2, (self.s1_1_2_1, self.s1_1_2_2, self.s1_1_2_3))
-        self.tree.add_context_spinoffs(self.s1_1_2_1, (self.s1_1_2_1_1,))
-        self.tree.add_context_spinoffs(self.s1_1_2_3, (self.s1_1_2_3_1,))
+        self.tree.add_context_spin_offs(self.s1, (self.s1_1, self.s1_2, self.s1_3, self.s1_4))
+        self.tree.add_context_spin_offs(self.s2, (self.s2_1, self.s2_2))
+        self.tree.add_context_spin_offs(self.s1_1, (self.s1_1_1, self.s1_1_2, self.s1_1_3, self.s1_1_4))
+        self.tree.add_context_spin_offs(self.s1_1_2, (self.s1_1_2_1, self.s1_1_2_2, self.s1_1_2_3))
+        self.tree.add_context_spin_offs(self.s1_1_2_1, (self.s1_1_2_1_1,))
+        self.tree.add_context_spin_offs(self.s1_1_2_3, (self.s1_1_2_3_1,))
 
     def test_iter(self):
         for _ in self.empty_tree:
@@ -104,14 +104,14 @@ class TestSchemaTree(TestCase):
 
     def test_add_context_spinoffs(self):
         # ValueError raised if list of context spinoffs is empty
-        self.assertRaises(ValueError, lambda: self.tree.add_context_spinoffs(self.s1, spin_offs=[]))
+        self.assertRaises(ValueError, lambda: self.tree.add_context_spin_offs(self.s1, spin_offs=[]))
 
         source = self.s1_1_2_3_1
         spinoffs = [create_context_spin_off(source, sym_assert(f'{i}')) for i in range(10, 15)]
 
         # adding single context spinoff schema to tree
         len_before_add = len(self.tree)
-        self.tree.add_context_spinoffs(source, spinoffs[0:1])
+        self.tree.add_context_spin_offs(source, spinoffs[0:1])
         len_after_add = len(self.tree)
 
         self.assertEqual(len_before_add + 1, len_after_add)
@@ -120,7 +120,7 @@ class TestSchemaTree(TestCase):
 
         # adding multiple context spin-off schemas to tree
         len_before_add = len(self.tree)
-        self.tree.add_context_spinoffs(source, spinoffs[1:])
+        self.tree.add_context_spin_offs(source, spinoffs[1:])
         len_after_add = len(self.tree)
 
         self.assertEqual(len_before_add + len(spinoffs[1:]), len_after_add)
@@ -131,14 +131,14 @@ class TestSchemaTree(TestCase):
 
     def test_add_result_spinoffs(self):
         # ValueError raised if list of result spinoffs is empty
-        self.assertRaises(ValueError, lambda: self.tree.add_result_spinoffs(self.s1, spin_offs=[]))
+        self.assertRaises(ValueError, lambda: self.tree.add_result_spin_offs(self.s1, spin_offs=[]))
 
         source = self.s1_1_2_3_1
         spinoffs = [create_result_spin_off(source, sym_assert(f'{i}')) for i in range(5)]
 
         # adding single result spinoff schema to tree
         len_before_add = len(self.tree)
-        self.tree.add_result_spinoffs(source, spinoffs[0:1])
+        self.tree.add_result_spin_offs(source, spinoffs[0:1])
         len_after_add = len(self.tree)
 
         # number of tree nodes SHOULD NOT CHANGE when adding result spin-offs
@@ -149,7 +149,7 @@ class TestSchemaTree(TestCase):
 
         # adding multiple result spin-off schemas to tree
         len_before_add = len(self.tree)
-        self.tree.add_result_spinoffs(source, spinoffs[1:])
+        self.tree.add_result_spin_offs(source, spinoffs[1:])
         len_after_add = len(self.tree)
 
         # number of tree nodes SHOULD NOT CHANGE when adding result spin-offs
@@ -183,7 +183,7 @@ class TestSchemaTree(TestCase):
     def test_is_valid_node_5(self):
         # non-primitive nodes should have the same action as their parents
         s_illegal_action = sym_schema('1/A3/')
-        self.tree.add_context_spinoffs(self.s1, (s_illegal_action,))
+        self.tree.add_context_spin_offs(self.s1, (s_illegal_action,))
         s_illegal_action_node = self.tree.get(s_illegal_action)
         self.assertFalse(self.tree.is_valid_node(s_illegal_action_node))
 
@@ -194,15 +194,15 @@ class TestSchemaTree(TestCase):
 
         tree = SchemaTree()
         tree.add_primitives((s1,))
-        tree.add_context_spinoffs(s1, (s1_1,))
-        tree.add_context_spinoffs(s1_1, (s1_1_1,))
+        tree.add_context_spin_offs(s1, (s1_1,))
+        tree.add_context_spin_offs(s1_1, (s1_1_1,))
 
         for n in tree:
             self.assertTrue(tree.is_valid_node(n))
 
         # children should have all of the context item assertions of their parents
         s_illegal_context = sym_schema('1,5,6/A1/')
-        tree.add_context_spinoffs(s1_1_1, (s_illegal_context,))
+        tree.add_context_spin_offs(s1_1_1, (s_illegal_context,))
 
         s_illegal_context_node = tree.get(s_illegal_context)
         self.assertFalse(tree.is_valid_node(s_illegal_context_node))
@@ -217,10 +217,10 @@ class TestSchemaTree(TestCase):
         invalid_2 = sym_schema('1,2,3,4,5/A1/')
 
         # invalid due to parent and child having different actions
-        self.tree.add_context_spinoffs(self.s2, (invalid_1,))
+        self.tree.add_context_spin_offs(self.s2, (invalid_1,))
 
         # invalid due to parent and child having inconsistent contexts
-        self.tree.add_context_spinoffs(self.s1_1_2_1_1, (invalid_2,))
+        self.tree.add_context_spin_offs(self.s1_1_2_1_1, (invalid_2,))
 
         invalid_nodes = self.tree.validate()
         self.assertEqual(2, len(invalid_nodes))
@@ -238,7 +238,7 @@ class TestSchemaTree(TestCase):
         self.assertNotIn(another, tree)
 
         # after adding, another schema should be contained in tree
-        tree.add_context_spinoffs(p_schemas[0], spin_offs=(another,))
+        tree.add_context_spin_offs(p_schemas[0], spin_offs=(another,))
         self.assertIn(another, tree)
 
         # contains should work for SchemaTreeNodes as well
@@ -302,7 +302,7 @@ class TestSchemaTree(TestCase):
             spinoff = create_spin_off(schema, Schema.SpinOffType.CONTEXT, sym_assert(str(state_element)))
 
             start = time()
-            tree.add_context_spinoffs(schema, (spinoff,))
+            tree.add_context_spin_offs(schema, (spinoff,))
             end = time()
             elapsed_time = end - start
 
@@ -323,7 +323,7 @@ class TestSchemaTree(TestCase):
             spinoff = create_spin_off(schema, Schema.SpinOffType.RESULT, sym_assert(str(state_element)))
 
             start = time()
-            tree.add_result_spinoffs(schema, (spinoff,))
+            tree.add_result_spin_offs(schema, (spinoff,))
             end = time()
             elapsed_time = end - start
 
@@ -351,7 +351,7 @@ class TestSchemaTree(TestCase):
         for i in range(n_schemas - 1):
             spinoff = create_spin_off(schema, Schema.SpinOffType.CONTEXT, sym_assert(str(i)))
             start = time()
-            tree.add_context_spinoffs(schema, (spinoff,))
+            tree.add_context_spin_offs(schema, (spinoff,))
             end = time()
             elapsed_time += end - start
             schema = spinoff
@@ -382,7 +382,7 @@ class TestSchemaTree(TestCase):
         for state_element in range(n_schemas - 1):
             spinoff = create_spin_off(schema, Schema.SpinOffType.CONTEXT, sym_assert(str(state_element)))
             start = time()
-            tree.add_context_spinoffs(schema, (spinoff,))
+            tree.add_context_spin_offs(schema, (spinoff,))
             end = time()
             elapsed_time = end - start
 
