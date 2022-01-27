@@ -16,20 +16,20 @@ from test_share.test_func import is_hash_same_for_equal_objects
 class TestSymbolicItem(TestCase):
 
     def setUp(self) -> None:
-        self.item = SymbolicItem(state_element=1234)
+        self.item = SymbolicItem(state_element='1234')
 
     def test_init(self):
-        self.assertEqual(1234, self.item.state_element)
+        self.assertEqual('1234', self.item.state_element)
 
     def test_is_on(self):
         # item expected to be ON for these states
-        self.assertTrue(self.item.is_on(state=[1234]))
-        self.assertTrue(self.item.is_on(state=[123, 1234]))
+        self.assertTrue(self.item.is_on(state=['1234']))
+        self.assertTrue(self.item.is_on(state=['123', '1234']))
 
         # item expected to be OFF for these states
         self.assertFalse(self.item.is_on(state=[]))
-        self.assertFalse(self.item.is_on(state=[123]))
-        self.assertFalse(self.item.is_on(state=[123, 4321]))
+        self.assertFalse(self.item.is_on(state=['123']))
+        self.assertFalse(self.item.is_on(state=['123', '4321']))
 
     def test_copy(self):
         copy = self.item.copy()
@@ -39,7 +39,7 @@ class TestSymbolicItem(TestCase):
 
     def test_equal(self):
         copy = self.item.copy()
-        other = SymbolicItem(123)
+        other = SymbolicItem('123')
 
         self.assertEqual(self.item, self.item)
         self.assertEqual(self.item, copy)
@@ -63,7 +63,7 @@ class TestSymbolicItem(TestCase):
         n_distinct_states = 100_000_000_000
         n_state_elements = 25
 
-        items = [SymbolicItem(value) for value in range(n_items)]
+        items = [SymbolicItem(str(value)) for value in range(n_items)]
         state = sample(range(n_distinct_states), k=n_state_elements)
 
         start = time()

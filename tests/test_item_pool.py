@@ -137,7 +137,7 @@ class TestReadOnlyItemPool(TestCase):
 
         pool = ItemPool()
         for i in range(n_items):
-            pool.get(i, SymbolicItem)
+            pool.get(str(i), SymbolicItem)
 
         self.assertEqual(n_items, len(pool))
 
@@ -148,9 +148,9 @@ class TestReadOnlyItemPool(TestCase):
 
         # test that all items exist in read-only view
         for i in range(n_items):
-            item = pool.get(i, SymbolicItem)
+            item = pool.get(str(i), SymbolicItem)
             self.assertIsNotNone(item)
-            self.assertEqual(i, item.state_element)
+            self.assertEqual(str(i), item.state_element)
 
         # test non-existent element returns None and DOES NOT add any new elements
         self.assertIsNone(ro_pool.get('nope', SymbolicItem))
