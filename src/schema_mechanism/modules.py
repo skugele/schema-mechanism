@@ -4,8 +4,8 @@ import itertools
 from collections import Collection
 from collections import Sequence
 from collections import deque
-from collections import namedtuple
 from random import sample
+from typing import NamedTuple
 from typing import Optional
 
 from schema_mechanism.data_structures import Action
@@ -165,7 +165,7 @@ class SchemaMemory(Observer):
 
 # TODO: Need to register SchemaMemory as a listener of ActionSelection
 class ActionSelection(Observable):
-    class SelectionDetails(namedtuple):
+    class SelectionDetails(NamedTuple):
         state: Collection[StateElement]
         applicable: Collection[Schema]
         schema: Schema

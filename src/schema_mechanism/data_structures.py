@@ -80,7 +80,7 @@ class ItemPool(metaclass=Singleton):
         return len(self._items)
 
     def __iter__(self) -> Iterator[Item]:
-        return iter(self._items.values())
+        yield from self._items.values()
 
     def clear(self):
         self._items.clear()
