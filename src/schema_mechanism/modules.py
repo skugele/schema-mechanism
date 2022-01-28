@@ -3,9 +3,10 @@ from __future__ import annotations
 import itertools
 from collections import Collection
 from collections import Sequence
-from random import sample
 from typing import NamedTuple
 from typing import Optional
+
+import numpy as np
 
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import Item
@@ -193,15 +194,17 @@ class SchemaSelection:
     def __init__(self):
         # TODO: Set parameters.
 
-        pass
+        # TODO: goal/explore weight should be updated over time.
+        # the relative weighting given to goal-pursuit vs exploration.
+        self._goal_weight: float = 1.0
+        self._explore_weight: float = 1.0 - self._goal_weight
 
-    # TODO: Should the activation state be removed and passed to SchemaMemory directly from the SchemaMechanism?
-    def select(self, applicable_schemas: Collection[Schema]) -> SchemaSelection.SelectionDetails:
+        # the absolute difference from the max selection value that counts as being identical to the max
+        self._absolute_max_value_diff: float = 0.05
+
+    def select(self, applicable_schemas: Sequence[Schema]) -> SchemaSelection.SelectionDetails:
         if not applicable_schemas:
             raise ValueError('Collection of applicable schemas must contain at least one schema')
-
-        # TODO: add logic to select a schema
-        schema = sample(list(applicable_schemas), k=1)[0]
 
         # TODO: There are MANY factors that influence value, and it is not clear what their relative weights should be.
         # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
@@ -214,16 +217,21 @@ class SchemaSelection:
         # Each explicit top-level goal is a state represented by some item, or conjunction of items. Items are
         # designated as corresponding to top-level goals based on their "value"
 
-        # TODO: How is primitive value determined for a conjunction of items? Summation? Average?
-
         # primitive value (associated with the mechanism's built-in primitive items)
+        ############################################################################
+
+        # TODO: Should this be limited to reliable schemas???
+        # add total primitive value of schema results
+        goal_values = np.array([s.result.total_primitive_value for s in applicable_schemas])
 
         # instrumental value
+        ####################
 
         # TODO: Need to implement backward chain determination to find accessible schemas before
         # TODO: I can implement instrumental value. (See Drescher 1991, Sec. 5.1.2)
 
         # delegated value
+        #################
 
         # TODO: Need to implement forward chain determination to find accessible schemas before
         # TODO: I can implement delegated value. (See Drescher 1991, Sec. 5.1.2)
@@ -255,6 +263,10 @@ class SchemaSelection:
         #####################
         # Exploratory Value #
         #####################
+
+        # TODO: Calculate this!
+        explore_values = np.zeros_like(applicable_schemas)
+
         # TODO: Is selection limited to applicable schemas during exploratory selection?
 
         # TODO: Add a mechanism for tracking recently activated schemas.
@@ -312,10 +324,13 @@ class SchemaSelection:
         #    a kind of focus of attention that deters wild thrashing from one never-completed action to another, while
         #    still allowing interruption for a good reason.” (Drescher, 1991, p. 62)
 
-        # These details are needed by SchemaMemory (for example, to support learning)
-        sd = self.SelectionDetails(applicable=applicable_schemas,
-                                   selected=schema)
-        return sd
+        selection_values = self._goal_weight * goal_values + self._explore_weight * explore_values
+        max_value = np.max(selection_values)
+
+        best_schemas = np.argwhere(selection_values >= (max_value - self._absolute_max_value_diff)).flatten()
+        selection_index = np.random.choice(best_schemas, size=1)[0]
+
+        return self.SelectionDetails(applicable=applicable_schemas, selected=applicable_schemas[selection_index])
 
 
 # FIXME: Need to rethink the interaction between modules. Should I use observers or let the SchemaMechanism
