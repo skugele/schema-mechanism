@@ -1,3 +1,4 @@
+import itertools
 from random import sample
 from time import time
 from unittest import TestCase
@@ -35,7 +36,7 @@ class TestSchema(TestCase):
 
         # populate pool
         for i in range(10):
-            _ = self._item_pool.get(str(i), SymbolicItem)
+            _ = self._item_pool.get(str(i), primitive_value=1.0, item_type=SymbolicItem)
 
         self.schema = sym_schema('0,1/A1/2,3,4')
 
@@ -80,6 +81,21 @@ class TestSchema(TestCase):
             self.fail('Schema\'s action is not immutable as expected')
         except Exception as e:
             pass
+
+    def test_items_in_context_and_result(self):
+        for item in itertools.chain.from_iterable([self.schema.context.items, self.schema.result.items]):
+            self.assertIsInstance(item, SymbolicItem)
+            self.assertEqual(1.0, item.primitive_value)
+
+        # all schemas should share the same underlying items
+        s1 = sym_schema('1,2/A1/3,4')
+        s2 = sym_schema('1,2/A2/3,4')
+
+        for i1, i2 in zip(s1.context.items, s2.context.items):
+            self.assertIs(i1, i2)
+
+        for i1, i2 in zip(s1.result.items, s2.result.items):
+            self.assertIs(i1, i2)
 
     def test_is_context_satisfied(self):
         c = sym_state_assert('1,~2,3')

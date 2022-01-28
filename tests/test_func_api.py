@@ -16,6 +16,34 @@ from schema_mechanism.func_api import sym_state_assert
 
 
 class TestFunctionalApi(unittest.TestCase):
+    def test_sym_item(self):
+        # state element only should give item with default primitive value
+        item = sym_item('1')
+
+        self.assertEqual('1', item.state_element)
+        self.assertEqual(0.0, item.primitive_value)
+
+        # state element and primitive value
+        item = sym_item('2', primitive_value=1.0)
+
+        self.assertEqual('2', item.state_element)
+        self.assertEqual(1.0, item.primitive_value)
+
+        # multiple calls with same state element should return same object
+        item1 = sym_item('3', primitive_value=1.0)
+        item2 = sym_item('3', primitive_value=1.0)
+
+        self.assertIs(item1, item2)
+        self.assertEqual('3', item2.state_element)
+        self.assertEqual(1.0, item2.primitive_value)
+
+        # if a new primitive value is requested for an existing item, the item's primitive value will be updated
+        item3 = sym_item('3', primitive_value=-1.0)
+
+        self.assertEqual('3', item3.state_element)
+        self.assertEqual(-1.0, item3.primitive_value)
+        self.assertIs(item1, item3)
+
     def test_sym_state(self):
         state = sym_state('')
         self.assertEqual(0, len(state))

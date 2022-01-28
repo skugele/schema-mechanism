@@ -3,7 +3,6 @@ from __future__ import annotations
 import itertools
 from collections import Collection
 from collections import Sequence
-from collections import deque
 from random import sample
 from typing import NamedTuple
 from typing import Optional
@@ -17,7 +16,6 @@ from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import SchemaTree
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import StateElement
-from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 
 
@@ -41,10 +39,6 @@ class SchemaMemory(Observer):
 
         self._stats: SchemaMemoryStats = SchemaMemoryStats()
 
-        # TODO: Need to experiment with multiple (recent) updates. This was not in the original schema mechanism but
-        # TODO: seems highly useful in many environments.
-        self._as_selections: deque[ActionSelection.SelectionDetails] = deque([], maxlen=1)
-
     def __len__(self) -> int:
         return self._schema_tree.n_schemas
 
@@ -57,10 +51,6 @@ class SchemaMemory(Observer):
     @property
     def schemas(self) -> Collection[Schema]:
         return list(itertools.chain.from_iterable([n.schemas for n in self._schema_tree]))
-
-    @property
-    def as_selections(self) -> Collection[ActionSelection.SelectionDetails]:
-        return self._as_selections
 
     @staticmethod
     def from_tree(tree: SchemaTree) -> SchemaMemory:
@@ -87,26 +77,30 @@ class SchemaMemory(Observer):
     def stats(self) -> SchemaMemoryStats:
         return self._stats
 
-    def update_all(self, result_state: Collection[StateElement]) -> None:
-        """ Updates schemas based on results of previous action.
+    def update_all(self,
+                   selection_details: SchemaSelection.SelectionDetails,
+                   selection_state: Collection[StateElement],
+                   result_state: Collection[StateElement]) -> None:
+        """ Updates schema statistics based on results of previously selected schema(s).
 
-        :param result_state: the state following the execution of the schema's action
+        Note: While the current implementation only supports updates based on the most recently selected schema, the
+        interface supports a sequence of selection details. This is to
+
+        :param selection_details: details corresponding to the most recently selected schema
+        :param selection_state: the environment state that was previously used for schema selection
+        :param result_state: the environment state resulting from the selected schema's executed action
 
         :return: None
         """
-        if len(self._as_selections) == 0:
-            return
-
-        # TODO: Change this when the mechanism can support updates based on multiple selections
-        activation_state, applicable, schema = self._as_selections[0]
+        applicable, schema = selection_details
 
         # create previous and current state views
-        v_act = ItemPoolStateView(activation_state)
+        v_act = ItemPoolStateView(selection_state)
         v_result = ItemPoolStateView(result_state)
 
         # create new and lost state element collections
-        new = new_state(activation_state, result_state)
-        lost = lost_state(activation_state, result_state)
+        new = new_state(selection_state, result_state)
+        lost = lost_state(selection_state, result_state)
 
         # update global statistics
         self._stats.n_updates += len(applicable)
@@ -142,8 +136,6 @@ class SchemaMemory(Observer):
 
         if isinstance(source, Schema):
             self._receive_from_schema(schema=source, *args, **kwargs)
-        elif isinstance(source, ActionSelection):
-            self._receive_from_action_selection(act_select=source, *args, **kwargs)
 
     def _receive_from_schema(self, schema: Schema, *args, **kwargs) -> None:
         spin_off_type: Schema.SpinOffType = kwargs['spin_off_type']
@@ -157,37 +149,178 @@ class SchemaMemory(Observer):
 
         self._schema_tree.add(schema, spin_offs, spin_off_type)
 
-    def _receive_from_action_selection(self, act_select: ActionSelection, *args, **kwargs):
-        selection: ActionSelection.SelectionDetails = kwargs['selection']
 
-        self._as_selections.append(selection)
+class SchemaSelection:
+    """ A module responsible for the selection of a schema from a set of applicable schemas.
 
+        The module has the following high-level characteristics:
 
-# TODO: Need to register SchemaMemory as a listener of ActionSelection
-class ActionSelection(Observable):
+            1.) Schemas compete for activation at each time step (i.e., for each received environmental state)
+            2.) Only one schema is activated at a time
+            3.) Schemas are chosen based on their "activation importance"
+            4.) Activation importance is based on "explicit goal pursuit" and "exploration"
+
+        Explicit Goal Pursuit
+        ---------------------
+            * “The goal-pursuit criterion contributes to a schema’s importance to the extent that the schema’s
+               activation helps chain to an explicit top-level goal” (Drescher, 1991, p. 61)
+            * "The Schema Mechanism uses only reliable schemas to pursue goals." (Drescher 1987, p. 292)
+
+        Exploration
+        -----------
+            * “The exploration criterion boosts the importance of a schema to promote its activation for the sake of
+               what might be learned by that activation” (Drescher, 1991, p. 60)
+            * “To strike a balance between goal-pursuit and exploration criteria, the [schema] mechanism alternates
+               between emphasizing goal-pursuit criterion for a time, then emphasizing exploration criterion;
+               currently, the exploration criterion is emphasized most often (about 90% of the time).”
+               (Drescher, 1991, p. 61)
+
+        “A new activation selection occurs at each time unit. Even if a chain of schemas leading to some goal is in
+        progress, each next link in the chain must compete for activation. Thus, as with the execution of a composite
+        action, control may shift to an unexpected, new, better path to the same goal. Top-level selection carries
+        this opportunism one step further; here, control may even shift to a chain that leads instead to a different,
+        more important goal.” (Drescher, 1991, p. 61)
+    """
+
     class SelectionDetails(NamedTuple):
-        state: Collection[StateElement]
         applicable: Collection[Schema]
-        schema: Schema
+        selected: Schema
 
     """
         See Drescher, 1991, section 3.4
     """
 
-    def select(self, sm: SchemaMemory, state: Collection[StateElement]) -> Schema:
-        applicable = sm.all_applicable(state)
+    def __init__(self):
+        # TODO: Set parameters.
+
+        pass
+
+    # TODO: Should the activation state be removed and passed to SchemaMemory directly from the SchemaMechanism?
+    def select(self, applicable_schemas: Collection[Schema]) -> SchemaSelection.SelectionDetails:
+        if not applicable_schemas:
+            raise ValueError('Collection of applicable schemas must contain at least one schema')
 
         # TODO: add logic to select a schema
-        schema = sample(applicable, k=1)[0]
+        schema = sample(list(applicable_schemas), k=1)[0]
+
+        # TODO: There are MANY factors that influence value, and it is not clear what their relative weights should be.
+        # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
+        # TODO: balance between them.
+
+        #######################
+        # Goal-Directed Value #
+        #######################
+
+        # Each explicit top-level goal is a state represented by some item, or conjunction of items. Items are
+        # designated as corresponding to top-level goals based on their "value"
+
+        # TODO: How is primitive value determined for a conjunction of items? Summation? Average?
+
+        # primitive value (associated with the mechanism's built-in primitive items)
+
+        # instrumental value
+
+        # TODO: Need to implement backward chain determination to find accessible schemas before
+        # TODO: I can implement instrumental value. (See Drescher 1991, Sec. 5.1.2)
+
+        # delegated value
+
+        # TODO: Need to implement forward chain determination to find accessible schemas before
+        # TODO: I can implement delegated value. (See Drescher 1991, Sec. 5.1.2)
+
+        #   "For each item, the schema mechanism computes the value explicitly ACCESSIBLE from the current state--that
+        #    is, the maximum value of any items that can be reached by a reliable CHAIN OF SCHEMAS starting with an
+        #    applicable schema." (See Drescher 1991, p. 63)
+
+        #   "The mechanism also keeps track of the average accessible value over an extended period of time." (See
+        #    Drescher 1991, p. 63)
+
+        #   "For each item, the mechanism keeps track of the average accessible value when the item is On, compared to
+        #    when the item is Off. If the accessible value when On tends to exceed the value when Off, the item receives
+        #    positive delegated value; if the accessible value when On is less than the value when Off, the item
+        #    receives negative delegated value. The magnitude of the delegated value is proportional both to the size of
+        #    the discrepancy of the On and Off values, and to the expected duration of the item's being On."
+        #    (See Drescher 1991, p. 63)
+
+        #   "For the purposes of the value-delegation comparison, accessible items of zero value count as having slight
+        #    positive value, thus delegating more value to states that tend to offer a greater variety of accessible
+        #    options." (See Drescher 1991, p. 63)
+
+        # TODO: According to Drescher 1987, only RELIABLE schemas can serve as elements of a plan. Does this mean
+        # TODO: that goal-directed behavior can only select from reliable schemas? Or something else??? How does this
+        # TODO: affect the valuation of a schema?
+
+        # "The Schema Mechanism uses only reliable schemas to pursue goals." (Drescher 1987, p. 292)
+
+        #####################
+        # Exploratory Value #
+        #####################
+        # TODO: Is selection limited to applicable schemas during exploratory selection?
+
+        # TODO: Add a mechanism for tracking recently activated schemas.
+        # hysteresis - "a recently activated schema is favored for activation, providing a focus of attention"
+
+        # TODO: Add a mechanism for tracking frequency of schema activation.
+        # "Other factors being equal, a more frequently used schema is favored for selection over a less used schema"
+        # (See Drescher, 1991, p. 67)
+
+        # TODO: Add a mechanism for suppressing schema selection for schemas that have been activated too often
+        # TODO: recently.
+
+        # TODO: What does "partly suppressed" mean in the quote below? A reduction in their activation importance?
+
+        # habituation - "a schema that has recently been activated many times becomes partly suppressed, preventing
+        #                a small number of schemas from persistently dominating the mechanism's activity"
+
+        # TODO: Add a mechanism to track the frequency of activation over schema actions. (Is this purely based on
+        # TODO: frequency, or recency as well???
+        # "schemas with underrepresented actions receive enhanced exploration value." (See Drescher, 1991, p. 67)
+
+        # TODO: It's not clear what this means? Does this apply to depth of spin-off, nesting of composite actions,
+        # TODO: inclusion of synthetic items, etc.???
+        # "a component of exploration value promotes underrepresented levels of actions, where a structure's level is
+        # defined as follows: primitive items and actions are of level zero; any structure defined in terms of other
+        # structures is of one greater level than the maximum of those structures' levels." (See Drescher, 1991, p. 67)
+
+        #####################
+        # Composite Actions #
+        #####################
+
+        # TODO: What does this mean?
+        #   “A composite action is enabled when one of its components is applicable. If a schema is applicable but
+        #    its action is not enabled, its selection for activation is inhibited; having a non-enabled action is,
+        #    in this respect, similar to having an override condition obtain.” (Drescher, 1991, p.90)
+
+        # 1.) Each link must compete for activation during each selection event
+        #
+        #   "Even if a chain of schemas leading to some goal is still in progress, each next link in the chain must
+        #    compete for activation." (Drescher, 1991, p. 61)
+
+        # 2.) Interruption/Abortion
+        #
+        #   “The mechanism also permits an executing composite action to be interrupted. Even if a schema with a
+        #    composite action is in progress, the cycle of schema selection continues at each next time unit. If the
+        #    pending schema is re-selected, its composite action proceeds to select and activate the next component
+        #    schema (which may recursively invoke yet another composite action, etc.). If, on the other hand, a schema
+        #    other than the pending schema is selected, the pending schema is aborted, its composite action terminated
+        #    prematurely.” (Drescher, 1991, p. 61)
+
+        # 3.) Enhanced importance of pending schemas (i.e., in-flight schemas with composite actions)
+        #
+        #   “The mechanism grants a pending schema enhanced importance for selection, so that the schema will likely
+        #    be re-selected until its completion, unless some far more important opportunity arises. Hence, there is
+        #    a kind of focus of attention that deters wild thrashing from one never-completed action to another, while
+        #    still allowing interruption for a good reason.” (Drescher, 1991, p. 62)
 
         # These details are needed by SchemaMemory (for example, to support learning)
-        sd = self.SelectionDetails(state, applicable, schema)
-        self.notify_all(source=ActionSelection, selection=sd)
+        sd = self.SelectionDetails(applicable=applicable_schemas,
+                                   selected=schema)
+        return sd
 
-        return schema
 
-
-class SchemaMechanism(Observer, Observable):
+# FIXME: Need to rethink the interaction between modules. Should I use observers or let the SchemaMechanism
+# FIXME: orchestrate those interactions???
+class SchemaMechanism:
     def __init__(self, primitive_actions: Collection[Action], primitive_items: Collection[Item]):
         super().__init__()
 
@@ -197,18 +330,27 @@ class SchemaMechanism(Observer, Observable):
         self._primitive_schemas = [Schema(action=a) for a in self._primitive_actions]
 
         self._schema_memory = SchemaMemory(self._primitive_schemas)
-        self._action_selection = ActionSelection()
+        self._schema_selection = SchemaSelection()
 
-    def receive(self, *args, **kwargs) -> None:
-        state: Collection[StateElement] = kwargs['state']
+        self._selection_state: Optional[Collection[StateElement]] = None
+        self._selection_details: Optional[SchemaSelection.SelectionDetails] = None
 
+    def step(self, state: Collection[StateElement], *args, **kwargs) -> Schema:
         # learn from results of previous actions (if any)
-        self._schema_memory.update_all(state)
+        if self._selection_state and self._selection_details:
+            self._schema_memory.update_all(
+                selection_details=self._selection_details,
+                selection_state=self._selection_state,
+                result_state=state)
 
-        # select schema
-        schema = self._action_selection.select(self._schema_memory, state)
+        # determine all schemas applicable to the current state
+        applicable_schemas = self._schema_memory.all_applicable(state)
 
-        self.notify_all(source=self, selection=schema)
+        # select a single schema from the applicable schemas
+        self._selection_details = self._schema_selection.select(applicable_schemas)
+        self._selection_state = state
+
+        return self._selection_details.selected
 
 
 def held_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement]) -> frozenset[StateElement]:

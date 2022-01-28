@@ -26,33 +26,34 @@ class TestSharedItemPool(TestCase):
     def test_get(self):
         pool = ItemPool()
 
-        # test case: verify correct item type
-        item1 = pool.get('1', SymbolicItem)
+        # test case: verify correct item type and primitive value
+        item1 = pool.get('1', primitive_value=1.0, item_type=SymbolicItem)
         self.assertIsInstance(item1, SymbolicItem)
         self.assertEqual('1', item1.state_element)
+        self.assertEqual(1.0, item1.primitive_value)
 
         # test case: duplicated state elements return identical instances
-        item1_again = pool.get('1', SymbolicItem)
+        item1_again = pool.get('1')
         self.assertIs(item1, item1_again)
 
         # test case: duplicate state elements do not increase pool size
         self.assertEqual(1, len(pool))
 
         # test case: unique items increment pool size by one per item
-        item2 = pool.get('2', SymbolicItem)
+        item2 = pool.get('2')
         self.assertEqual(2, len(pool))
         self.assertNotEqual(item1, item2)
 
         # test case: mixed state elements
-        item3 = pool.get('item3', SymbolicItem)
+        item3 = pool.get('item3')
         self.assertIsInstance(item3, SymbolicItem)
         self.assertTrue(all(item3 != other for other in [item1, item2]))
 
-        item3_again = pool.get('item3', SymbolicItem)
+        item3_again = pool.get('item3')
         self.assertEqual(item3, item3_again)
         self.assertEqual(3, len(pool))
 
-        item4 = pool.get('item4', SymbolicItem)
+        item4 = pool.get('item4')
         self.assertIsInstance(item4, SymbolicItem)
         self.assertTrue(all(item4 != other for other in [item1, item2, item3]))
 
@@ -60,7 +61,7 @@ class TestSharedItemPool(TestCase):
         pool = ItemPool()
 
         for value in range(100):
-            _ = pool.get(str(value), SymbolicItem)
+            _ = pool.get(str(value))
 
         self.assertEqual(100, len(pool))
 
@@ -73,7 +74,7 @@ class TestSharedItemPool(TestCase):
         pool = ItemPool()
 
         for value in range(100):
-            _ = pool.get(str(value), SymbolicItem)
+            _ = pool.get(str(value))
 
         encountered = defaultdict(lambda: 0)
         for item in pool:
@@ -93,7 +94,7 @@ class TestSharedItemPool(TestCase):
 
         for element in range(n_items):
             start = time()
-            pool.get(str(element), SymbolicItem)
+            pool.get(str(element))
             end = time()
             elapsed_time += end - start
 
@@ -115,12 +116,10 @@ class TestSharedItemPool(TestCase):
         elapsed_time = 0
         state = sample(range(n_distinct_states), k=n_state_elements)
 
-        pool.get.cache_clear()
-
         for _ in range(n_repeats):
             for element in state:
                 start = time()
-                pool.get(str(element), SymbolicItem)
+                pool.get(str(element))
                 end = time()
                 elapsed_time += end - start
 
@@ -137,7 +136,7 @@ class TestReadOnlyItemPool(TestCase):
 
         pool = ItemPool()
         for i in range(n_items):
-            pool.get(str(i), SymbolicItem)
+            pool.get(str(i))
 
         self.assertEqual(n_items, len(pool))
 
@@ -148,12 +147,12 @@ class TestReadOnlyItemPool(TestCase):
 
         # test that all items exist in read-only view
         for i in range(n_items):
-            item = pool.get(str(i), SymbolicItem)
+            item = pool.get(str(i))
             self.assertIsNotNone(item)
             self.assertEqual(str(i), item.state_element)
 
         # test non-existent element returns None and DOES NOT add any new elements
-        self.assertIsNone(ro_pool.get('nope', SymbolicItem))
+        self.assertIsNone(ro_pool.get('nope'))
         self.assertEqual(n_items, len(ro_pool))
 
         self.assertRaises(NotImplementedError, lambda: ro_pool.clear())
@@ -166,7 +165,7 @@ class TestItemPoolStateView(TestCase):
     def test(self):
         pool = ItemPool()
         for i in range(100):
-            _ = pool.get(str(i), SymbolicItem)
+            _ = pool.get(str(i))
 
         state = sym_state('1,2,3')
         view = ItemPoolStateView(state=state)
@@ -183,7 +182,7 @@ class TestItemPoolStateView(TestCase):
 
         pool = ItemPool()
         for i in range(n_items):
-            _ = pool.get(str(i), SymbolicItem)
+            _ = pool.get(str(i))
 
         n_distinct_states = n_items
         n_state_elements = 10

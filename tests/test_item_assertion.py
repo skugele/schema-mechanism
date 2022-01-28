@@ -15,7 +15,7 @@ from test_share.test_func import is_hash_same_for_equal_objects
 class TestItemAssertion(TestCase):
 
     def setUp(self) -> None:
-        self.item = sym_item('1234')
+        self.item = sym_item('1234', primitive_value=1.0)
         self.ia = ItemAssertion(self.item)
         self.ia_neg = ItemAssertion(self.item, negated=True)
 
@@ -27,6 +27,9 @@ class TestItemAssertion(TestCase):
 
         # check setting of non-default negated value to True
         self.assertEqual(True, self.ia_neg.negated)
+
+        # check setting of primitive value
+        self.assertEqual(1.0, self.ia.item.primitive_value)
 
         # check immutability
         try:

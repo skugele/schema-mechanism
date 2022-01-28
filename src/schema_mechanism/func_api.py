@@ -4,6 +4,7 @@ from typing import Optional
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import Item
 from schema_mechanism.data_structures import ItemAssertion
+from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import SchemaTreeNode
 from schema_mechanism.data_structures import StateAssertion
@@ -19,11 +20,18 @@ def sym_state(str_repr: str) -> Collection[StateElement]:
     return [se for se in str_repr.split(',')]
 
 
-def sym_item(str_repr: str) -> Item:
-    return SymbolicItem(str_repr)
+def sym_item(str_repr: str, primitive_value: float = None) -> Item:
+    return ItemPool().get(state_element=str_repr,
+                          item_type=SymbolicItem,
+                          primitive_value=primitive_value)
 
 
-def sym_items(str_repr: str) -> Collection[Item]:
+def sym_items(str_repr: str, primitive_values: Collection[float] = None) -> Collection[Item]:
+    state_elements = str_repr.split(',')
+    if primitive_values:
+        if len(state_elements) != len(primitive_values):
+            raise ValueError('Primitive values must either be None or one must be given for each state element')
+        return [sym_item(se, val) for se, val in zip(state_elements, primitive_values)]
     return [sym_item(token) for token in str_repr.split(',')]
 
 

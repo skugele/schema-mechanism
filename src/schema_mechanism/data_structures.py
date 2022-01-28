@@ -10,7 +10,6 @@ from collections import defaultdict
 from enum import Enum
 from enum import auto
 from enum import unique
-from functools import lru_cache
 from typing import Any
 from typing import Optional
 from typing import Type
@@ -36,18 +35,34 @@ StateElement = Hashable
 # Classes
 #########
 class Item(ABC):
-    def __init__(self, state_element: StateElement):
+    def __init__(self, state_element: StateElement, primitive_value: float = None) -> None:
         self._state_element = state_element
 
-        # TODO: Need to add value primitive values.
-        # TODO: Need to add value delegated values.
+        self._primitive_value: float = primitive_value or 0.0
 
-        # TODO: Not clear whether these value should be in a separate decorator class, or in the base class since
-        # TODO: they are only used in an action selection context.
+        # TODO: Need to add value delegated values.
 
     @property
     def state_element(self) -> StateElement:
         return self._state_element
+
+    @property
+    def primitive_value(self) -> float:
+        return self._primitive_value
+
+    @primitive_value.setter
+    def primitive_value(self, value: float) -> None:
+        """ Sets the primitive value for this item.
+
+            “The schema mechanism explicitly designates an item as corresponding to a top-level goal by assigning the
+             item a positive value; an item can also take on a negative value, indicating a state to be avoided.”
+            (see Drescher, 1991, p. 61)
+            (see also, Drescher, 1991, Section 3.4.1)
+
+        :param value: a positive or negative float
+        :return: None
+        """
+        self._primitive_value = value
 
     @abstractmethod
     def is_on(self, state: Collection[StateElement], *args, **kwargs) -> bool:
@@ -85,14 +100,26 @@ class ItemPool(metaclass=Singleton):
     def clear(self):
         self._items.clear()
 
-        self.get.cache_clear()
-
-    # TODO: Is this cache useful???
-    @lru_cache
-    def get(self, state_element: StateElement, item_type: Optional[Type[Item]] = None, **kwargs) -> Item:
+    def get(self,
+            state_element: StateElement,
+            primitive_value: Optional[float] = None,
+            item_type: Optional[Type[Item]] = None,
+            **kwargs) -> Item:
         obj = self._items.get(state_element)
-        if obj is None and not kwargs.get('read_only', False):
-            self._items[state_element] = obj = item_type(state_element) if item_type else SymbolicItem(state_element)
+        if not kwargs.get('read_only', False):
+
+            # create and add item if it doesn't already exist
+            if obj is None:
+                self._items[state_element] = obj = (
+                    item_type(state_element, primitive_value)
+                    if item_type
+                    else SymbolicItem(state_element, primitive_value)
+                )
+
+            # update item's primitive value if one was supplied
+            elif primitive_value is not None:
+                obj.primitive_value = primitive_value
+
         return obj
 
 
@@ -125,8 +152,8 @@ class ItemPoolStateView:
 class SymbolicItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
-    def __init__(self, state_element: StateElement):
-        super().__init__(state_element)
+    def __init__(self, state_element: StateElement, primitive_value: float = None):
+        super().__init__(state_element, primitive_value)
 
     @property
     def state_element(self) -> StateElement:
@@ -631,6 +658,19 @@ class Action(UniqueIdMixin):
                                'label': self.label})
 
 
+# TODO: Implement composite actions.
+class CompositeAction:
+    """
+
+     “A composite action is considered to have been implicitly taken whenever its goal state becomes satisfied--that
+     is, makes a transition from Off to On--even if that composite action was never initiated by an activated schema.
+     Marginal attribution can thereby detect results caused by the goal state, even if the goal state obtains due
+     to external events.” (See Drescher, 1991, p. 91)
+
+    """
+    pass
+
+
 class StateAssertion:
 
     def __init__(self, item_asserts: Optional[Collection[ItemAssertion, ...]] = None):
@@ -708,9 +748,6 @@ class StateAssertion:
 NULL_STATE_ASSERT = StateAssertion()
 
 
-class ItemAssertionPool:
-    pass
-
 
 class ExtendedItemCollection(Observable):
     # thresholds for determining the relevance of items (possible that both should always have the same value)
@@ -786,8 +823,8 @@ class ExtendedItemCollection(Observable):
 # FIXME: "the schema mechanism does not build conjunctive results incrementally; only a schema with an empty result can
 # FIXME: spin off a schema with a new result item. (Such a result will be bare, since an empty result implies an
 # FIXME: empty context. Chaining to contexts that have more than one item is made possible by permitting a schema to
-# FIXME: spawn a multiple-item spin-off all at once, as follows."
-# FIXME:
+# FIXME: spawn a multiple-item spin-off all at once, as follows." (See Drescher 1991, Section 4.1.4)
+
 
 # TODO: Add a description for the purpose of the extended result
 class ExtendedResult(ExtendedItemCollection):
@@ -1278,7 +1315,6 @@ class SchemaTree:
         self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
 
     # TODO: Change this to use a view rather than state
-    # TODO: Rename to something more meaningful
     def find_all_satisfied(self, state: Collection[StateElement], *args, **kwargs) -> Collection[SchemaTreeNode]:
         """ Returns a collection of tree nodes containing schemas with contexts that are satisfied by this state.
 

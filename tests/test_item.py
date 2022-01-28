@@ -16,10 +16,21 @@ from test_share.test_func import is_hash_same_for_equal_objects
 class TestSymbolicItem(TestCase):
 
     def setUp(self) -> None:
-        self.item = SymbolicItem(state_element='1234')
+        self.item = SymbolicItem(state_element='1234', primitive_value=1.0)
 
     def test_init(self):
+        # both the state element and the primitive value should be set properly
         self.assertEqual('1234', self.item.state_element)
+        self.assertEqual(1.0, self.item.primitive_value)
+
+        # default primitive value should be 0.0
+        i = SymbolicItem(state_element='1234')
+        self.assertEqual(0.0, i.primitive_value)
+
+    def test_primitive_value(self):
+        # an item's primitive value should be settable
+        self.item.primitive_value = -2.0
+        self.assertEqual(-2.0, self.item.primitive_value)
 
     def test_is_on(self):
         # item expected to be ON for these states

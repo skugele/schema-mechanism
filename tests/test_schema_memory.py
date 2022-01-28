@@ -10,8 +10,8 @@ from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_asserts
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
-from schema_mechanism.modules import ActionSelection
 from schema_mechanism.modules import SchemaMemory
+from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.modules import create_context_spin_off
 from schema_mechanism.modules import create_result_spin_off
 
@@ -138,23 +138,21 @@ class TestSchemaMemory(TestCase):
 
     def test_update_all(self):
 
-        act_state = sym_state('1,3,5,7,12')
+        selection_state = sym_state('1,3,5,7,12')
+        result_state = sym_state('10,11,12')
+
         selected_schema = sym_schema('1,3,5,7/A1/10')
 
         all_schemas = set(self.sm.schemas)
-        applicable_schemas = set(self.sm.all_applicable(act_state))
+        applicable_schemas = set(self.sm.all_applicable(selection_state))
         non_applicable_schemas = all_schemas - applicable_schemas
 
-        # manually call receive on SchemaMemory to communicate action selection details
-        self.sm.receive(source=ActionSelection(),
-                        selection=ActionSelection.SelectionDetails(act_state, applicable_schemas, selected_schema))
-
-        result_state = sym_state('10,11,12')
+        selection_details = SchemaSelection.SelectionDetails(applicable=applicable_schemas, selected=selected_schema)
 
         for s in all_schemas:
             s.update = MagicMock()
 
-        self.sm.update_all(result_state)
+        self.sm.update_all(selection_details, selection_state, result_state)
 
         for s in applicable_schemas:
             s.update.assert_called()
@@ -259,16 +257,3 @@ class TestSchemaMemory(TestCase):
 
         # should only be one new schema
         self.assertEqual(n_schemas + 1, len(self.sm))
-
-    def test_receive_7(self):
-        act_state = sym_state('1,3,5,7,12')
-        selected_schema = sym_schema('1,3,5,7/A1/10')
-        applicable_schemas = set(self.sm.all_applicable(act_state))
-
-        selection = ActionSelection.SelectionDetails(act_state, applicable_schemas, selected_schema)
-
-        # testing receive from ActionSelection
-        self.sm.receive(source=ActionSelection(), selection=selection)
-
-        self.assertEqual(1, len(self.sm.as_selections))
-        self.assertIn(selection, self.sm.as_selections)
