@@ -744,9 +744,12 @@ class StateAssertion:
 
         return StateAssertion(item_asserts=(*self, item_assert))
 
+    @property
+    def total_primitive_value(self):
+        return sum(ia.item.primitive_value for ia in self._pos_asserts)
+
 
 NULL_STATE_ASSERT = StateAssertion()
-
 
 
 class ExtendedItemCollection(Observable):

@@ -1,3 +1,4 @@
+import itertools
 from random import sample
 from time import time
 from unittest import TestCase
@@ -100,6 +101,36 @@ class TestStateAssertion(TestCase):
             self.fail('Did\'t raise ValueError as expected!')
         except ValueError as e:
             self.assertEqual(str(e), 'ItemAssertion already exists in StateAssertion')
+
+    def test_total_primitive_value_1(self):
+        # empty assertion should have zero total value
+        self.assertEqual(0.0, StateAssertion().total_primitive_value)
+
+    def test_total_primitive_value_2(self):
+        # single (non-negated) item state assertion should have total value equal to the item's primitive value
+        ia1 = sym_assert('1', 3.0)
+        sa = StateAssertion([ia1])
+        self.assertEqual(ia1.item.primitive_value, sa.total_primitive_value)
+
+    def test_total_primitive_value_3(self):
+        # single negated item state assertion should have total value of 0.0
+        ia2 = sym_assert('~2', 100.0)
+        sa = StateAssertion([ia2])
+        self.assertEqual(0.0, sa.total_primitive_value)
+
+    def test_total_primitive_value_4(self):
+        # multiple (non-negated) item state assertion should have total value equal to the sum of item primitive values
+        sa = StateAssertion([sym_assert(str(i), 1.0) for i in range(10)])
+        self.assertEqual(10.0, sa.total_primitive_value)
+
+    def test_total_primitive_value_5(self):
+        # multiple mixed negated and non-negated item state assertion should have a total value equal to the sum of
+        # the non-negated items' primitive values
+        negated_ias = [sym_assert(f'~{i}', primitive_value=1.0) for i in range(1, 10, 2)]
+        non_negated_ias = [sym_assert(f'{i}', primitive_value=1.0) for i in range(0, 10, 2)]
+
+        sa = StateAssertion(list(itertools.chain.from_iterable([negated_ias, non_negated_ias])))
+        self.assertEqual(sum(ia.item.primitive_value for ia in non_negated_ias), sa.total_primitive_value)
 
     def test_iterable(self):
         count = 0

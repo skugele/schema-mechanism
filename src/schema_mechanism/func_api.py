@@ -35,13 +35,13 @@ def sym_items(str_repr: str, primitive_values: Collection[float] = None) -> Coll
     return [sym_item(token) for token in str_repr.split(',')]
 
 
-def sym_assert(str_repr: str) -> ItemAssertion:
+def sym_assert(str_repr: str, primitive_value: float = None) -> ItemAssertion:
     negated = False
     if '~' == str_repr[0]:
         negated = True
         str_repr = str_repr[1:]
 
-    return ItemAssertion(sym_item(str_repr), negated)
+    return ItemAssertion(sym_item(str_repr, primitive_value), negated)
 
 
 def sym_asserts(str_repr: str) -> Collection[ItemAssertion]:
