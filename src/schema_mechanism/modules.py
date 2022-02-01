@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+from collections import Callable
 from collections import Collection
 from collections import Sequence
 from typing import NamedTuple
@@ -9,6 +10,7 @@ from typing import Optional
 import numpy as np
 
 from schema_mechanism.data_structures import Action
+from schema_mechanism.data_structures import CompositeAction
 from schema_mechanism.data_structures import Item
 from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import ItemPoolStateView
@@ -151,6 +153,145 @@ class SchemaMemory(Observer):
         self._schema_tree.add(schema, spin_offs, spin_off_type)
 
 
+# Type aliases
+SchemaEvaluationStrategy = Callable[[Sequence[Schema]], np.ndarray]
+MatchStrategy = Callable[[np.ndarray, float], np.ndarray]
+SelectionStrategy = Callable[[Collection[Schema], np.ndarray], Schema]
+
+
+class NoOpEvaluationStrategy:
+    def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
+        return np.zeros_like(schemas)
+
+
+class EqualityMatchStrategy:
+    def __call__(self, values: np.ndarray, ref: float) -> np.ndarray:
+        return values == ref
+
+
+class AbsoluteDiffMatchStrategy:
+    def __init__(self, max_diff: float):
+        # the max absolute difference between values that counts as being identical
+        self.max_diff = max_diff
+
+    def __call__(self, values: np.ndarray, ref: float) -> np.ndarray:
+        return values >= (ref - self.max_diff)
+
+
+class RandomizeBestSelectionStrategy:
+    def __init__(self, match: MatchStrategy):
+        self.eq = match or EqualityMatchStrategy()
+
+    def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> Schema:
+        max_value = np.max(values)
+
+        # randomize selection if several schemas have values within sameness threshold
+        best_schemas = np.argwhere(self.eq(values, max_value)).flatten()
+        selection_index = np.random.choice(best_schemas, size=1)[0]
+
+        return schemas[selection_index]
+
+
+def primitive_values(schemas: Sequence[Schema]) -> np.ndarray:
+    # Each explicit top-level goal is a state represented by some item, or conjunction of items. Items are
+    # designated as corresponding to top-level goals based on their "value"
+
+    # primitive value (associated with the mechanism's built-in primitive items)
+    ############################################################################
+    return (
+        np.array([])
+        if schemas is None or len(schemas) == 0
+        else np.array([s.result.total_primitive_value for s in schemas])
+    )
+
+
+# TODO: implement this
+def delegated_values(schemas: Sequence[Schema]) -> np.ndarray:
+    # delegated value
+    #################
+
+    # TODO: Need to implement forward chain determination to find accessible schemas before
+    # TODO: I can implement delegated value. (See Drescher 1991, Sec. 5.1.2)
+
+    #   "For each item, the schema mechanism computes the value explicitly ACCESSIBLE from the current state--that
+    #    is, the maximum value of any items that can be reached by a reliable CHAIN OF SCHEMAS starting with an
+    #    applicable schema." (See Drescher 1991, p. 63)
+
+    #   "The mechanism also keeps track of the average accessible value over an extended period of time." (See
+    #    Drescher 1991, p. 63)
+
+    #   "For each item, the mechanism keeps track of the average accessible value when the item is On, compared to
+    #    when the item is Off. If the accessible value when On tends to exceed the value when Off, the item receives
+    #    positive delegated value; if the accessible value when On is less than the value when Off, the item
+    #    receives negative delegated value. The magnitude of the delegated value is proportional both to the size of
+    #    the discrepancy of the On and Off values, and to the expected duration of the item's being On."
+    #    (See Drescher 1991, p. 63)
+
+    # TODO: Add small offset from zero to calculated delegated value.
+
+    #   "For the purposes of the value-delegation comparison, accessible items of zero value count as having slight
+    #    positive value, thus delegating more value to states that tend to offer a greater variety of accessible
+    #    options." (See Drescher 1991, p. 63)
+    return np.zeros_like(schemas)
+
+
+# TODO: implement this
+def instrumental_values(schemas: Sequence[Schema]) -> np.ndarray:
+    # instrumental value
+    ####################
+
+    # TODO: Need to implement backward chain determination to find accessible schemas before
+    # TODO: I can implement instrumental value. (See Drescher 1991, Sec. 5.1.2)
+    return np.zeros_like(schemas)
+
+
+class GoalPursuitEvaluationStrategy:
+    def __init__(self):
+        # TODO: There are MANY factors that influence value, and it is not clear what their relative weights should be.
+        # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
+        # TODO: balance between them.
+        pass
+
+    def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
+        return primitive_values(schemas) + delegated_values(schemas) + instrumental_values(schemas)
+
+
+# TODO: implement this
+class ExploratoryEvaluationStrategy:
+    def __init__(self):
+        # TODO: There are MANY factors that influence value, and it is not clear what their relative weights should be.
+        # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
+        # TODO: balance between them.
+        pass
+
+    def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
+        # TODO: Add a mechanism for tracking recently activated schemas.
+        # hysteresis - "a recently activated schema is favored for activation, providing a focus of attention"
+
+        # TODO: Add a mechanism for tracking frequency of schema activation.
+        # "Other factors being equal, a more frequently used schema is favored for selection over a less used schema"
+        # (See Drescher, 1991, p. 67)
+
+        # TODO: Add a mechanism for suppressing schema selection for schemas that have been activated too often
+        # TODO: recently.
+
+        # TODO: What does "partly suppressed" mean in the quote below? A reduction in their activation importance?
+
+        # habituation - "a schema that has recently been activated many times becomes partly suppressed, preventing
+        #                a small number of schemas from persistently dominating the mechanism's activity"
+
+        # TODO: Add a mechanism to track the frequency of activation over schema actions. (Is this purely based on
+        # TODO: frequency, or recency as well???
+        # "schemas with underrepresented actions receive enhanced exploration value." (See Drescher, 1991, p. 67)
+
+        # TODO: It's not clear what this means? Does this apply to depth of spin-off, nesting of composite actions,
+        # TODO: inclusion of synthetic items, etc.???
+        # "a component of exploration value promotes underrepresented levels of actions, where a structure's level is
+        # defined as follows: primitive items and actions are of level zero; any structure defined in terms of other
+        # structures is of one greater level than the maximum of those structures' levels." (See Drescher, 1991, p. 67)
+        return primitive_values(schemas) + delegated_values(schemas) + instrumental_values(schemas)
+
+
 class SchemaSelection:
     """ A module responsible for the selection of a schema from a set of applicable schemas.
 
@@ -191,109 +332,56 @@ class SchemaSelection:
         See Drescher, 1991, section 3.4
     """
 
-    def __init__(self):
+    DEFAULT_GOAL_PURSUIT_STRATEGY = GoalPursuitEvaluationStrategy()
+    DEFAULT_EXPLORATORY_STRATEGY = ExploratoryEvaluationStrategy()
+    DEFAULT_SELECTION_STRATEGY = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.05))
+
+    def __init__(self,
+                 goal_pursuit: SchemaEvaluationStrategy = None,
+                 explore: SchemaEvaluationStrategy = None,
+                 select: SelectionStrategy = None):
+
+        self._goal_pursuit = goal_pursuit or SchemaSelection.DEFAULT_GOAL_PURSUIT_STRATEGY
+        self._explore = explore or SchemaSelection.DEFAULT_EXPLORATORY_STRATEGY
+        self._select = select or SchemaSelection.DEFAULT_SELECTION_STRATEGY
+
         # TODO: Set parameters.
 
         # TODO: goal/explore weight should be updated over time.
-        # the relative weighting given to goal-pursuit vs exploration.
-        self._goal_weight: float = 1.0
-        self._explore_weight: float = 1.0 - self._goal_weight
+        # "The schema mechanism maintains a cyclic balance between emphasizing goal-directed value and exploration
+        #  value. The emphasis is achieved by changing the weights of the relative contributions of these components
+        #  to the importance asserted by each schema. Goal-directed value is emphasized most of the time, but a
+        #  significant part of the time, goal-directed value is diluted so that only very important goals take
+        #  precedence over exploration criteria." (See Drescher, 1991, p. 66)
+        self.goal_weight: float = 1.0
+        self.explore_weight: float = 1.0 - self.goal_weight
 
-        # the absolute difference from the max selection value that counts as being identical to the max
-        self._absolute_max_value_diff: float = 0.05
-
-    def select(self, applicable_schemas: Sequence[Schema]) -> SchemaSelection.SelectionDetails:
-        if not applicable_schemas:
+    def select(self, schemas: Sequence[Schema]) -> SchemaSelection.SelectionDetails:
+        if not schemas:
             raise ValueError('Collection of applicable schemas must contain at least one schema')
 
-        # TODO: There are MANY factors that influence value, and it is not clear what their relative weights should be.
-        # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
-        # TODO: balance between them.
+        goal_values = self._goal_pursuit(schemas)
+        explore_values = self._explore(schemas)
 
-        #######################
-        # Goal-Directed Value #
-        #######################
+        selection_values = self.goal_weight * goal_values + self.explore_weight * explore_values
 
-        # Each explicit top-level goal is a state represented by some item, or conjunction of items. Items are
-        # designated as corresponding to top-level goals based on their "value"
+        # TODO: Need to increase the selection value for pending composite actions
+        # “The mechanism grants a pending schema enhanced importance for selection, so that the schema will likely
+        #  be re-selected until its completion, unless some far more important opportunity arises. Hence, there is
+        #  a kind of focus of attention that deters wild thrashing from one never-completed action to another, while
+        #  still allowing interruption for a good reason.” (Drescher, 1991, p. 62)
 
-        # primitive value (associated with the mechanism's built-in primitive items)
-        ############################################################################
+        # "A new activation selection occurs at each time unit. Even if a chain of schemas leading to some goal is
+        #  still in progress, each next link in the chain must compete for activation." (Drescher, 1991, p. 61)
+        selected_schema = self._select(schemas, selection_values)
 
-        # TODO: Should this be limited to reliable schemas???
-        # add total primitive value of schema results
-        goal_values = np.array([s.result.total_primitive_value for s in applicable_schemas])
+        # TODO: if the selected schema contains a composite action, we must do some additional work here
+        if isinstance(selected_schema.action, CompositeAction):
+            selected_schema = self._process_composite_action(selected_schema)
 
-        # instrumental value
-        ####################
+        return self.SelectionDetails(applicable=schemas, selected=selected_schema)
 
-        # TODO: Need to implement backward chain determination to find accessible schemas before
-        # TODO: I can implement instrumental value. (See Drescher 1991, Sec. 5.1.2)
-
-        # delegated value
-        #################
-
-        # TODO: Need to implement forward chain determination to find accessible schemas before
-        # TODO: I can implement delegated value. (See Drescher 1991, Sec. 5.1.2)
-
-        #   "For each item, the schema mechanism computes the value explicitly ACCESSIBLE from the current state--that
-        #    is, the maximum value of any items that can be reached by a reliable CHAIN OF SCHEMAS starting with an
-        #    applicable schema." (See Drescher 1991, p. 63)
-
-        #   "The mechanism also keeps track of the average accessible value over an extended period of time." (See
-        #    Drescher 1991, p. 63)
-
-        #   "For each item, the mechanism keeps track of the average accessible value when the item is On, compared to
-        #    when the item is Off. If the accessible value when On tends to exceed the value when Off, the item receives
-        #    positive delegated value; if the accessible value when On is less than the value when Off, the item
-        #    receives negative delegated value. The magnitude of the delegated value is proportional both to the size of
-        #    the discrepancy of the On and Off values, and to the expected duration of the item's being On."
-        #    (See Drescher 1991, p. 63)
-
-        #   "For the purposes of the value-delegation comparison, accessible items of zero value count as having slight
-        #    positive value, thus delegating more value to states that tend to offer a greater variety of accessible
-        #    options." (See Drescher 1991, p. 63)
-
-        # TODO: According to Drescher 1987, only RELIABLE schemas can serve as elements of a plan. Does this mean
-        # TODO: that goal-directed behavior can only select from reliable schemas? Or something else??? How does this
-        # TODO: affect the valuation of a schema?
-
-        # "The Schema Mechanism uses only reliable schemas to pursue goals." (Drescher 1987, p. 292)
-
-        #####################
-        # Exploratory Value #
-        #####################
-
-        # TODO: Calculate this!
-        explore_values = np.zeros_like(applicable_schemas)
-
-        # TODO: Is selection limited to applicable schemas during exploratory selection?
-
-        # TODO: Add a mechanism for tracking recently activated schemas.
-        # hysteresis - "a recently activated schema is favored for activation, providing a focus of attention"
-
-        # TODO: Add a mechanism for tracking frequency of schema activation.
-        # "Other factors being equal, a more frequently used schema is favored for selection over a less used schema"
-        # (See Drescher, 1991, p. 67)
-
-        # TODO: Add a mechanism for suppressing schema selection for schemas that have been activated too often
-        # TODO: recently.
-
-        # TODO: What does "partly suppressed" mean in the quote below? A reduction in their activation importance?
-
-        # habituation - "a schema that has recently been activated many times becomes partly suppressed, preventing
-        #                a small number of schemas from persistently dominating the mechanism's activity"
-
-        # TODO: Add a mechanism to track the frequency of activation over schema actions. (Is this purely based on
-        # TODO: frequency, or recency as well???
-        # "schemas with underrepresented actions receive enhanced exploration value." (See Drescher, 1991, p. 67)
-
-        # TODO: It's not clear what this means? Does this apply to depth of spin-off, nesting of composite actions,
-        # TODO: inclusion of synthetic items, etc.???
-        # "a component of exploration value promotes underrepresented levels of actions, where a structure's level is
-        # defined as follows: primitive items and actions are of level zero; any structure defined in terms of other
-        # structures is of one greater level than the maximum of those structures' levels." (See Drescher, 1991, p. 67)
-
+    def _process_composite_action(self, schema: Schema) -> Schema:
         #####################
         # Composite Actions #
         #####################
@@ -302,6 +390,10 @@ class SchemaSelection:
         #   “A composite action is enabled when one of its components is applicable. If a schema is applicable but
         #    its action is not enabled, its selection for activation is inhibited; having a non-enabled action is,
         #    in this respect, similar to having an override condition obtain.” (Drescher, 1991, p.90)
+
+        # TODO: According to Drescher 1987, only RELIABLE schemas can serve as elements of a plan. I suspect this
+        # TODO: relates to composite actions.
+        # TODO: "The Schema Mechanism uses only reliable schemas to pursue goals." (Drescher 1987, p. 292)
 
         # 1.) Each link must compete for activation during each selection event
         #
@@ -323,14 +415,7 @@ class SchemaSelection:
         #    be re-selected until its completion, unless some far more important opportunity arises. Hence, there is
         #    a kind of focus of attention that deters wild thrashing from one never-completed action to another, while
         #    still allowing interruption for a good reason.” (Drescher, 1991, p. 62)
-
-        selection_values = self._goal_weight * goal_values + self._explore_weight * explore_values
-        max_value = np.max(selection_values)
-
-        best_schemas = np.argwhere(selection_values >= (max_value - self._absolute_max_value_diff)).flatten()
-        selection_index = np.random.choice(best_schemas, size=1)[0]
-
-        return self.SelectionDetails(applicable=applicable_schemas, selected=applicable_schemas[selection_index])
+        return schema
 
 
 # FIXME: Need to rethink the interaction between modules. Should I use observers or let the SchemaMechanism

@@ -994,7 +994,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         self._extended_context.register(self)
         self._extended_result.register(self)
 
-        # TODO: Are duration or cost needed?
+        # TODO: Is duration or cost needed?
 
         # The duration is the average time from the activation to the completion of an action.
         # self.duration = Schema.INITIAL_DURATION
@@ -1317,7 +1317,7 @@ class SchemaTree:
         """
         self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
 
-    # TODO: Change this to use a view rather than state
+    # TODO: Change this to use a view rather than state?
     def find_all_satisfied(self, state: Collection[StateElement], *args, **kwargs) -> Collection[SchemaTreeNode]:
         """ Returns a collection of tree nodes containing schemas with contexts that are satisfied by this state.
 
