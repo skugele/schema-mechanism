@@ -1,1 +1,1 @@
-DISABLE_PERFORMANCE = True
+

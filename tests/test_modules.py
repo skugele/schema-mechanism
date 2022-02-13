@@ -3,9 +3,7 @@ from unittest import TestCase
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import Schema
-from schema_mechanism.data_structures import state_primitive_value
 from schema_mechanism.func_api import sym_assert
-from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import create_spin_off
@@ -118,7 +116,7 @@ class TestStateFunctions(TestCase):
     def setUp(self) -> None:
         self.s_1 = sym_state('1,2,3,4,5')
         self.s_2 = sym_state('4,5,6,7,8')
-        self.s_empty = []
+        self.s_empty = sym_state('')
         self.s_none = None
 
     def test_held_state(self):
@@ -147,27 +145,3 @@ class TestStateFunctions(TestCase):
 
         self.assertSetEqual(set(sym_state('6,7,8')), new_state(s_prev=self.s_1, s_curr=self.s_2))
         self.assertSetEqual(set(sym_state('1,2,3')), new_state(s_prev=self.s_2, s_curr=self.s_1))
-
-    def test_state_primitive_value(self):
-        # adds items to item pool
-        i1 = sym_item('1', -1)
-        i2 = sym_item('2', 0)
-        i3 = sym_item('3', 1)
-
-        # empty state
-        self.assertEqual(0.0, state_primitive_value(sym_state('')))
-
-        # single element state (negative primitive value)
-        self.assertEqual(-1.0, state_primitive_value(sym_state('1')))
-
-        # single element state (zero primitive value)
-        self.assertEqual(0.0, state_primitive_value(sym_state('2')))
-
-        # single element state (positive primitive value)
-        self.assertEqual(1.0, state_primitive_value(sym_state('3')))
-
-        # multiple element state (negative, zero, and positive primitive values)
-        self.assertEqual(-1.0, state_primitive_value(sym_state('1,2')))
-        self.assertEqual(1.0, state_primitive_value(sym_state('2,3')))
-        self.assertEqual(0.0, state_primitive_value(sym_state('1,3')))
-        self.assertEqual(0.0, state_primitive_value(sym_state('1,2,3')))

@@ -19,6 +19,7 @@ from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import ReadOnlyItemPool
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import SchemaTree
+from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import StateElement
 from schema_mechanism.util import Observer
@@ -84,8 +85,8 @@ class SchemaMemory(Observer):
 
     def update_all(self,
                    selection_details: SchemaSelection.SelectionDetails,
-                   selection_state: Collection[StateElement],
-                   result_state: Collection[StateElement]) -> None:
+                   selection_state: State,
+                   result_state: State) -> None:
         """ Updates schema statistics based on results of previously selected schema(s).
 
         Note: While the current implementation only supports updates based on the most recently selected schema, the
@@ -130,7 +131,7 @@ class SchemaMemory(Observer):
                            new=new,
                            lost=lost)
 
-    def all_applicable(self, state: Collection[StateElement]) -> Sequence[Schema]:
+    def all_applicable(self, state: State) -> Sequence[Schema]:
         # TODO: Where do I add the items to the item pool???
         # TODO: Where do I create the item state view?
 
@@ -430,10 +431,12 @@ class SchemaMechanism:
         self._schema_memory = SchemaMemory(self._primitive_schemas)
         self._schema_selection = SchemaSelection()
 
-        self._selection_state: Optional[Collection[StateElement]] = None
+        self._selection_state: Optional[State] = None
         self._selection_details: Optional[SchemaSelection.SelectionDetails] = None
 
-    def step(self, state: Collection[StateElement], *args, **kwargs) -> Schema:
+    def step(self, state: State, *args, **kwargs) -> Schema:
+        # TODO: Add items to pool?
+
         # learn from results of previous actions (if any)
         if self._selection_state and self._selection_details:
             self._schema_memory.update_all(
@@ -458,7 +461,7 @@ class SchemaMechanism:
         return self._selection_details.selected
 
 
-def held_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement]) -> frozenset[StateElement]:
+def held_state(s_prev: State, s_curr: State) -> frozenset[StateElement]:
     """ Returns the set of state elements that are in both previous and current state
 
     :param s_prev: a collection of the previous state's elements
@@ -472,8 +475,8 @@ def held_state(s_prev: Collection[StateElement], s_curr: Collection[StateElement
     return frozenset([se for se in s_curr if se in s_prev])
 
 
-def new_state(s_prev: Optional[Collection[StateElement]],
-              s_curr: Optional[Collection[StateElement]]) -> frozenset[StateElement]:
+def new_state(s_prev: Optional[State],
+              s_curr: Optional[State]) -> frozenset[StateElement]:
     """ Returns the set of state elements that are in current state but not previous
 
     :param s_prev: a collection of the previous state's elements
@@ -487,8 +490,8 @@ def new_state(s_prev: Optional[Collection[StateElement]],
     return frozenset([se for se in s_curr if se not in s_prev])
 
 
-def lost_state(s_prev: Optional[Collection[StateElement]],
-               s_curr: Optional[Collection[StateElement]]) -> frozenset[StateElement]:
+def lost_state(s_prev: Optional[State],
+               s_curr: Optional[State]) -> frozenset[StateElement]:
     """ Returns the set of state elements that are in previous state but not current
 
     :param s_prev: a collection of the previous state's elements
@@ -558,8 +561,8 @@ def create_result_spin_off(source: Schema, item_assert: ItemAssertion) -> Schema
 # TODO: Is this function needed???
 def update_schema(schema: Schema,
                   activated: bool,
-                  s_prev: Optional[Collection[StateElement]],
-                  s_curr: Collection[StateElement],
+                  s_prev: Optional[State],
+                  s_curr: State,
                   count: int = 1) -> Schema:
     """ Update the schema based on the previous and current state.
 

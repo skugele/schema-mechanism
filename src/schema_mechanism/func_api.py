@@ -8,17 +8,16 @@ from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import SchemaTreeNode
+from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import StateAssertion
-from schema_mechanism.data_structures import StateElement
 from schema_mechanism.data_structures import SymbolicItem
 
 
 # TODO: generalize the current string -> int conversions in the sym_* methods to support other conversion types
-def sym_state(str_repr: str) -> Collection[StateElement]:
+def sym_state(str_repr: str, label: Optional[str] = None) -> State:
     if not str_repr:
-        return []
-
-    return [se for se in str_repr.split(',')]
+        return State([], label)
+    return State([se for se in str_repr.split(',')], label)
 
 
 def sym_item(str_repr: str, primitive_value: float = None, item_type: Type[Item] = None, **kwargs) -> Item:

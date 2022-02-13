@@ -6,6 +6,7 @@ from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_EC_ITEM_STATS
+from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
@@ -20,7 +21,7 @@ class TestExtendedContext(TestCase):
         pool.clear()
 
         for i in range(self.N_ITEMS):
-            pool.get(str(i), SymbolicItem)
+            pool.get(str(i), item_type=SymbolicItem)
 
         self.context = sym_state_assert('100,101')
         self.ec = ExtendedContext(context=self.context)
@@ -61,8 +62,8 @@ class TestExtendedContext(TestCase):
                     self.assertEqual(0, value)
 
     def test_update_all(self):
-        state = sample(range(self.N_ITEMS), k=10)
-        view = ItemPoolStateView(state=state)
+        state = State(sample(range(self.N_ITEMS), k=10))
+        view = ItemPoolStateView(state)
 
         # update all items in this state simulating case of action taken
         self.ec.update_all(view, success=True)

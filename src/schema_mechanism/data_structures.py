@@ -34,16 +34,6 @@ StateElement = Hashable
 
 # TODO: Consider creating a State class wrapping a collection of StateElements and moving these functions into it as
 # TODO: methods
-def state_primitive_value(state: Collection[StateElement]) -> float:
-    return sum(ReadOnlyItemPool().get(se).primitive_value for se in state)
-
-
-def state_delegated_value(state: Collection[StateElement]) -> float:
-    return np.max([ReadOnlyItemPool().get(se).delegated_value for se in state])
-
-
-def state_avg_accessible_value(state: Collection[StateElement]) -> float:
-    return np.max([ReadOnlyItemPool().get(se).avg_accessible_value for se in state])
 
 
 # Classes
@@ -61,9 +51,32 @@ class State:
     def label(self) -> Optional[str]:
         return self._label
 
-    def __str__(self) -> str:
-        e_str = ','.join([str(se) for se in self._elements])
-        return f'{e_str} ({self._label})' if self._label else e_str
+    @property
+    def primitive_value(self) -> float:
+        if not self._elements:
+            return 0.0
+        return sum(ReadOnlyItemPool().get(se).primitive_value for se in self._elements)
+
+    @property
+    def delegated_value(self) -> float:
+        if not self._elements:
+            return 0.0 - GlobalStats().baseline_value
+        return np.max([ReadOnlyItemPool().get(se).delegated_value for se in self._elements])
+
+    @property
+    def avg_accessible_value(self) -> float:
+        if not self._elements:
+            return 0.0
+        return np.max([ReadOnlyItemPool().get(se).avg_accessible_value for se in self._elements])
+
+    def __len__(self) -> int:
+        return len(self._elements)
+
+    def __iter__(self) -> Iterator[StateElement]:
+        yield from self._elements
+
+    def __contains__(self, element: StateElement) -> bool:
+        return element in self._elements
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, State):
@@ -75,6 +88,10 @@ class State:
 
     def __hash__(self) -> int:
         return hash(self._elements)
+
+    def __str__(self) -> str:
+        e_str = ','.join([str(se) for se in self._elements])
+        return f'{e_str} ({self._label})' if self._label else e_str
 
 
 class DelegatedValueHelper:
@@ -139,8 +156,8 @@ class DelegatedValueHelper:
         return self._dv_avg_accessible_value - GlobalStats().baseline_value
 
     def update(self,
-               selection_state: Collection[StateElement],
-               result_state: Collection[StateElement],
+               selection_state: State,
+               result_state: State,
                *args, **kwargs) -> None:
         """ Updates delegated-value-related statistics based on the selection and result states.
 
@@ -167,9 +184,9 @@ class DelegatedValueHelper:
         if self._dv_trace_updates_remaining <= 0 and self._dv_trace_value != -np.inf:
             self._update_avg_accessible_val()
 
-    def _update_trace_val(self, state: Collection[StateElement]) -> None:
-        s_pv = state_primitive_value(state)
-        s_aav = state_avg_accessible_value(state)
+    def _update_trace_val(self, state: State) -> None:
+        s_pv = state.primitive_value
+        s_aav = state.avg_accessible_value
 
         self._dv_trace_value = np.max([self._dv_trace_value, s_pv, s_aav])
         self._dv_trace_updates_remaining -= 1
@@ -224,8 +241,8 @@ class Item(ABC):
         return self._delegated_value_helper.delegated_value
 
     def update_delegated_value(self,
-                               selection_state: Collection[StateElement],
-                               result_state: Collection[StateElement],
+                               selection_state: State,
+                               result_state: State,
                                *args,
                                **kwargs) -> None:
         """ Updates delegated value based on if item was On in selection and the value of items in the result state.
@@ -242,10 +259,10 @@ class Item(ABC):
                                             *args, **kwargs)
 
     @abstractmethod
-    def is_on(self, state: Collection[StateElement], *args, **kwargs) -> bool:
+    def is_on(self, state: State, *args, **kwargs) -> bool:
         return NotImplemented
 
-    def is_off(self, state: Collection[StateElement], *args, **kwargs) -> bool:
+    def is_off(self, state: State, *args, **kwargs) -> bool:
         return not self.is_on(state, *args, **kwargs)
 
     @abstractmethod
@@ -313,7 +330,7 @@ class ReadOnlyItemPool(ItemPool):
 
 
 class ItemPoolStateView:
-    def __init__(self, state: Optional[Collection[StateElement]]):
+    def __init__(self, state: Optional[State]):
         # The state to which this view corresponds
         self._state = state
         self._on_items = set([item for item in ReadOnlyItemPool() if item.is_on(state)]) if state else set()
@@ -336,7 +353,7 @@ class SymbolicItem(Item):
     def state_element(self) -> StateElement:
         return super().state_element
 
-    def is_on(self, state: Collection[StateElement], *args, **kwargs) -> bool:
+    def is_on(self, state: State, *args, **kwargs) -> bool:
         return self.state_element in state
 
     def copy(self) -> Item:
@@ -364,10 +381,10 @@ class ItemAssertion:
     def negated(self) -> bool:
         return self._negated
 
-    def is_on(self, state: Collection[StateElement], *args, **kwargs) -> bool:
+    def is_on(self, state: State, *args, **kwargs) -> bool:
         return self._item.is_on(state, *args, **kwargs)
 
-    def is_satisfied(self, state: Collection[StateElement], *args, **kwargs) -> bool:
+    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
         if self._negated:
             return self._item.is_off(state, *args, **kwargs)
         else:
@@ -435,13 +452,13 @@ class GlobalStats(metaclass=Singleton):
     def baseline_value(self, value: float) -> None:
         self._baseline = value
 
-    def update_baseline(self, state: Collection[StateElement]) -> None:
+    def update_baseline(self, state: State) -> None:
         """ Updates an unconditional running average of the primitive values of states.
 
         :param state: a state
         :return: None
         """
-        self._baseline += GlobalParams().learn_rate * (state_primitive_value(state) - self._baseline)
+        self._baseline += GlobalParams().learn_rate * (state.primitive_value - self._baseline)
 
 
 class SchemaStats:
@@ -938,7 +955,7 @@ class StateAssertion:
 
         return new
 
-    def is_satisfied(self, state: Collection[StateElement], *args, **kwargs) -> bool:
+    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
         """ Satisfied when all non-negated items are On, and all negated items are Off.
 
         :param state: the agent's current state
@@ -1274,7 +1291,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
     def stats(self) -> SchemaStats:
         return self._stats
 
-    def is_applicable(self, state: Collection[StateElement], *args, **kwargs) -> bool:
+    def is_applicable(self, state: State, *args, **kwargs) -> bool:
         """ A schema is applicable when its context is satisfied and there are no active overriding conditions.
 
             “A schema is said to be applicable when its context is satisfied and no
@@ -1540,7 +1557,7 @@ class SchemaTree:
         self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
 
     # TODO: Change this to use a view rather than state?
-    def find_all_satisfied(self, state: Collection[StateElement], *args, **kwargs) -> Collection[SchemaTreeNode]:
+    def find_all_satisfied(self, state: State, *args, **kwargs) -> Collection[SchemaTreeNode]:
         """ Returns a collection of tree nodes containing schemas with contexts that are satisfied by this state.
 
         :param state: the state

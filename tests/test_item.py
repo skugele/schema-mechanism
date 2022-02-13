@@ -9,9 +9,8 @@ from schema_mechanism.data_structures import DelegatedValueHelper
 from schema_mechanism.data_structures import GlobalParams
 from schema_mechanism.data_structures import GlobalStats
 from schema_mechanism.data_structures import ItemPool
+from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import SymbolicItem
-from schema_mechanism.data_structures import state_avg_accessible_value
-from schema_mechanism.data_structures import state_primitive_value
 from schema_mechanism.func_api import sym_state
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import is_eq_consistent
@@ -85,7 +84,7 @@ class TestSymbolicItem(TestCase):
         n_state_elements = 25
 
         items = [SymbolicItem(str(value)) for value in range(n_items)]
-        state = sample(range(n_distinct_states), k=n_state_elements)
+        state = State(sample(range(n_distinct_states), k=n_state_elements))
 
         start = time()
         for run in range(n_runs):
@@ -231,8 +230,8 @@ class TestDelegatedValueHelper(TestCase):
                 )
                 updating = self.dvh.trace_updates_remaining > 0 or self.dvh.item.is_on(ss)
 
-                s_pv = state_primitive_value(sr)
-                s_aav = state_avg_accessible_value(sr)
+                s_pv = sr.primitive_value
+                s_aav = sr.avg_accessible_value
 
                 self.dvh.update(selection_state=ss, result_state=sr)
 
