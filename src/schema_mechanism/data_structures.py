@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
-from collections import Collection
-from collections import Hashable
-from collections import Iterator
-from collections import MutableSet
 from collections import defaultdict
+from collections.abc import Collection
+from collections.abc import Hashable
+from collections.abc import Iterator
+from collections.abc import MutableSet
 from enum import Enum
 from enum import auto
 from enum import unique
@@ -48,6 +48,34 @@ def state_avg_accessible_value(state: Collection[StateElement]) -> float:
 
 # Classes
 #########
+class State:
+    def __init__(self, elements: Collection[StateElement], label: Optional[str] = None) -> None:
+        self._elements = frozenset(elements)
+        self._label = label
+
+    @property
+    def elements(self) -> Collection[StateElement]:
+        return self._elements
+
+    @property
+    def label(self) -> Optional[str]:
+        return self._label
+
+    def __str__(self) -> str:
+        e_str = ','.join([str(se) for se in self._elements])
+        return f'{e_str} ({self._label})' if self._label else e_str
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, State):
+            return self._elements == other._elements
+        return False if other is None else NotImplemented
+
+    def __ne__(self, other: Any) -> bool:
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        return hash(self._elements)
+
 
 class DelegatedValueHelper:
     """ A helper class that performs calculations necessary to derive an Item's delegated value.

@@ -3,6 +3,7 @@ from unittest import TestCase
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import Schema
+from schema_mechanism.data_structures import state_primitive_value
 from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
@@ -11,7 +12,6 @@ from schema_mechanism.modules import create_spin_off
 from schema_mechanism.modules import held_state
 from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
-from schema_mechanism.modules import state_primitive_value
 
 
 class TestModuleFunctions(TestCase):

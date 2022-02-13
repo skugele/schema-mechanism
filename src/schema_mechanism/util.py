@@ -1,5 +1,5 @@
 from abc import ABCMeta
-from collections import Iterable
+from collections.abc import Iterable
 from itertools import tee
 from typing import Any
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import itertools
-from collections import Callable
-from collections import Collection
-from collections import Sequence
+from collections.abc import Callable
+from collections.abc import Collection
+from collections.abc import Sequence
 from typing import NamedTuple
 from typing import Optional
 
@@ -246,7 +246,10 @@ class GoalPursuitEvaluationStrategy:
         pass
 
     def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
-        return primitive_values(schemas) + delegated_values(schemas) + instrumental_values(schemas)
+        pv = primitive_values(schemas)
+        dv = delegated_values(schemas)
+        iv = instrumental_values(schemas)
+        return pv + dv + iv
 
 
 # TODO: implement this
@@ -282,7 +285,9 @@ class ExploratoryEvaluationStrategy:
         # "a component of exploration value promotes underrepresented levels of actions, where a structure's level is
         # defined as follows: primitive items and actions are of level zero; any structure defined in terms of other
         # structures is of one greater level than the maximum of those structures' levels." (See Drescher, 1991, p. 67)
-        return primitive_values(schemas) + delegated_values(schemas) + instrumental_values(schemas)
+
+        # FIXME
+        return np.zeros_like(schemas)
 
 
 class SchemaSelection:
@@ -327,7 +332,7 @@ class SchemaSelection:
 
     DEFAULT_GOAL_PURSUIT_STRATEGY = GoalPursuitEvaluationStrategy()
     DEFAULT_EXPLORATORY_STRATEGY = ExploratoryEvaluationStrategy()
-    DEFAULT_SELECTION_STRATEGY = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.05))
+    DEFAULT_SELECTION_STRATEGY = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1))
 
     def __init__(self,
                  goal_pursuit: SchemaEvaluationStrategy = None,
