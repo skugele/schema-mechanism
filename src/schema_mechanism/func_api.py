@@ -1,5 +1,6 @@
 from collections import Collection
 from typing import Optional
+from typing import Type
 
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import Item
@@ -20,10 +21,11 @@ def sym_state(str_repr: str) -> Collection[StateElement]:
     return [se for se in str_repr.split(',')]
 
 
-def sym_item(str_repr: str, primitive_value: float = None) -> Item:
+def sym_item(str_repr: str, primitive_value: float = None, item_type: Type[Item] = None, **kwargs) -> Item:
     return ItemPool().get(state_element=str_repr,
-                          item_type=SymbolicItem,
-                          primitive_value=primitive_value)
+                          item_type=item_type or SymbolicItem,
+                          primitive_value=primitive_value,
+                          **kwargs)
 
 
 def sym_items(str_repr: str, primitive_values: Collection[float] = None) -> Collection[Item]:

@@ -1,5 +1,8 @@
 from typing import Any
 
+from schema_mechanism.data_structures import GlobalStats
+from schema_mechanism.data_structures import StateElement
+from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 
@@ -24,3 +27,25 @@ class MockObserver(Observer):
 
 class MockObservable(Observable):
     pass
+
+
+class MockSymbolicItem(SymbolicItem):
+    def __init__(self,
+                 state_element: StateElement,
+                 primitive_value: float,
+                 avg_accessible_value: float):
+        super().__init__(state_element, primitive_value)
+
+        self._avg_accessible_value = avg_accessible_value
+
+    @property
+    def avg_accessible_value(self) -> float:
+        return self._avg_accessible_value
+
+    @avg_accessible_value.setter
+    def avg_accessible_value(self, value: float) -> None:
+        self._avg_accessible_value = value
+
+    @property
+    def delegated_value(self) -> float:
+        return self._avg_accessible_value - GlobalStats().baseline_value

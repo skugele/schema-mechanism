@@ -32,15 +32,138 @@ from schema_mechanism.util import repr_str
 StateElement = Hashable
 
 
+# TODO: Consider creating a State class wrapping a collection of StateElements and moving these functions into it as
+# TODO: methods
+def state_primitive_value(state: Collection[StateElement]) -> float:
+    return sum(ReadOnlyItemPool().get(se).primitive_value for se in state)
+
+
+def state_delegated_value(state: Collection[StateElement]) -> float:
+    return np.max([ReadOnlyItemPool().get(se).delegated_value for se in state])
+
+
+def state_avg_accessible_value(state: Collection[StateElement]) -> float:
+    return np.max([ReadOnlyItemPool().get(se).avg_accessible_value for se in state])
+
+
 # Classes
 #########
+
+class DelegatedValueHelper:
+    """ A helper class that performs calculations necessary to derive an Item's delegated value.
+
+    Note: Drescher's implementation of delegated values uses forwarding chaining based on "parallel broadcasts"
+    (see Drescher 1991, p. 101). The current implementation deviates from Drescher's for performance reasons (performant
+    parallel broadcasts are not possible in Python). Instead of forward chaining, it uses a "backward" view that is
+    similar in spirit to eligibility traces. These value "traces" are initiated whenever the tracked item is in an On
+    state and terminate some configurable number of state transitions away from the state in which the Item was On. Upon
+    termination the trace's value (i.e., the maximum state value encountered along the trace) is used to update a
+    running average of the accessible value for the item. The trace's value also takes into account the average
+    accessible values of the items encountered during the trace.
+
+    Delegated value is calculated as the difference between the Item's average accessible value when On and a
+    "baseline" state value maintained in the global statistics. When the average accessible value when On is greater
+    than the baseline, the delegated value will be positive. Similarly, when it is less than the baseline, the
+    delegated value will be negative.
+    """
+    DV_TRACE_MAX_LEN = 5
+
+    def __init__(self, item: Item) -> None:
+        self._item = item
+
+        self._dv_trace_updates_remaining = 0
+        self._dv_trace_value = -np.inf
+
+        self._dv_avg_accessible_value = 0.0
+
+    @property
+    def item(self) -> Item:
+        return self._item
+
+    @property
+    def trace_updates_remaining(self) -> int:
+        return self._dv_trace_updates_remaining
+
+    @property
+    def trace_value(self) -> float:
+        return self._dv_trace_value
+
+    @property
+    def avg_accessible_value(self) -> float:
+        """ The average of the maximum state values accessible when this Item is On.
+
+        "At each time unit, the schema mechanism computes the value explicitly accessible from the current state--that
+         is, the maximum value of any items that can be reached by a reliable chain of schemas starting with an
+         applicable schema." (See Drescher 1991, p. 63)
+
+        :return: the average accessible value when this Item is On
+        """
+        return self._dv_avg_accessible_value
+
+    @property
+    def delegated_value(self) -> float:
+        """ Returns the delegated value for this helper's item.
+
+        (For a discussion of delegated value see Drescher 1991, p. 63.)
+
+        :return: the Item's current delegated value
+        """
+        return self._dv_avg_accessible_value - GlobalStats().baseline_value
+
+    def update(self,
+               selection_state: Collection[StateElement],
+               result_state: Collection[StateElement],
+               *args, **kwargs) -> None:
+        """ Updates delegated-value-related statistics based on the selection and result states.
+
+        :param selection_state: the state from which the last schema was selected (i.e., an action taken)
+        :param result_state: the state that immediately followed the provided selection state
+        :param args: optional positional arguments
+        :param kwargs: optional keyword arguments
+        :return: None
+        """
+        # start trace if item is On in selection state
+        if self._item.is_on(state=selection_state, *args, **kwargs):
+            self._dv_trace_updates_remaining = DelegatedValueHelper.DV_TRACE_MAX_LEN
+
+        # update trace value if updates remain
+        if self._dv_trace_updates_remaining > 0:
+            self._update_trace_val(result_state)
+
+        # if another On state is encountered during trace, need to terminate previous trace immediately
+        immediate_termination = self._item.is_on(state=result_state, *args, **kwargs)
+        if immediate_termination:
+            self._dv_trace_updates_remaining = 0
+
+        # update avg. accessible value based on trace value on final trace update
+        if self._dv_trace_updates_remaining <= 0 and self._dv_trace_value != -np.inf:
+            self._update_avg_accessible_val()
+
+    def _update_trace_val(self, state: Collection[StateElement]) -> None:
+        s_pv = state_primitive_value(state)
+        s_aav = state_avg_accessible_value(state)
+
+        self._dv_trace_value = np.max([self._dv_trace_value, s_pv, s_aav])
+        self._dv_trace_updates_remaining -= 1
+
+    def _update_avg_accessible_val(self) -> None:
+        if self._dv_trace_value == -np.inf:
+            raise ValueError('invalid trace value: -np.inf.')
+
+        error = self._dv_trace_value - self._dv_avg_accessible_value
+        self._dv_avg_accessible_value += GlobalParams().learn_rate * error
+
+        # clear trace value
+        self._dv_trace_value = -np.inf
+
+
 class Item(ABC):
-    def __init__(self, state_element: StateElement, primitive_value: float = None) -> None:
+
+    def __init__(self, state_element: StateElement, primitive_value: float = None, *args, **kwargs) -> None:
         self._state_element = state_element
 
-        self._primitive_value: float = primitive_value or 0.0
-
-        # TODO: Need to add value delegated values.
+        self._primitive_value = primitive_value or 0.0
+        self._delegated_value_helper = DelegatedValueHelper(item=self)
 
     @property
     def state_element(self) -> StateElement:
@@ -63,6 +186,32 @@ class Item(ABC):
         :return: None
         """
         self._primitive_value = value
+
+    @property
+    def avg_accessible_value(self) -> float:
+        return self._delegated_value_helper.avg_accessible_value
+
+    @property
+    def delegated_value(self) -> float:
+        return self._delegated_value_helper.delegated_value
+
+    def update_delegated_value(self,
+                               selection_state: Collection[StateElement],
+                               result_state: Collection[StateElement],
+                               *args,
+                               **kwargs) -> None:
+        """ Updates delegated value based on if item was On in selection and the value of items in the result state.
+
+        :param selection_state: the state from which the last schema was selected (i.e., an action taken)
+        :param result_state: the state that immediately followed the provided selection state
+        :param args: optional positional arguments
+        :param kwargs: optional keyword arguments
+        :return: None
+        """
+        self._delegated_value_helper.update(item=self,
+                                            selection_state=selection_state,
+                                            result_state=result_state,
+                                            *args, **kwargs)
 
     @abstractmethod
     def is_on(self, state: Collection[StateElement], *args, **kwargs) -> bool:
@@ -111,9 +260,9 @@ class ItemPool(metaclass=Singleton):
             # create and add item if it doesn't already exist
             if obj is None:
                 self._items[state_element] = obj = (
-                    item_type(state_element, primitive_value)
+                    item_type(state_element, primitive_value, **kwargs)
                     if item_type
-                    else SymbolicItem(state_element, primitive_value)
+                    else SymbolicItem(state_element, primitive_value, **kwargs)
                 )
 
             # update item's primitive value if one was supplied
@@ -152,8 +301,8 @@ class ItemPoolStateView:
 class SymbolicItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
-    def __init__(self, state_element: StateElement, primitive_value: float = None):
-        super().__init__(state_element, primitive_value)
+    def __init__(self, state_element: StateElement, primitive_value: float = None, *args, **kwargs):
+        super().__init__(state_element, primitive_value, *args, **kwargs)
 
     @property
     def state_element(self) -> StateElement:
@@ -224,6 +373,47 @@ class ItemAssertion:
     def __repr__(self) -> str:
         return repr_str(self, {'item': self.item,
                                'negated': self.negated})
+
+
+class GlobalParams(metaclass=Singleton):
+    def __init__(self) -> None:
+        self._learn_rate = 0.01
+
+    @property
+    def learn_rate(self) -> float:
+        return self._learn_rate
+
+    @learn_rate.setter
+    def learn_rate(self, value: float) -> None:
+        if value <= 0.0 or value > 1.0:
+            raise ValueError('Learning rate must be greater than zero and less than or equal to one.')
+        self._learn_rate = value
+
+
+class GlobalStats(metaclass=Singleton):
+
+    def __init__(self, baseline_value: Optional[float] = None) -> None:
+        self._baseline = baseline_value or 0.0
+
+    @property
+    def baseline_value(self) -> float:
+        """ A running average of the primitive state value encountered over all visited states.
+
+        :return: the empirical (primitive value) baseline
+        """
+        return self._baseline
+
+    @baseline_value.setter
+    def baseline_value(self, value: float) -> None:
+        self._baseline = value
+
+    def update_baseline(self, state: Collection[StateElement]) -> None:
+        """ Updates an unconditional running average of the primitive values of states.
+
+        :param state: a state
+        :return: None
+        """
+        self._baseline += GlobalParams().learn_rate * (state_primitive_value(state) - self._baseline)
 
 
 class SchemaStats:
@@ -747,6 +937,10 @@ class StateAssertion:
     @property
     def total_primitive_value(self):
         return sum(ia.item.primitive_value for ia in self._pos_asserts)
+
+    @property
+    def total_delegated_value(self):
+        return sum(ia.item.delegated_value for ia in self._pos_asserts)
 
 
 NULL_STATE_ASSERT = StateAssertion()

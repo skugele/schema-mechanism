@@ -11,10 +11,12 @@ import numpy as np
 
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import CompositeAction
+from schema_mechanism.data_structures import GlobalStats
 from schema_mechanism.data_structures import Item
 from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_STATE_ASSERT
+from schema_mechanism.data_structures import ReadOnlyItemPool
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import SchemaTree
 from schema_mechanism.data_structures import StateAssertion
@@ -205,38 +207,29 @@ def primitive_values(schemas: Sequence[Schema]) -> np.ndarray:
     )
 
 
-# TODO: implement this
 def delegated_values(schemas: Sequence[Schema]) -> np.ndarray:
-    # delegated value
-    #################
-
-    # TODO: Need to implement forward chain determination to find accessible schemas before
-    # TODO: I can implement delegated value. (See Drescher 1991, Sec. 5.1.2)
-
-    #   "For each item, the schema mechanism computes the value explicitly ACCESSIBLE from the current state--that
-    #    is, the maximum value of any items that can be reached by a reliable CHAIN OF SCHEMAS starting with an
-    #    applicable schema." (See Drescher 1991, p. 63)
-
-    #   "The mechanism also keeps track of the average accessible value over an extended period of time." (See
-    #    Drescher 1991, p. 63)
-
-    #   "For each item, the mechanism keeps track of the average accessible value when the item is On, compared to
-    #    when the item is Off. If the accessible value when On tends to exceed the value when Off, the item receives
-    #    positive delegated value; if the accessible value when On is less than the value when Off, the item
-    #    receives negative delegated value. The magnitude of the delegated value is proportional both to the size of
-    #    the discrepancy of the On and Off values, and to the expected duration of the item's being On."
-    #    (See Drescher 1991, p. 63)
-
-    # TODO: Add small offset from zero to calculated delegated value.
-
-    #   "For the purposes of the value-delegation comparison, accessible items of zero value count as having slight
-    #    positive value, thus delegating more value to states that tend to offer a greater variety of accessible
-    #    options." (See Drescher 1991, p. 63)
-    return np.zeros_like(schemas)
+    return (
+        np.array([])
+        if schemas is None or len(schemas) == 0
+        else np.array([s.result.total_delegated_value for s in schemas])
+    )
 
 
 # TODO: implement this
 def instrumental_values(schemas: Sequence[Schema]) -> np.ndarray:
+    """
+
+        "When the schema mechanism activates a schema as a link in some chain to a positively valued state, then that
+         schema's result (or rather, the part of it that includes the next link's context) is said to have instrumental
+         value.
+
+         Instrumental value, unlike primitive (and delegated) value, is transient rather than persistent. As
+         the state of the world changes, a given state may lie along a chain from the current state to a goal at one
+         moment but not the next." (See Drescher 1991, p. 63)
+
+    :param schemas:
+    :return:
+    """
     # instrumental value
     ####################
 
@@ -443,6 +436,13 @@ class SchemaMechanism:
                 selection_state=self._selection_state,
                 result_state=state)
 
+            for item in ReadOnlyItemPool():
+                item.update_delegated_value(selection_state=self._selection_state,
+                                            result_state=state)
+
+        # updates unconditional state value average
+        GlobalStats().update_baseline(state)
+
         # determine all schemas applicable to the current state
         applicable_schemas = self._schema_memory.all_applicable(state)
 
@@ -574,3 +574,24 @@ def update_schema(schema: Schema,
                   count=count)
 
     return schema
+
+
+# TODO: Implement this
+def forward_chaining(schema: Schema, depth: int, accept: Callable[[Schema], bool]) -> Collection[Schema]:
+    # used to determine which states are ACCESSIBLE from the current state
+
+    # ACCESSIBILITY determination:
+    #    "To begin, each schema that is currently applicable broadcasts a message via its extended result
+    #     to the items and conjunctions that are included in the schema's result. Any schema that has such an item or
+    #     conjunction as its context broadcasts in turn via its own extended result, and so on, to some maximum depth
+    #     of search. Any item or conjunction of items that receives a message by this process is currently accessible."
+    #     (See Drescher 1991, p. 101)
+
+    # TODO: seems like I need a breadth first graph traversal
+    pass
+
+
+# TODO: Implement this
+def backward_chaining(schema: Schema, depth: int):
+    # used for propagating instrumental value and finding goal proximity (See Drescher 1991, p. 101)
+    pass
