@@ -14,6 +14,7 @@ from schema_mechanism.data_structures import CompositeAction
 from schema_mechanism.data_structures import GlobalStats
 from schema_mechanism.data_structures import Item
 from schema_mechanism.data_structures import ItemAssertion
+from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import ReadOnlyItemPool
@@ -434,8 +435,10 @@ class SchemaMechanism:
         self._selection_state: Optional[State] = None
         self._selection_details: Optional[SchemaSelection.SelectionDetails] = None
 
-    def step(self, state: State, *args, **kwargs) -> Schema:
-        # TODO: Add items to pool?
+    def select(self, state: State, *args, **kwargs) -> Schema:
+        # TODO: Is there a better place to do this?
+        for se in state:
+            _ = ItemPool().get(se)
 
         # learn from results of previous actions (if any)
         if self._selection_state and self._selection_details:
