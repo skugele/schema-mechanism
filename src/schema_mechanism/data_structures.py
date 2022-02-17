@@ -336,6 +336,9 @@ class ItemPoolStateView:
     def is_on(self, item: Item) -> bool:
         return item in self._on_items
 
+    def is_off(self, item: Item) -> bool:
+        return item not in self._on_items
+
 
 class SymbolicItem(Item):
     """ A state element that can be thought as a proposition/feature. """
@@ -1077,6 +1080,9 @@ class ExtendedItemCollection(Observable):
     def stats(self) -> dict[Item, Any]:
         return self._stats
 
+    def clear_stats(self):
+        self._stats.clear()
+
     @property
     def suppress_list(self) -> Collection[Item]:
         return self._suppress_list
@@ -1226,12 +1232,26 @@ class ExtendedContext(ExtendedItemCollection):
     # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
     # TODO: statistics.
     def update_all(self, view: ItemPoolStateView, success: bool, count: int = 1) -> None:
+        # bypass updates when a more specific spinoff schema exists
+        if (GlobalParams().is_enabled(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+                and self.defer_update_to_spin_offs(view)):
+            return
+
         for item in self._item_pool:
             self.update(item=item, on=view.is_on(item), success=success, count=count)
 
         self.check_pending_relevant_items()
+
         if self.new_relevant_items:
             self.notify_all(source=self)
+
+            # after spinoff, all stats are reset to remove the influence of relevant items in stats; tracking the
+            # correlations for these items is deferred to the schema's context spin-offs
+            if GlobalParams().is_enabled(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA):
+                self.clear_stats()
+
+    def defer_update_to_spin_offs(self, view: ItemPoolStateView) -> bool:
+        return any({not ia.negated and view.is_on(ia.item) for ia in self.relevant_items})
 
     @property
     def pending_relevant_items(self) -> frozenset[ItemAssertion]:
@@ -1241,6 +1261,7 @@ class ExtendedContext(ExtendedItemCollection):
     def pending_max_specificity(self) -> float:
         return self._pending_max_specificity
 
+    # TODO: Rename this method. It is not a check, but more of a flush of the pending items to the super class.
     def check_pending_relevant_items(self) -> None:
         for ia in self._pending_relevant_items:
             self.update_relevant_items(ia)
@@ -1267,13 +1288,13 @@ class ExtendedContext(ExtendedItemCollection):
                 # item is less specific than earlier item; suppress it on this update.
                 if specificity < self._pending_max_specificity:
                     return
+
                 # item is the most specific so far; replace previous pending item assertion.
                 else:
                     self._pending_relevant_items.clear()
                     self._pending_max_specificity = max(self._pending_max_specificity, specificity)
 
             self._pending_relevant_items.add(item_assert)
-
 
 
 # TODO: Candidate for the flyweight pattern?

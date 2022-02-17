@@ -1,5 +1,7 @@
 from random import sample
 from unittest import TestCase
+from unittest.mock import PropertyMock
+from unittest.mock import patch
 
 from schema_mechanism.data_structures import ExtendedContext
 from schema_mechanism.data_structures import GlobalOption
@@ -132,6 +134,25 @@ class TestExtendedContext(TestCase):
         # test: only a single relevant item should be added to the extended context
         self.assertEqual(1, len(self.ec.relevant_items))
         self.assertSetEqual(set(sym_asserts('~3')), self.ec.relevant_items)
+
+    def test_defer_update_to_spin_offs(self):
+        # GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA enabled
+        GlobalParams().options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+
+        update_view_1 = ItemPoolStateView(sym_state('1,3,4'))
+        update_view_2 = ItemPoolStateView(sym_state('1,6'))
+        defer_view_1 = ItemPoolStateView(sym_state('1,5'))
+        defer_view_2 = ItemPoolStateView(sym_state('1,7,8'))
+
+        with patch(target='schema_mechanism.data_structures.ExtendedContext.relevant_items',
+                   new_callable=PropertyMock) as mock_relevant_items:
+            mock_relevant_items.return_value = set(sym_asserts('5,~6,7'))
+            ec = ExtendedContext(sym_state_assert('1,~2'))
+
+            self.assertFalse(ec.defer_update_to_spin_offs(update_view_1))
+            self.assertFalse(ec.defer_update_to_spin_offs(update_view_2))
+            self.assertTrue(ec.defer_update_to_spin_offs(defer_view_1))
+            self.assertTrue(ec.defer_update_to_spin_offs(defer_view_2))
 
     def test_register_and_unregister(self):
         observer = MockObserver()
