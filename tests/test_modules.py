@@ -10,11 +10,12 @@ from schema_mechanism.modules import create_spin_off
 from schema_mechanism.modules import held_state
 from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
+from test_share.test_func import common_test_setup
 
 
 class TestModuleFunctions(TestCase):
     def setUp(self) -> None:
-        pass
+        common_test_setup()
 
     def test_spinoff_schema(self):
         # test bare schema spin-off

@@ -1,6 +1,16 @@
 from collections import Hashable
 from typing import Any
 
+from schema_mechanism.data_structures import GlobalParams
+from schema_mechanism.data_structures import GlobalStats
+from schema_mechanism.data_structures import ItemPool
+
+
+def common_test_setup():
+    ItemPool().clear()
+    GlobalParams().reset()
+    GlobalStats().reset()
+
 
 def is_eq_reflexive(x: Any) -> bool:
     """ Tests the reflexive property of the __eq__ method.

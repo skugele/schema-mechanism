@@ -5,6 +5,7 @@ from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import State
 from schema_mechanism.func_api import sym_state
 from test_share.test_classes import MockSymbolicItem
+from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -16,12 +17,14 @@ from test_share.test_func import is_hash_same_for_equal_objects
 
 class TestState(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         # adds items to item pool
-        _ = ItemPool().get('1', primitive_value=-1.0, avg_accessible_value=3.0, item_type=MockSymbolicItem)
-        _ = ItemPool().get('2', primitive_value=0.0, avg_accessible_value=1.0, item_type=MockSymbolicItem)
-        _ = ItemPool().get('3', primitive_value=1.0, avg_accessible_value=-3.0, item_type=MockSymbolicItem)
-        _ = ItemPool().get('4', primitive_value=-1.0, avg_accessible_value=0.0, item_type=MockSymbolicItem)
-        _ = ItemPool().get('5', primitive_value=0.0, avg_accessible_value=-1.0, item_type=MockSymbolicItem)
+        i1 = ItemPool().get('1', primitive_value=-1.0, avg_accessible_value=3.0, item_type=MockSymbolicItem)
+        i2 = ItemPool().get('2', primitive_value=0.0, avg_accessible_value=1.0, item_type=MockSymbolicItem)
+        i3 = ItemPool().get('3', primitive_value=1.0, avg_accessible_value=-3.0, item_type=MockSymbolicItem)
+        i4 = ItemPool().get('4', primitive_value=-1.0, avg_accessible_value=0.0, item_type=MockSymbolicItem)
+        i5 = ItemPool().get('5', primitive_value=0.0, avg_accessible_value=-1.0, item_type=MockSymbolicItem)
 
         self.s = State(elements=['1', '2', '3'])
         self.s_copy = State(elements=['1', '2', '3'])

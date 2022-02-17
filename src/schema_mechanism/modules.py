@@ -116,6 +116,11 @@ class SchemaMemory(Observer):
         # of the probabilities within a schema are really conditioned on the context being satisfied, even
         # though this fact is implicit.
         for app in applicable:
+            # TODO: Enhancement #1: "The machinery's sensitivity to results is amplified by an embellishment of marginal
+            # TODO: attribution: when a given schema is idle (i.e., it has not just completed an activation), the updating of its
+            # TODO: extended result data is suppressed for any state transition which is explained--meaning that the transition is
+            # TODO: predicted as the result of a reliable schema whose activation has just completed." (see Drescher, 1991, p. 73)
+
             # activated
             if app.action == schema.action:
                 app.update(activated=True,
@@ -248,10 +253,13 @@ class GoalPursuitEvaluationStrategy:
         pass
 
     def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
-        pv = primitive_values(schemas)
-        dv = delegated_values(schemas)
-        iv = instrumental_values(schemas)
-        return pv + dv + iv
+        # pv = primitive_values(schemas)
+        # dv = delegated_values(schemas)
+        # iv = instrumental_values(schemas)
+        #
+        # return pv + dv + iv
+        # FIXME: remove this once I've figured out the context spin-off issue
+        return np.zeros_like(schemas)
 
 
 # TODO: implement this
@@ -347,23 +355,34 @@ class SchemaSelection:
 
         # TODO: Set parameters.
 
-        # TODO: goal/explore weight should be updated over time.
-        # "The schema mechanism maintains a cyclic balance between emphasizing goal-directed value and exploration
-        #  value. The emphasis is achieved by changing the weights of the relative contributions of these components
-        #  to the importance asserted by each schema. Goal-directed value is emphasized most of the time, but a
-        #  significant part of the time, goal-directed value is diluted so that only very important goals take
-        #  precedence over exploration criteria." (See Drescher, 1991, p. 66)
-        self.goal_weight: float = 1.0
-        self.explore_weight: float = 1.0 - self.goal_weight
+        self._goal_weight: float = 1.0
+        self._explore_weight: float = 1.0 - self.goal_weight
+
+    @property
+    def goal_weight(self) -> float:
+        return self._goal_weight
+
+    @property
+    def explore_weight(self) -> float:
+        return self._explore_weight
 
     def select(self, schemas: Sequence[Schema]) -> SchemaSelection.SelectionDetails:
         if not schemas:
             raise ValueError('Collection of applicable schemas must contain at least one schema')
 
+        # TODO: update goal/explore weights.
+        # "The schema mechanism maintains a cyclic balance between emphasizing goal-directed value and exploration
+        #  value. The emphasis is achieved by changing the weights of the relative contributions of these components
+        #  to the importance asserted by each schema. Goal-directed value is emphasized most of the time, but a
+        #  significant part of the time, goal-directed value is diluted so that only very important goals take
+        #  precedence over exploration criteria." (See Drescher, 1991, p. 66)
+
         goal_values = self._goal_pursuit(schemas)
         explore_values = self._explore(schemas)
 
-        selection_values = self.goal_weight * goal_values + self.explore_weight * explore_values
+        # TODO: Only reliable schemas should be used for goal pursuit. How do we do this??? Perhaps a large penalty
+        # TODO: for unreliable schemas???
+        selection_values = self.goal_weight * goal_values + self._explore_weight * explore_values
 
         # TODO: Need to increase the selection value for pending composite actions
         # “The mechanism grants a pending schema enhanced importance for selection, so that the schema will likely
@@ -435,8 +454,12 @@ class SchemaMechanism:
         self._selection_state: Optional[State] = None
         self._selection_details: Optional[SchemaSelection.SelectionDetails] = None
 
+    @property
+    def known_schemas(self) -> Collection[Schema]:
+        return self._schema_memory.schemas
+
     def select(self, state: State, *args, **kwargs) -> Schema:
-        # TODO: Is there a better place to do this?
+        # TODO: Would it be better to lazy initialize items into item pool for non-primitive items?
         for se in state:
             _ = ItemPool().get(se)
 

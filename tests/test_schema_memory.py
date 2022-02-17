@@ -14,10 +14,13 @@ from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.modules import create_context_spin_off
 from schema_mechanism.modules import create_result_spin_off
+from test_share.test_func import common_test_setup
 
 
 class TestSchemaMemory(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         self.tree = SchemaTree()
 
         s1 = sym_schema('/A1/')

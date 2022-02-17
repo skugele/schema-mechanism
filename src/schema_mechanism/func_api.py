@@ -41,8 +41,8 @@ def sym_assert(str_repr: str, primitive_value: float = None) -> ItemAssertion:
     if '~' == str_repr[0]:
         negated = True
         str_repr = str_repr[1:]
-
-    return ItemAssertion(sym_item(str_repr, primitive_value), negated)
+    item = sym_item(str_repr, primitive_value=primitive_value)
+    return ItemAssertion(item, negated)
 
 
 def sym_asserts(str_repr: str) -> Collection[ItemAssertion]:

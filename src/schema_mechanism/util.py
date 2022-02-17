@@ -1,3 +1,4 @@
+import sys
 from abc import ABCMeta
 from collections.abc import Iterable
 from itertools import tee
@@ -109,3 +110,7 @@ def pairwise(iterable):
     a, b = tee(iterable)
     next(b, None)
     return zip(a, b)
+
+
+def warn(message):
+    print(message, file=sys.stderr)

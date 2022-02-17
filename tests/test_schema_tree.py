@@ -9,6 +9,7 @@ from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import SchemaTree
 from schema_mechanism.data_structures import SchemaTreeNode
+from schema_mechanism.data_structures import State
 from schema_mechanism.func_api import actions
 from schema_mechanism.func_api import primitive_schemas
 from schema_mechanism.func_api import sym_assert
@@ -19,6 +20,7 @@ from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import create_context_spin_off
 from schema_mechanism.modules import create_result_spin_off
 from schema_mechanism.modules import create_spin_off
+from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -30,6 +32,8 @@ from test_share.test_func import is_hash_same_for_equal_objects
 
 class TestSchemaTree(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         self.empty_tree = SchemaTree()
 
         # schemas used in tree
@@ -365,7 +369,7 @@ class TestSchemaTree(TestCase):
 
         for _ in range(n_iters):
             start = time()
-            _ = tree.find_all_satisfied(state=sample(range(n_items), k=5))
+            _ = tree.find_all_satisfied(state=State(sample(range(n_items), k=5)))
             end = time()
             elapsed_time += end - start
 
@@ -394,7 +398,7 @@ class TestSchemaTree(TestCase):
 
         for _ in range(n_iters):
             start = time()
-            _ = tree.find_all_satisfied(state=sample(range(n_items), k=10))
+            _ = tree.find_all_satisfied(state=State(sample(range(n_items), k=10)))
             end = time()
             elapsed_time += end - start
 
@@ -403,6 +407,8 @@ class TestSchemaTree(TestCase):
 
 class TestSchemaTreeNode(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         self.blank_stn = SchemaTreeNode()
 
         self.stn_1 = sym_schema_tree_node('1,2/A1/')

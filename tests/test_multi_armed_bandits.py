@@ -5,10 +5,13 @@ from schema_mechanism.data_structures import Action
 from schema_mechanism.examples.multi_arm_bandits import BanditEnvironment
 from schema_mechanism.examples.multi_arm_bandits import Machine
 from schema_mechanism.func_api import sym_state
+from test_share.test_func import common_test_setup
 
 
 class TestMultiArmedBandits(unittest.TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         self.machine_always_win = Machine('0', p_win=1.0)
         self.machine_always_lose = Machine('1', p_win=0.0)
         self.machine_even_chance = Machine('2', p_win=0.5)
@@ -75,7 +78,6 @@ class TestMultiArmedBandits(unittest.TestCase):
 
         # test: M0,W + Action('stand') => S
         env.step(Action('stand'))
-        print(env.current_state)
         self.assertEqual(sym_state('S'), env.current_state)
 
     def test_step_4(self):

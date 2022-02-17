@@ -3,6 +3,7 @@ from unittest import TestCase
 from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
+from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -15,6 +16,8 @@ from test_share.test_func import is_hash_same_for_equal_objects
 class TestItemAssertion(TestCase):
 
     def setUp(self) -> None:
+        common_test_setup()
+
         self.item = sym_item('1234', primitive_value=1.0)
         self.ia = ItemAssertion(self.item)
         self.ia_neg = ItemAssertion(self.item, negated=True)
@@ -33,15 +36,17 @@ class TestItemAssertion(TestCase):
 
         # check immutability
         try:
+            # noinspection PyPropertyAccess
             self.ia.negated = False
             self.fail('ItemAssertion is not immutable as expected: able to set negated directly')
-        except Exception:
+        except AttributeError:
             pass
 
         try:
+            # noinspection PyPropertyAccess
             self.ia.item = sym_item('illegal')
             self.fail('ItemAssertion is not immutable as expected: able to set negated directly')
-        except Exception:
+        except AttributeError:
             pass
 
     def test_copy(self):

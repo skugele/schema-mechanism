@@ -4,10 +4,13 @@ from schema_mechanism.data_structures import ExtendedItemCollection
 from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_items
 from test_share.test_classes import MockObserver
+from test_share.test_func import common_test_setup
 
 
 class TestExtendedItemCollection(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         self.eic = ExtendedItemCollection(suppress_list=sym_items('1,2,3'))
 
         self.obs = MockObserver()

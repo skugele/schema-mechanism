@@ -9,6 +9,7 @@ from schema_mechanism.data_structures import ERItemStats
 from schema_mechanism.data_structures import ReadOnlyECItemStats
 from schema_mechanism.data_structures import ReadOnlyERItemStats
 from schema_mechanism.data_structures import SchemaStats
+from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -20,6 +21,8 @@ from test_share.test_func import is_hash_same_for_equal_objects
 
 class TestECItemStatistics(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         self.item_stats = ECItemStats()
 
     def test_init(self):
@@ -30,6 +33,26 @@ class TestECItemStatistics(TestCase):
 
         self.assertIs(self.item_stats.success_corr, np.NAN)
         self.assertIs(self.item_stats.failure_corr, np.NAN)
+
+    def test_specificity_1(self):
+        # test: initial specificity SHOULD be NAN
+        self.assertIs(np.NAN, self.item_stats.specificity)
+
+    def test_specificity_2(self):
+        # test: if an item was never On its specificity SHOULD be 1.0
+        self.item_stats.update(on=False, success=False, count=1000)
+        self.assertEqual(1.0, self.item_stats.specificity)
+
+    def test_specificity_3(self):
+        # test: if an item is always On its specificity SHOULD be 0.0
+        self.item_stats.update(on=True, success=False, count=1000)
+        self.assertEqual(0.0, self.item_stats.specificity)
+
+    def test_specificity_4(self):
+        # test: an item that is On and Off equally should have a specificity of 0.5
+        self.item_stats.update(on=False, success=False, count=500)
+        self.item_stats.update(on=True, success=False, count=500)
+        self.assertEqual(0.5, self.item_stats.specificity)
 
     def test_update_1(self):
         self.item_stats.update(on=True, success=True)
@@ -155,6 +178,8 @@ class TestECItemStatistics(TestCase):
 
 class TestERItemStatistics(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         self.item_stats = ERItemStats()
 
     def test_init(self):
@@ -289,6 +314,8 @@ class TestERItemStatistics(TestCase):
 
 class TestSchemaStats(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         self.ss = SchemaStats()
 
     def test_init(self):
@@ -358,12 +385,18 @@ class TestSchemaStats(TestCase):
 
 
 class TestReadOnlyECItemStats(TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
     def test_update(self):
         item_stats = ReadOnlyECItemStats()
         self.assertRaises(NotImplementedError, lambda: item_stats.update(True, True))
 
 
 class TestReadOnlyERItemStats(TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
     def test_update(self):
         item_stats = ReadOnlyERItemStats()
         self.assertRaises(NotImplementedError, lambda: item_stats.update(True, True))

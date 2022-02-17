@@ -7,21 +7,24 @@ from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import NULL_ER_ITEM_STATS
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import sym_item
+from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
 from test_share.test_classes import MockObserver
+from test_share.test_func import common_test_setup
 
 
 class TestExtendedResult(TestCase):
     N_ITEMS = 1000
 
     def setUp(self) -> None:
+        common_test_setup()
+
         self._item_pool = ItemPool()
-        self._item_pool.clear()
 
         for i in range(self.N_ITEMS):
-            self._item_pool.get(i, SymbolicItem)
+            self._item_pool.get(i, item_type=SymbolicItem)
 
         self.result = sym_state_assert('100,101')
         self.er = ExtendedResult(result=self.result)
@@ -62,8 +65,8 @@ class TestExtendedResult(TestCase):
                     self.assertEqual(0, value)
 
     def test_update_all(self):
-        s_prev = [0, 1, 2]
-        s_curr = [1, 2, 3]
+        s_prev = sym_state('0,1,2')
+        s_curr = sym_state('1,2,3')
 
         new = new_state(s_prev=s_prev, s_curr=s_curr)
         lost = lost_state(s_prev=s_prev, s_curr=s_curr)

@@ -12,6 +12,7 @@ from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import Schema
+from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import sym_schema
@@ -21,6 +22,7 @@ from schema_mechanism.modules import lost_state
 from schema_mechanism.modules import new_state
 from schema_mechanism.modules import update_schema
 from test_share.test_classes import MockObserver
+from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -32,6 +34,8 @@ from test_share.test_func import is_hash_same_for_equal_objects
 
 class TestSchema(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         self._item_pool = ItemPool()
 
         # populate pool
@@ -46,6 +50,7 @@ class TestSchema(TestCase):
     def test_init(self):
         # Action CANNOT be None
         try:
+            # noinspection PyTypeChecker
             Schema(action=None)
             self.fail('Action=None should generate a ValueError')
         except ValueError as e:
@@ -65,21 +70,24 @@ class TestSchema(TestCase):
                    result=sym_state_assert('2'))
 
         try:
+            # noinspection PyPropertyAccess
             s.context = StateAssertion()
             self.fail('Schema\'s context is not immutable as expected')
-        except Exception as e:
+        except AttributeError:
             pass
 
         try:
+            # noinspection PyPropertyAccess
             s.result = StateAssertion()
             self.fail('Schema\'s result is not immutable as expected')
-        except Exception as e:
+        except AttributeError:
             pass
 
         try:
+            # noinspection PyPropertyAccess
             s.action = Action()
             self.fail('Schema\'s action is not immutable as expected')
-        except Exception as e:
+        except AttributeError:
             pass
 
     def test_items_in_context_and_result(self):
@@ -464,8 +472,8 @@ class TestSchema(TestCase):
         for i in range(n_items):
             self._item_pool.get(i)
 
-        s_prev = sample(range(n_items), k=n_state_elements)
-        s_curr = sample(range(n_items), k=n_state_elements)
+        s_prev = State(sample(range(n_items), k=n_state_elements))
+        s_curr = State(sample(range(n_items), k=n_state_elements))
 
         v_prev = ItemPoolStateView(s_prev)
         v_curr = ItemPoolStateView(s_curr)
@@ -506,7 +514,7 @@ class TestSchema(TestCase):
                    action=Action()) for _ in range(n_schemas)
         ]
 
-        state = sample(range(n_items), k=n_context_elements)
+        state = State(sample(range(n_items), k=n_context_elements))
 
         start = time()
         for s in schemas:

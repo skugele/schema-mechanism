@@ -1,6 +1,7 @@
 from unittest import TestCase
 
 from schema_mechanism.data_structures import Action
+from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_with_null_is_false
 from test_share.test_func import is_hash_consistent
 from test_share.test_func import is_hash_same_for_equal_objects
@@ -8,6 +9,8 @@ from test_share.test_func import is_hash_same_for_equal_objects
 
 class TestAction(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         self.a = Action(label='label')
 
     def test_init(self):

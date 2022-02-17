@@ -13,6 +13,7 @@ from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import sym_state
 from test_share.test_classes import MockSymbolicItem
+from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -25,6 +26,8 @@ from test_share.test_func import is_hash_same_for_equal_objects
 class TestSymbolicItem(TestCase):
 
     def setUp(self) -> None:
+        common_test_setup()
+
         self.item = SymbolicItem(state_element='1234', primitive_value=1.0)
 
     def test_init(self):
@@ -43,13 +46,13 @@ class TestSymbolicItem(TestCase):
 
     def test_is_on(self):
         # item expected to be ON for these states
-        self.assertTrue(self.item.is_on(state=['1234']))
-        self.assertTrue(self.item.is_on(state=['123', '1234']))
+        self.assertTrue(self.item.is_on(sym_state('1234')))
+        self.assertTrue(self.item.is_on(sym_state('123,1234')))
 
         # item expected to be OFF for these states
-        self.assertFalse(self.item.is_on(state=[]))
-        self.assertFalse(self.item.is_on(state=['123']))
-        self.assertFalse(self.item.is_on(state=['123', '4321']))
+        self.assertFalse(self.item.is_on(sym_state('')))
+        self.assertFalse(self.item.is_on(sym_state('123')))
+        self.assertFalse(self.item.is_on(sym_state('123,4321')))
 
     def test_copy(self):
         copy = self.item.copy()

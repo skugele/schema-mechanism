@@ -2,9 +2,13 @@ from unittest import TestCase
 
 from test_share.test_classes import MockObservable
 from test_share.test_classes import MockObserver
+from test_share.test_func import common_test_setup
 
 
 class TestObserverAndObservables(TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
     def test(self):
         observable = MockObservable()
 

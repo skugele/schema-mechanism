@@ -26,14 +26,11 @@ from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import repr_str
-
 # Type Aliases
 ##############
+from schema_mechanism.util import warn
+
 StateElement = Hashable
-
-
-# TODO: Consider creating a State class wrapping a collection of StateElements and moving these functions into it as
-# TODO: methods
 
 
 # Classes
@@ -67,7 +64,8 @@ class State:
     def avg_accessible_value(self) -> float:
         if not self._elements:
             return 0.0
-        return np.max([ReadOnlyItemPool().get(se).avg_accessible_value for se in self._elements])
+        items = [ReadOnlyItemPool().get(se) for se in self._elements]
+        return np.max([i.avg_accessible_value for i in items])
 
     def __len__(self) -> int:
         return len(self._elements)
@@ -305,14 +303,10 @@ class ItemPool(metaclass=Singleton):
             # create and add item if it doesn't already exist
             if obj is None:
                 self._items[state_element] = obj = (
-                    item_type(state_element, primitive_value, **kwargs)
+                    item_type(state_element=state_element, primitive_value=primitive_value, **kwargs)
                     if item_type
-                    else SymbolicItem(state_element, primitive_value, **kwargs)
+                    else SymbolicItem(state_element=state_element, primitive_value=primitive_value, **kwargs)
                 )
-
-            # update item's primitive value if one was supplied
-            elif primitive_value is not None:
-                obj.primitive_value = primitive_value
 
         return obj
 
@@ -420,9 +414,32 @@ class ItemAssertion:
                                'negated': self.negated})
 
 
+class GlobalOption(Enum):
+    # "There is an embellishment of the marginal attribution algorithm--deferring to a more specific applicable schema--
+    #  that often enables the discovery of an item who relevance has been obscured." (see Drescher,1991, pp. 75-76)
+    EC_DEFER_TO_MORE_SPECIFIC_SCHEMA = auto,
+
+    # "[another] embellishment also reduces redundancy: when a schema's extended context simultaneously detects the
+    # relevance of several items--that is, their statistics pass the significance threshold on the same trial--the most
+    # specific is chosen as the one for inclusion in a spin-off from that schema." (see Drescher, 1991, p. 77)
+    #
+    #     Note: Requires that EC_DEFER_TO_MORE_SPECIFIC is also enabled.
+    EC_MOST_SPECIFIC_ON_MULTIPLE = auto()
+
+
 class GlobalParams(metaclass=Singleton):
+    DEFAULT_LEARN_RATE = 0.01
+
+    # TODO: What default options make sense?
+    DEFAULT_OPTIONS = frozenset((
+
+    ))
+
     def __init__(self) -> None:
-        self._learn_rate = 0.01
+        self._learn_rate: float = 0.0
+        self._options: Optional[MutableSet[GlobalOption]] = None
+
+        self._set_default_values()
 
     @property
     def learn_rate(self) -> float:
@@ -430,13 +447,40 @@ class GlobalParams(metaclass=Singleton):
 
     @learn_rate.setter
     def learn_rate(self, value: float) -> None:
-        if value <= 0.0 or value > 1.0:
-            raise ValueError('Learning rate must be greater than zero and less than or equal to one.')
+        if value < 0.0 or value > 1.0:
+            raise ValueError('Learning rate must be >= zero and <= to one.')
         self._learn_rate = value
+
+    @property
+    def options(self) -> MutableSet[GlobalOption]:
+        return self._options
+
+    @options.setter
+    def options(self, value: Optional[Collection[GlobalOption]]) -> None:
+        self._options = self._set_options(value)
+
+    def _set_options(self, enhancements: Optional[Collection[GlobalOption]]) -> MutableSet[GlobalOption]:
+        options = set(enhancements)
+        if GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE in enhancements:
+            if GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA not in enhancements:
+                warn('Optional enhancement EC_MOST_SPECIFIC_ON_MULTIPLE requires EC_DEFER_TO_MORE_SPECIFIC!')
+                warn('Optional enhancement EC_DEFER_TO_MORE_SPECIFIC_SCHEMA was added automatically.')
+                options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+
+        return options
+
+    def is_enabled(self, enhancement: GlobalOption) -> bool:
+        return enhancement in self._options
+
+    def reset(self):
+        self._set_default_values()
+
+    def _set_default_values(self) -> None:
+        self.learn_rate = GlobalParams.DEFAULT_LEARN_RATE
+        self.options = GlobalParams.DEFAULT_OPTIONS
 
 
 class GlobalStats(metaclass=Singleton):
-
     def __init__(self, baseline_value: Optional[float] = None) -> None:
         self._baseline = baseline_value or 0.0
 
@@ -459,6 +503,9 @@ class GlobalStats(metaclass=Singleton):
         :return: None
         """
         self._baseline += GlobalParams().learn_rate * (state.primitive_value - self._baseline)
+
+    def reset(self):
+        self._baseline = 0.0
 
 
 class SchemaStats:
@@ -608,6 +655,23 @@ class ECItemStats(ItemStats):
     @property
     def n_off(self) -> int:
         return self.n_success_and_off + self.n_fail_and_off
+
+    @property
+    def n(self) -> int:
+        return self.n_on + self.n_off
+
+    @property
+    def specificity(self) -> float:
+        """ Quantifies the item's specificity. Greater values imply greater specificity.
+
+        "An item is considered more specific if it is On less frequently." (See Drescher, 1991, p.77)
+
+        :return: a float between 0.0 and 1.0
+        """
+        try:
+            return self.n_off / self.n
+        except ZeroDivisionError:
+            return np.NAN
 
     @property
     def n_success_and_on(self) -> int:
@@ -971,7 +1035,7 @@ class StateAssertion:
         :param view: an item pool view
         :return: True if this state assertion is satisfied given the current state; False otherwise.
         """
-        return all({not ia.negated and view.is_on(ia.item) for ia in self})
+        return all({not view.is_on(ia.item) if ia.negated else view.is_on(ia.item) for ia in self})
 
     def replicate_with(self, item_assert: ItemAssertion) -> StateAssertion:
         if self.__contains__(item_assert):
@@ -1041,6 +1105,10 @@ class ExtendedItemCollection(Observable):
     @property
     def new_relevant_items(self) -> frozenset[ItemAssertion]:
         return frozenset(self._new_relevant_items)
+
+    @new_relevant_items.setter
+    def new_relevant_items(self, value: Collection[ItemAssertion]) -> None:
+        self._new_relevant_items = frozenset(value)
 
     def __str__(self) -> str:
         name = self.__class__.__name__
@@ -1138,6 +1206,9 @@ class ExtendedContext(ExtendedItemCollection):
     def __init__(self, context: StateAssertion) -> None:
         super().__init__(suppress_list=context.items, null_member=NULL_EC_ITEM_STATS)
 
+        self._pending_relevant_items = set()
+        self._pending_max_specificity = -np.inf
+
     @property
     def stats(self) -> dict[Item, ECItemStats]:
         return super().stats
@@ -1158,36 +1229,52 @@ class ExtendedContext(ExtendedItemCollection):
         for item in self._item_pool:
             self.update(item=item, on=view.is_on(item), success=success, count=count)
 
+        self.check_pending_relevant_items()
         if self.new_relevant_items:
             self.notify_all(source=self)
 
+    @property
+    def pending_relevant_items(self) -> frozenset[ItemAssertion]:
+        return frozenset(self._pending_relevant_items)
+
+    @property
+    def pending_max_specificity(self) -> float:
+        return self._pending_max_specificity
+
+    def check_pending_relevant_items(self) -> None:
+        for ia in self._pending_relevant_items:
+            self.update_relevant_items(ia)
+
+        self.clear_pending_relevant_items()
+
+    def clear_pending_relevant_items(self) -> None:
+        self._pending_relevant_items.clear()
+        self._pending_max_specificity = -np.inf
+
     def _check_for_relevance(self, item: Item, item_stats: ECItemStats) -> None:
-        if item_stats.success_corr > self.POS_CORR_RELEVANCE_THRESHOLD:
-            item_assert = ItemAssertion(item)
-            if not self.known_relevant_item(item_assert):
-                self.update_relevant_items(ItemAssertion(item))
+        # if item is relevant, a new item assertion is created
+        item_assert = (
+            ItemAssertion(item) if item_stats.success_corr > self.POS_CORR_RELEVANCE_THRESHOLD
+            else ItemAssertion(item, negated=True) if item_stats.failure_corr > self.NEG_CORR_RELEVANCE_THRESHOLD
+            else None
+        )
 
-        elif item_stats.failure_corr > self.NEG_CORR_RELEVANCE_THRESHOLD:
-            item_assert = ItemAssertion(item, negated=True)
-            if not self.known_relevant_item(item_assert):
-                self.update_relevant_items(item_assert)
+        if item_assert and not self.known_relevant_item(item_assert):
+            specificity = self.stats[item].specificity
+
+            # if enabled, this enhancement allows only a single relevant item per update (the most "specific").
+            if GlobalParams().is_enabled(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE):
+                # item is less specific than earlier item; suppress it on this update.
+                if specificity < self._pending_max_specificity:
+                    return
+                # item is the most specific so far; replace previous pending item assertion.
+                else:
+                    self._pending_relevant_items.clear()
+                    self._pending_max_specificity = max(self._pending_max_specificity, specificity)
+
+            self._pending_relevant_items.add(item_assert)
 
 
-# TODO: Enhancement #1: "The machinery's sensitivity to results is amplified by an embellishment of marginal
-# TODO: attribution: when a given schema is idle (i.e., it has not just completed an activation), the updating of its
-# TODO: extended result data is suppressed for any state transition which is explained--meaning that the transition is
-# TODO: predicted as the result of a reliable schema whose activation has just completed." (see Drescher, 1991, p. 73)
-
-# TODO: Enhancement #2: "There is an embellishment of the marginal attribution algorithm--deferring to a more specific
-# TODO: applicable schema--that often enables the discovery of an item who relevance has been obscured." (see Drescher,
-# TODO: 1991, pp. 75-76)
-
-# TODO: Enhancement #3: "[another] embellishment also reduces redundancy: when a schema's extended context
-# TODO: simultaneously detects the relevance of several items--that is, their statistics pass the significance
-# TODO: threshold on the same trial--the most specific is chosen as the one for inclusion in a spin-off from that
-# TODO: schema." (see Drescher, 1991, p. 77)
-
-# The implication is that usually the extended result statistics are updated even when that schema was not not activated
 
 # TODO: Candidate for the flyweight pattern?
 class Schema(Observer, Observable, UniqueIdMixin):
@@ -1399,7 +1486,13 @@ class Schema(Observer, Observable, UniqueIdMixin):
                      self._result,))
 
     def __str__(self) -> str:
-        return f'{self.context}/{self.action}/{self.result}'
+        return (
+                f'{self.context}/{self.action}/{self.result} ' +
+                f'[rel: {self.reliability:.2}; ' +
+                f'n_act: {self.stats.n_activated}; ' +
+                f'n_succ: {self.stats.n_success}; ' +
+                f'n_fail: {self.stats.n_fail};] '
+        )
 
     def __repr__(self) -> str:
         return repr_str(self, {'uid': self.uid,

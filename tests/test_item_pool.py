@@ -7,13 +7,15 @@ import test_share
 from schema_mechanism.data_structures import ItemPool
 from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import ReadOnlyItemPool
+from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import SymbolicItem
 from schema_mechanism.func_api import sym_state
+from test_share.test_func import common_test_setup
 
 
 class TestSharedItemPool(TestCase):
     def setUp(self) -> None:
-        ItemPool().clear()
+        common_test_setup()
 
     def test_singleton(self):
         # test case: verify singleton (all objects refer to the same instance in memory)
@@ -160,7 +162,7 @@ class TestReadOnlyItemPool(TestCase):
 
 class TestItemPoolStateView(TestCase):
     def setUp(self) -> None:
-        ItemPool().clear()
+        common_test_setup()
 
     def test(self):
         pool = ItemPool()
@@ -187,7 +189,7 @@ class TestItemPoolStateView(TestCase):
         n_distinct_states = n_items
         n_state_elements = 10
 
-        state = sample(range(n_distinct_states), k=n_state_elements)
+        state = State(sample(range(n_distinct_states), k=n_state_elements))
 
         # test view creation time
         start = time()

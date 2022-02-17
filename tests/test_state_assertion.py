@@ -5,9 +5,11 @@ from unittest import TestCase
 
 import test_share
 from schema_mechanism.data_structures import ItemPool
+from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_state
+from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -19,6 +21,8 @@ from test_share.test_func import is_hash_same_for_equal_objects
 
 class TestStateAssertion(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         self.sa = StateAssertion((sym_assert('1'), sym_assert('~2'), sym_assert('3')))
 
     def test_init(self):
@@ -47,6 +51,12 @@ class TestStateAssertion(TestCase):
         c = StateAssertion((sym_assert('1'),))
         self.assertTrue(c.is_satisfied(state))
 
+        c = StateAssertion((sym_assert('2'),))
+        self.assertTrue(c.is_satisfied(state))
+
+        c = StateAssertion((sym_assert('~3'),))
+        self.assertTrue(c.is_satisfied(state))
+
         # expected to NOT be satisfied
         c = StateAssertion((sym_assert('3'),))
         self.assertFalse(c.is_satisfied(state))
@@ -56,6 +66,12 @@ class TestStateAssertion(TestCase):
 
         # expected to be satisfied
         c = StateAssertion((sym_assert('1'), sym_assert('2')))
+        self.assertTrue(c.is_satisfied(state))
+
+        c = StateAssertion((sym_assert('1'), sym_assert('~3')))
+        self.assertTrue(c.is_satisfied(state))
+
+        c = StateAssertion((sym_assert('2'), sym_assert('~3')))
         self.assertTrue(c.is_satisfied(state))
 
         # expected to NOT be satisfied
@@ -70,6 +86,57 @@ class TestStateAssertion(TestCase):
                             sym_assert('2'),
                             sym_assert('3')))
         self.assertFalse(c.is_satisfied(state))
+
+    def test_is_satisfied_in_view(self):
+        state = sym_state('1,2')
+        view = ItemPoolStateView(state)
+
+        # an empty StateAssertion should always be satisfied
+        c = StateAssertion()
+        self.assertTrue(c.is_satisfied_in_view(view))
+
+        # single discrete item
+        #######################
+
+        # expected to be satisfied
+        c = StateAssertion((sym_assert('1'),))
+        self.assertTrue(c.is_satisfied_in_view(view))
+
+        c = StateAssertion((sym_assert('2'),))
+        self.assertTrue(c.is_satisfied_in_view(view))
+
+        c = StateAssertion((sym_assert('~3'),))
+        self.assertTrue(c.is_satisfied_in_view(view))
+
+        # expected to NOT be satisfied
+        c = StateAssertion((sym_assert('3'),))
+        self.assertFalse(c.is_satisfied_in_view(view))
+
+        # multiple discrete items (all must be matched)
+        ###############################################
+
+        # expected to be satisfied
+        c = StateAssertion((sym_assert('1'), sym_assert('2')))
+        self.assertTrue(c.is_satisfied_in_view(view))
+
+        c = StateAssertion((sym_assert('1'), sym_assert('~3')))
+        self.assertTrue(c.is_satisfied_in_view(view))
+
+        c = StateAssertion((sym_assert('2'), sym_assert('~3')))
+        self.assertTrue(c.is_satisfied_in_view(view))
+
+        # expected to NOT be satisfied
+        c = StateAssertion((sym_assert('1'), sym_assert('~2')))
+        self.assertFalse(c.is_satisfied_in_view(view))
+
+        c = StateAssertion((sym_assert('1'),
+                            sym_assert('3')))
+        self.assertFalse(c.is_satisfied_in_view(view))
+
+        c = StateAssertion((sym_assert('1'),
+                            sym_assert('2'),
+                            sym_assert('3')))
+        self.assertFalse(c.is_satisfied_in_view(view))
 
     def test_is_contained(self):
         # expected to be contained (discrete)
@@ -119,6 +186,8 @@ class TestStateAssertion(TestCase):
         self.assertEqual(0.0, sa.total_primitive_value)
 
     def test_total_primitive_value_4(self):
+        ItemPool().clear()
+
         # multiple (non-negated) item state assertion should have total value equal to the sum of item primitive values
         sa = StateAssertion([sym_assert(str(i), 1.0) for i in range(10)])
         self.assertEqual(10.0, sa.total_primitive_value)
