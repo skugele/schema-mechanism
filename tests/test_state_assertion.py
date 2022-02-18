@@ -5,7 +5,7 @@ from unittest import TestCase
 
 import test_share
 from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import ItemPoolStateView
+from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_state
@@ -86,57 +86,6 @@ class TestStateAssertion(TestCase):
                             sym_assert('2'),
                             sym_assert('3')))
         self.assertFalse(c.is_satisfied(state))
-
-    def test_is_satisfied_in_view(self):
-        state = sym_state('1,2')
-        view = ItemPoolStateView(state)
-
-        # an empty StateAssertion should always be satisfied
-        c = StateAssertion()
-        self.assertTrue(c.is_satisfied_in_view(view))
-
-        # single discrete item
-        #######################
-
-        # expected to be satisfied
-        c = StateAssertion((sym_assert('1'),))
-        self.assertTrue(c.is_satisfied_in_view(view))
-
-        c = StateAssertion((sym_assert('2'),))
-        self.assertTrue(c.is_satisfied_in_view(view))
-
-        c = StateAssertion((sym_assert('~3'),))
-        self.assertTrue(c.is_satisfied_in_view(view))
-
-        # expected to NOT be satisfied
-        c = StateAssertion((sym_assert('3'),))
-        self.assertFalse(c.is_satisfied_in_view(view))
-
-        # multiple discrete items (all must be matched)
-        ###############################################
-
-        # expected to be satisfied
-        c = StateAssertion((sym_assert('1'), sym_assert('2')))
-        self.assertTrue(c.is_satisfied_in_view(view))
-
-        c = StateAssertion((sym_assert('1'), sym_assert('~3')))
-        self.assertTrue(c.is_satisfied_in_view(view))
-
-        c = StateAssertion((sym_assert('2'), sym_assert('~3')))
-        self.assertTrue(c.is_satisfied_in_view(view))
-
-        # expected to NOT be satisfied
-        c = StateAssertion((sym_assert('1'), sym_assert('~2')))
-        self.assertFalse(c.is_satisfied_in_view(view))
-
-        c = StateAssertion((sym_assert('1'),
-                            sym_assert('3')))
-        self.assertFalse(c.is_satisfied_in_view(view))
-
-        c = StateAssertion((sym_assert('1'),
-                            sym_assert('2'),
-                            sym_assert('3')))
-        self.assertFalse(c.is_satisfied_in_view(view))
 
     def test_is_contained(self):
         # expected to be contained (discrete)
@@ -245,7 +194,7 @@ class TestStateAssertion(TestCase):
 
         elapsed_time = 0
         for _ in range(n_iters):
-            state = sample(range(100), k=5)
+            state = State(sample(range(100), k=5))
             pos_asserts = [sym_assert(f'{i}') for i in sample(range(0, 50), k=5)]
             neg_asserts = [sym_assert(f'~{i}') for i in sample(range(50, 100), k=3)]
 
@@ -256,18 +205,3 @@ class TestStateAssertion(TestCase):
             elapsed_time += end - start
 
         print(f'Time to call StateAssertion.is_satisfied {n_iters:,} times: {elapsed_time}s')
-
-        # TODO: This is killing the unit tests. I have NO CLUE WHY! It runs fine separately.
-        # elapsed_time = 0
-        # for _ in range(n_iters):
-        #     view = ItemPoolStateView(sample(range(100), k=5))
-        #     pos_asserts = make_assertions(sample(range(0, 50), k=5))
-        #     neg_asserts = make_assertions(sample(range(50, 100), k=3), negated=True)
-        #
-        #     sa = StateAssertion((*pos_asserts, *neg_asserts))
-        #     start = time()
-        #     sa.is_satisfied_in_view(view)
-        #     end = time()
-        #     elapsed_time += end - start
-        #
-        # print(f'Time to call StateAssertion.is_satisfied_in_view {n_iters:,} times: {elapsed_time}s')

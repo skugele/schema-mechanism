@@ -1,15 +1,17 @@
 from unittest import TestCase
 
 from schema_mechanism.data_structures import Action
+from schema_mechanism.data_structures import GlobalOption
+from schema_mechanism.data_structures import GlobalParams
 from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import Schema
+from schema_mechanism.data_structures import held_state
+from schema_mechanism.data_structures import lost_state
+from schema_mechanism.data_structures import new_state
 from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import create_spin_off
-from schema_mechanism.modules import held_state
-from schema_mechanism.modules import lost_state
-from schema_mechanism.modules import new_state
 from test_share.test_func import common_test_setup
 
 
@@ -17,7 +19,10 @@ class TestModuleFunctions(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-    def test_spinoff_schema(self):
+    def test_spinoff_schema_1(self):
+        # test spinoff behavior when ER_INCREMENTAL_RESULTS is enabled
+        GlobalParams().options.add(GlobalOption.ER_INCREMENTAL_RESULTS)
+
         # test bare schema spin-off
         ###########################
 
@@ -102,15 +107,51 @@ class TestModuleFunctions(TestCase):
         self.assertEqual(1, len(s3.context))
         self.assertTrue(sym_assert('1') in s3.context)
 
-        try:
-            create_spin_off(schema=s3, spin_off_type=Schema.SpinOffType.CONTEXT, item_assert=sym_assert('1'))
-        except ValueError as e:
-            self.assertEqual(str(e), 'ItemAssertion already exists in StateAssertion')
+        # previously existing item assertion should generate ValueError
+        self.assertRaises(ValueError, lambda: create_spin_off(schema=s3,
+                                                              spin_off_type=Schema.SpinOffType.CONTEXT,
+                                                              item_assert=sym_assert('1')))
 
-        try:
-            create_spin_off(schema=s3, spin_off_type=Schema.SpinOffType.RESULT, item_assert=sym_assert('2'))
-        except ValueError as e:
-            self.assertEqual(str(e), 'ItemAssertion already exists in StateAssertion')
+        # previously existing item assertion should generate ValueError
+        self.assertRaises(ValueError, lambda: create_spin_off(schema=s3,
+                                                              spin_off_type=Schema.SpinOffType.RESULT,
+                                                              item_assert=sym_assert('2')))
+
+    # def test_spinoff_schema_2(self):
+    #     # test spinoff behavior when ER_INCREMENTAL_RESULTS is disabled
+    #     if GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS):
+    #         GlobalParams().options.remove(GlobalOption.ER_INCREMENTAL_RESULTS)
+    #
+    #     # test bare schema spin-off
+    #     ###########################
+    #
+    #     s1 = sym_schema('/action/')
+    #
+    #     # result spin-off from item assertion
+    #     s2 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, item_assert=sym_assert('1'))
+    #
+    #     self.assertEqual(s1.action, s2.action)
+    #     self.assertEqual(1, len(s2.result))
+    #     self.assertTrue(sym_assert('1') in s2.result)
+    #     self.assertIs(NULL_STATE_ASSERT, s2.context)
+    #
+    #     # result spin-off from state assertion
+    #     s3 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, item_assert=sym_state_assert('1,2'))
+    #
+    #     self.assertEqual(s1.action, s3.action)
+    #     self.assertEqual(2, len(s3.result))
+    #     self.assertTrue(sym_assert('1') in s3.result)
+    #     self.assertTrue(sym_assert('2') in s3.result)
+    #     self.assertIs(NULL_STATE_ASSERT, s3.context)
+    #
+    #     # test: result spin-offs MUST originate from primitive schemas (unless ER_INCREMENTAL_RESULTS enabled)
+    #     self.assertRaises(ValueError, lambda: create_spin_off(schema=s3,
+    #                                                           spin_off_type=Schema.SpinOffType.RESULT,
+    #                                                           item_assert=sym_assert('3')))
+    #
+    #     self.assertRaises(ValueError, lambda: create_spin_off(schema=s3,
+    #                                                           spin_off_type=Schema.SpinOffType.RESULT,
+    #                                                           item_assert=sym_state_assert('3,4')))
 
 
 class TestStateFunctions(TestCase):

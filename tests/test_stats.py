@@ -49,7 +49,7 @@ class TestECItemStatistics(TestCase):
         self.assertEqual(0.0, self.item_stats.specificity)
 
     def test_specificity_4(self):
-        # test: an item that is On and Off equally should have a specificity of 0.5
+        # test: an item that is On and Off equally should have assertion specificity of 0.5
         self.item_stats.update(on=False, success=False, count=500)
         self.item_stats.update(on=True, success=False, count=500)
         self.assertEqual(0.5, self.item_stats.specificity)

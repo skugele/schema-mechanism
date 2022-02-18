@@ -15,14 +15,14 @@ from schema_mechanism.data_structures import GlobalStats
 from schema_mechanism.data_structures import Item
 from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import ReadOnlyItemPool
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import SchemaTree
 from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import StateAssertion
-from schema_mechanism.data_structures import StateElement
+from schema_mechanism.data_structures import lost_state
+from schema_mechanism.data_structures import new_state
 from schema_mechanism.util import Observer
 
 
@@ -101,10 +101,6 @@ class SchemaMemory(Observer):
         """
         applicable, schema = selection_details
 
-        # create previous and current state views
-        v_act = ItemPoolStateView(selection_state)
-        v_result = ItemPoolStateView(result_state)
-
         # create new and lost state element collections
         new = new_state(selection_state, result_state)
         lost = lost_state(selection_state, result_state)
@@ -116,6 +112,7 @@ class SchemaMemory(Observer):
         # of the probabilities within a schema are really conditioned on the context being satisfied, even
         # though this fact is implicit.
         for app in applicable:
+
             # TODO: Enhancement #1: "The machinery's sensitivity to results is amplified by an embellishment of marginal
             # TODO: attribution: when a given schema is idle (i.e., it has not just completed an activation), the updating of its
             # TODO: extended result data is suppressed for any state transition which is explained--meaning that the transition is
@@ -124,23 +121,20 @@ class SchemaMemory(Observer):
             # activated
             if app.action == schema.action:
                 app.update(activated=True,
-                           v_prev=v_act,
-                           v_curr=v_result,
+                           s_prev=selection_state,
+                           s_curr=result_state,
                            new=new,
                            lost=lost)
 
             # non-activated
             else:
                 app.update(activated=False,
-                           v_prev=v_act,
-                           v_curr=v_result,
+                           s_prev=selection_state,
+                           s_curr=result_state,
                            new=new,
                            lost=lost)
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
-        # TODO: Where do I add the items to the item pool???
-        # TODO: Where do I create the item state view?
-
         return list(itertools.chain.from_iterable(n.schemas for n in self._schema_tree.find_all_satisfied(state)))
 
     def receive(self, *args, **kwargs) -> None:
@@ -487,50 +481,6 @@ class SchemaMechanism:
         return self._selection_details.selected
 
 
-def held_state(s_prev: State, s_curr: State) -> frozenset[StateElement]:
-    """ Returns the set of state elements that are in both previous and current state
-
-    :param s_prev: a collection of the previous state's elements
-    :param s_curr: a collection of the current state's elements
-
-    :return: a set containing state elements shared between current and previous state
-    """
-    if not all((s_prev, s_curr)):
-        return frozenset()
-
-    return frozenset([se for se in s_curr if se in s_prev])
-
-
-def new_state(s_prev: Optional[State],
-              s_curr: Optional[State]) -> frozenset[StateElement]:
-    """ Returns the set of state elements that are in current state but not previous
-
-    :param s_prev: a collection of the previous state's elements
-    :param s_curr: a collection of the current state's elements
-
-    :return: a set containing new state elements
-    """
-    if not all((s_prev, s_curr)):
-        return frozenset()
-
-    return frozenset([se for se in s_curr if se not in s_prev])
-
-
-def lost_state(s_prev: Optional[State],
-               s_curr: Optional[State]) -> frozenset[StateElement]:
-    """ Returns the set of state elements that are in previous state but not current
-
-    :param s_prev: a collection of the previous state's elements
-    :param s_curr: a collection of the current state's elements
-
-    :return: a set containing lost state elements
-    """
-    if not all((s_prev, s_curr)):
-        return frozenset()
-
-    return frozenset([se for se in s_prev if se not in s_curr])
-
-
 def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, item_assert: ItemAssertion) -> Schema:
     """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
 
@@ -582,32 +532,6 @@ def create_result_spin_off(source: Schema, item_assert: ItemAssertion) -> Schema
     :return: a new result spin-off
     """
     return create_spin_off(source, Schema.SpinOffType.RESULT, item_assert)
-
-
-# TODO: Is this function needed???
-def update_schema(schema: Schema,
-                  activated: bool,
-                  s_prev: Optional[State],
-                  s_curr: State,
-                  count: int = 1) -> Schema:
-    """ Update the schema based on the previous and current state.
-
-    :param schema: the schema to update
-    :param activated: a bool indicated whether the schema was activated (explicitly or implicitly)
-    :param s_prev: a collection containing the previous state elements
-    :param s_curr: a collection containing the current state elements
-    :param count: the number of times to perform this update
-
-    :return: the updated schema
-    """
-    schema.update(activated=activated,
-                  v_prev=ItemPoolStateView(s_prev),
-                  v_curr=ItemPoolStateView(s_curr),
-                  new=new_state(s_prev, s_curr),
-                  lost=lost_state(s_prev, s_curr),
-                  count=count)
-
-    return schema
 
 
 # TODO: Implement this

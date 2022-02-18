@@ -8,7 +8,6 @@ from schema_mechanism.data_structures import GlobalOption
 from schema_mechanism.data_structures import GlobalParams
 from schema_mechanism.data_structures import ItemAssertion
 from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_EC_ITEM_STATS
 from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import SymbolicItem
@@ -71,10 +70,9 @@ class TestExtendedContext(TestCase):
 
     def test_update_all_1(self):
         state = State(sample(range(self.N_ITEMS), k=10))
-        view = ItemPoolStateView(state)
 
         # update all items in this state simulating case of action taken
-        self.ec.update_all(view, success=True)
+        self.ec.update_all(state, success=True)
 
         # test that all items in the state have been updated
         for i in ItemPool():
@@ -105,14 +103,14 @@ class TestExtendedContext(TestCase):
         if GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE in GlobalParams().options:
             GlobalParams().options.remove(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE)
 
-        self.ec.update_all(ItemPoolStateView(sym_state('3')), success=False)
-        self.ec.update_all(ItemPoolStateView(sym_state('2')), success=False, count=5)
+        self.ec.update_all(sym_state('3'), success=False)
+        self.ec.update_all(sym_state('2'), success=False, count=5)
 
         self.assertEqual(0, len(self.ec.relevant_items))
 
         # three pending relevant items from this update:
         # [1 -> SC=1.0; FC=0.0]   [2 -> SC=1.0; FC=0.25]   [3 -> SC=0.0; FC=0.75]
-        self.ec.update_all(ItemPoolStateView(sym_state('1,2')), success=True, count=10)
+        self.ec.update_all(sym_state('1,2'), success=True, count=10)
 
         # test: all 3 pending items should be relevant items in extended context
         self.assertEqual(3, len(self.ec.relevant_items))
@@ -122,14 +120,14 @@ class TestExtendedContext(TestCase):
         # test update_all with GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE enabled
         GlobalParams().options.add(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE)
 
-        self.ec.update_all(ItemPoolStateView(sym_state('3')), success=False)
-        self.ec.update_all(ItemPoolStateView(sym_state('2')), success=False, count=5)
+        self.ec.update_all(sym_state('3'), success=False)
+        self.ec.update_all(sym_state('2'), success=False, count=5)
 
         self.assertEqual(0, len(self.ec.relevant_items))
 
         # three pending relevant items from this update:
         # [1 -> SC=1.0; FC=0.0]   [2 -> SC=1.0; FC=0.25]   [3 -> SC=0.0; FC=0.75]
-        self.ec.update_all(ItemPoolStateView(sym_state('1,2')), success=True, count=10)
+        self.ec.update_all(sym_state('1,2'), success=True, count=10)
 
         # test: only a single relevant item should be added to the extended context
         self.assertEqual(1, len(self.ec.relevant_items))
@@ -139,20 +137,20 @@ class TestExtendedContext(TestCase):
         # GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA enabled
         GlobalParams().options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
 
-        update_view_1 = ItemPoolStateView(sym_state('1,3,4'))
-        update_view_2 = ItemPoolStateView(sym_state('1,6'))
-        defer_view_1 = ItemPoolStateView(sym_state('1,5'))
-        defer_view_2 = ItemPoolStateView(sym_state('1,7,8'))
+        update_state_1 = sym_state('1,3,4')
+        update_state_2 = sym_state('1,6')
+        defer_state_1 = sym_state('1,5')
+        defer_state_2 = sym_state('1,7,8')
 
         with patch(target='schema_mechanism.data_structures.ExtendedContext.relevant_items',
                    new_callable=PropertyMock) as mock_relevant_items:
             mock_relevant_items.return_value = set(sym_asserts('5,~6,7'))
-            ec = ExtendedContext(sym_state_assert('1,~2'))
+            ec = ExtendedContext(context=sym_state_assert('1,~2'))
 
-            self.assertFalse(ec.defer_update_to_spin_offs(update_view_1))
-            self.assertFalse(ec.defer_update_to_spin_offs(update_view_2))
-            self.assertTrue(ec.defer_update_to_spin_offs(defer_view_1))
-            self.assertTrue(ec.defer_update_to_spin_offs(defer_view_2))
+            self.assertFalse(ec.defer_update_to_spin_offs(update_state_1))
+            self.assertFalse(ec.defer_update_to_spin_offs(update_state_2))
+            self.assertTrue(ec.defer_update_to_spin_offs(defer_state_1))
+            self.assertTrue(ec.defer_update_to_spin_offs(defer_state_2))
 
     def test_register_and_unregister(self):
         observer = MockObserver()

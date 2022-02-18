@@ -1,4 +1,3 @@
-import itertools
 from random import sample
 from time import time
 from unittest import TestCase
@@ -9,18 +8,17 @@ import numpy as np
 import test_share
 from schema_mechanism.data_structures import Action
 from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import NULL_STATE_ASSERT
 from schema_mechanism.data_structures import Schema
 from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.data_structures import lost_state
+from schema_mechanism.data_structures import new_state
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
-from schema_mechanism.modules import lost_state
-from schema_mechanism.modules import new_state
-from schema_mechanism.modules import update_schema
+from schema_mechanism.func_api import update_schema
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_consistent
@@ -90,20 +88,20 @@ class TestSchema(TestCase):
         except AttributeError:
             pass
 
-    def test_items_in_context_and_result(self):
-        for item in itertools.chain.from_iterable([self.schema.context.items, self.schema.result.items]):
-            self.assertIsInstance(item, SymbolicItem)
-            self.assertEqual(1.0, item.primitive_value)
-
-        # all schemas should share the same underlying items
-        s1 = sym_schema('1,2/A1/3,4')
-        s2 = sym_schema('1,2/A2/3,4')
-
-        for i1, i2 in zip(s1.context.items, s2.context.items):
-            self.assertIs(i1, i2)
-
-        for i1, i2 in zip(s1.result.items, s2.result.items):
-            self.assertIs(i1, i2)
+    # def test_items_in_context_and_result(self):
+    #     for item in itertools.chain.from_iterable([self.schema.context.items, self.schema.result.items]):
+    #         self.assertIsInstance(item, SymbolicItem)
+    #         self.assertEqual(1.0, item.primitive_value)
+    #
+    #     # all schemas should share the same underlying items
+    #     s1 = sym_schema('1,2/A1/3,4')
+    #     s2 = sym_schema('1,2/A2/3,4')
+    #
+    #     for i1, i2 in zip(s1.context.items, s2.context.items):
+    #         self.assertIs(i1, i2)
+    #
+    #     for i1, i2 in zip(s1.result.items, s2.result.items):
+    #         self.assertIs(i1, i2)
 
     def test_is_context_satisfied(self):
         c = sym_state_assert('1,~2,3')
@@ -128,7 +126,7 @@ class TestSchema(TestCase):
         self.assertFalse(schema.context.is_satisfied(state=sym_state('2,3')))
 
     def test_is_applicable(self):
-        # primitive schemas should always be applicable
+        # test: primitive schemas should always be applicable
         schema = Schema(action=Action())
         self.assertTrue(schema.is_applicable(state=sym_state('1')))
 
@@ -166,17 +164,14 @@ class TestSchema(TestCase):
         self.assertFalse(schema.is_applicable(state=sym_state('1,3,4,5')))
 
     def test_update_1(self):
-        # activated + success
+        # testing activated + success
         s_prev = sym_state('0,1,2,3')
         s_curr = sym_state('2,3,4,5')
-
-        v_prev = ItemPoolStateView(s_prev)
-        v_curr = ItemPoolStateView(s_curr)
 
         new = new_state(s_prev, s_curr)
         lost = lost_state(s_prev, s_curr)
 
-        self.schema.update(activated=True, v_prev=v_prev, v_curr=v_curr, new=new, lost=lost)
+        self.schema.update(activated=True, s_prev=s_prev, s_curr=s_curr, new=new, lost=lost)
 
         # check schema level statistics
         self.assertEqual(1, self.schema.stats.n)
@@ -188,7 +183,7 @@ class TestSchema(TestCase):
         for i in self._item_pool:
             ec_stats = self.schema.extended_context.stats[i]
 
-            if v_prev.is_on(i):
+            if i.is_on(s_prev):
                 self.assertEqual(1, ec_stats.n_success_and_on)
                 self.assertEqual(0, ec_stats.n_success_and_off)
                 self.assertEqual(0, ec_stats.n_fail_and_on)
@@ -199,31 +194,29 @@ class TestSchema(TestCase):
                 self.assertEqual(0, ec_stats.n_fail_and_on)
                 self.assertEqual(0, ec_stats.n_fail_and_off)
 
-            er_stats = self.schema.extended_result.stats.get(i)
+            if self.schema.extended_result:
+                er_stats = self.schema.extended_result.stats.get(i)
 
-            if i in new:
-                self.assertEqual(1, er_stats.n_on_and_activated)
-                self.assertEqual(0, er_stats.n_on_and_not_activated)
-                self.assertEqual(0, er_stats.n_off_and_activated)
-                self.assertEqual(0, er_stats.n_off_and_not_activated)
-            elif i in lost:
-                self.assertEqual(0, er_stats.n_on_and_activated)
-                self.assertEqual(0, er_stats.n_on_and_not_activated)
-                self.assertEqual(1, er_stats.n_off_and_activated)
-                self.assertEqual(0, er_stats.n_off_and_not_activated)
+                if i in new:
+                    self.assertEqual(1, er_stats.n_on_and_activated)
+                    self.assertEqual(0, er_stats.n_on_and_not_activated)
+                    self.assertEqual(0, er_stats.n_off_and_activated)
+                    self.assertEqual(0, er_stats.n_off_and_not_activated)
+                elif i in lost:
+                    self.assertEqual(0, er_stats.n_on_and_activated)
+                    self.assertEqual(0, er_stats.n_on_and_not_activated)
+                    self.assertEqual(1, er_stats.n_off_and_activated)
+                    self.assertEqual(0, er_stats.n_off_and_not_activated)
 
     def test_update_2(self):
-        # activated and not success
+        # testing activated and not success
         s_prev = sym_state('0,1,2,3')
         s_curr = sym_state('2,5')
-
-        v_prev = ItemPoolStateView(s_prev)
-        v_curr = ItemPoolStateView(s_curr)
 
         new = new_state(s_prev, s_curr)
         lost = lost_state(s_prev, s_curr)
 
-        self.schema.update(activated=True, v_prev=v_prev, v_curr=v_curr, new=new, lost=lost)
+        self.schema.update(activated=True, s_prev=s_prev, s_curr=s_curr, new=new, lost=lost)
 
         # check schema level statistics
         self.assertEqual(1, self.schema.stats.n)
@@ -235,7 +228,7 @@ class TestSchema(TestCase):
         for i in self._item_pool:
             ec_stats = self.schema.extended_context.stats[i]
 
-            if v_prev.is_on(i):
+            if i.is_on(s_prev):
                 self.assertEqual(0, ec_stats.n_success_and_on)
                 self.assertEqual(0, ec_stats.n_success_and_off)
                 self.assertEqual(1, ec_stats.n_fail_and_on)
@@ -246,43 +239,45 @@ class TestSchema(TestCase):
                 self.assertEqual(0, ec_stats.n_fail_and_on)
                 self.assertEqual(1, ec_stats.n_fail_and_off)
 
-            er_stats = self.schema.extended_result.stats.get(i)
+            if self.schema.extended_result:
+                er_stats = self.schema.extended_result.stats.get(i)
 
-            if i in new:
-                self.assertEqual(1, er_stats.n_on_and_activated)
-                self.assertEqual(0, er_stats.n_on_and_not_activated)
-                self.assertEqual(0, er_stats.n_off_and_activated)
-                self.assertEqual(0, er_stats.n_off_and_not_activated)
-            elif i in lost:
-                self.assertEqual(0, er_stats.n_on_and_activated)
-                self.assertEqual(0, er_stats.n_on_and_not_activated)
-                self.assertEqual(1, er_stats.n_off_and_activated)
-                self.assertEqual(0, er_stats.n_off_and_not_activated)
+                if i in new:
+                    self.assertEqual(1, er_stats.n_on_and_activated)
+                    self.assertEqual(0, er_stats.n_on_and_not_activated)
+                    self.assertEqual(0, er_stats.n_off_and_activated)
+                    self.assertEqual(0, er_stats.n_off_and_not_activated)
+                elif i in lost:
+                    self.assertEqual(0, er_stats.n_on_and_activated)
+                    self.assertEqual(0, er_stats.n_on_and_not_activated)
+                    self.assertEqual(1, er_stats.n_off_and_activated)
+                    self.assertEqual(0, er_stats.n_off_and_not_activated)
 
     def test_update_3(self):
-        # not activated
+        # testing not activated
         s_prev = sym_state('0,3')
         s_curr = sym_state('2,4,5')
 
-        v_prev = ItemPoolStateView(s_prev)
-        v_curr = ItemPoolStateView(s_curr)
-
         new = new_state(s_prev, s_curr)
         lost = lost_state(s_prev, s_curr)
 
-        self.schema.update(activated=False, v_prev=v_prev, v_curr=v_curr, new=new, lost=lost)
+        self.schema.update(activated=False, s_prev=s_prev, s_curr=s_curr, new=new, lost=lost)
 
         # check schema level statistics
         self.assertEqual(1, self.schema.stats.n)
+
+        # test: success/failure should only be updated if activated
         self.assertEqual(0, self.schema.stats.n_success)
         self.assertEqual(0, self.schema.stats.n_fail)
+
+        # test: not activated, should not have been updated
         self.assertEqual(0, self.schema.stats.n_activated)
 
         # check item level statistics
         for i in self._item_pool:
             ec_stats = self.schema.extended_context.stats[i]
 
-            if v_prev.is_on(i):
+            if i.is_on(s_prev):
                 self.assertEqual(0, ec_stats.n_success_and_on)
                 self.assertEqual(0, ec_stats.n_success_and_off)
                 self.assertEqual(0, ec_stats.n_fail_and_on)
@@ -293,65 +288,19 @@ class TestSchema(TestCase):
                 self.assertEqual(0, ec_stats.n_fail_and_on)
                 self.assertEqual(0, ec_stats.n_fail_and_off)
 
-            er_stats = self.schema.extended_result.stats.get(i)
+            if self.schema.extended_result:
+                er_stats = self.schema.extended_result.stats.get(i)
 
-            if i in new:
-                self.assertEqual(0, er_stats.n_on_and_activated)
-                self.assertEqual(1, er_stats.n_on_and_not_activated)
-                self.assertEqual(0, er_stats.n_off_and_activated)
-                self.assertEqual(0, er_stats.n_off_and_not_activated)
-            elif i in lost:
-                self.assertEqual(0, er_stats.n_on_and_activated)
-                self.assertEqual(0, er_stats.n_on_and_not_activated)
-                self.assertEqual(0, er_stats.n_off_and_activated)
-                self.assertEqual(1, er_stats.n_off_and_not_activated)
-
-    def test_update_4(self):
-
-        s_prev = None
-        s_curr = sym_state('2,4,5')
-
-        v_prev = ItemPoolStateView(s_prev)
-        v_curr = ItemPoolStateView(s_curr)
-
-        new = new_state(s_prev, s_curr)
-        lost = lost_state(s_prev, s_curr)
-
-        self.schema.update(activated=False, v_prev=v_prev, v_curr=v_curr, new=new, lost=lost)
-
-        # check schema level statistics
-        self.assertEqual(1, self.schema.stats.n)
-        self.assertEqual(0, self.schema.stats.n_success)
-        self.assertEqual(0, self.schema.stats.n_fail)
-        self.assertEqual(0, self.schema.stats.n_activated)
-
-        # check item level statistics
-        for i in self._item_pool:
-            ec_stats = self.schema.extended_context.stats[i]
-
-            if v_prev.is_on(i):
-                self.assertEqual(0, ec_stats.n_success_and_on)
-                self.assertEqual(0, ec_stats.n_success_and_off)
-                self.assertEqual(0, ec_stats.n_fail_and_on)
-                self.assertEqual(0, ec_stats.n_fail_and_off)
-            else:
-                self.assertEqual(0, ec_stats.n_success_and_on)
-                self.assertEqual(0, ec_stats.n_success_and_off)
-                self.assertEqual(0, ec_stats.n_fail_and_on)
-                self.assertEqual(0, ec_stats.n_fail_and_off)
-
-            er_stats = self.schema.extended_result.stats.get(i)
-
-            if i in new:
-                self.assertEqual(0, er_stats.n_on_and_activated)
-                self.assertEqual(1, er_stats.n_on_and_not_activated)
-                self.assertEqual(0, er_stats.n_off_and_activated)
-                self.assertEqual(0, er_stats.n_off_and_not_activated)
-            elif i in lost:
-                self.assertEqual(0, er_stats.n_on_and_activated)
-                self.assertEqual(0, er_stats.n_on_and_not_activated)
-                self.assertEqual(0, er_stats.n_off_and_activated)
-                self.assertEqual(1, er_stats.n_off_and_not_activated)
+                if i in new:
+                    self.assertEqual(0, er_stats.n_on_and_activated)
+                    self.assertEqual(1, er_stats.n_on_and_not_activated)
+                    self.assertEqual(0, er_stats.n_off_and_activated)
+                    self.assertEqual(0, er_stats.n_off_and_not_activated)
+                elif i in lost:
+                    self.assertEqual(0, er_stats.n_on_and_activated)
+                    self.assertEqual(0, er_stats.n_on_and_not_activated)
+                    self.assertEqual(0, er_stats.n_off_and_activated)
+                    self.assertEqual(1, er_stats.n_off_and_not_activated)
 
     def test_reliability_0(self):
         # reliability before update should be NAN

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Collection
 from typing import Optional
 from typing import Type
@@ -11,6 +13,8 @@ from schema_mechanism.data_structures import SchemaTreeNode
 from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import StateAssertion
 from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.data_structures import lost_state
+from schema_mechanism.data_structures import new_state
 
 
 # TODO: generalize the current string -> int conversions in the sym_* methods to support other conversion types
@@ -36,6 +40,7 @@ def sym_items(str_repr: str, primitive_values: Collection[float] = None) -> Coll
     return [sym_item(token) for token in str_repr.split(',')]
 
 
+# TODO: rename to sym_item_assert
 def sym_assert(str_repr: str, primitive_value: float = None) -> ItemAssertion:
     negated = False
     if '~' == str_repr[0]:
@@ -45,11 +50,12 @@ def sym_assert(str_repr: str, primitive_value: float = None) -> ItemAssertion:
     return ItemAssertion(item, negated)
 
 
+# TODO: rename to sym_item_asserts
 def sym_asserts(str_repr: str) -> Collection[ItemAssertion]:
     return [sym_assert(token) for token in str_repr.split(',')]
 
 
-def sym_state_assert(str_repr: str) -> StateAssertion:
+def sym_state_assert(str_repr: str, state_assert_type: Type[StateAssertion] = None) -> StateAssertion:
     if not str_repr:
         return StateAssertion()
     tokens = str_repr.split(',')
@@ -86,3 +92,28 @@ def actions(n: Optional[int] = None, labels: Optional[list] = None) -> Collectio
 
 def primitive_schemas(actions_: Collection[Action]) -> tuple[Schema]:
     return tuple([Schema(action=a) for a in actions_])
+
+
+def update_schema(schema: Schema,
+                  activated: bool,
+                  s_prev: Optional[State],
+                  s_curr: State,
+                  count: int = 1) -> Schema:
+    """ Update the schema based on the previous and current state.
+
+    :param schema: the schema to update
+    :param activated: a bool indicated whether the schema was activated (explicitly or implicitly)
+    :param s_prev: a collection containing the previous state elements
+    :param s_curr: a collection containing the current state elements
+    :param count: the number of times to perform this update
+
+    :return: the updated schema
+    """
+    schema.update(activated=activated,
+                  s_prev=s_prev,
+                  s_curr=s_curr,
+                  new=new_state(s_prev, s_curr),
+                  lost=lost_state(s_prev, s_curr),
+                  count=count)
+
+    return schema

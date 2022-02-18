@@ -92,6 +92,50 @@ class State:
         return f'{e_str} ({self._label})' if self._label else e_str
 
 
+def held_state(s_prev: State, s_curr: State) -> frozenset[StateElement]:
+    """ Returns the set of state elements that are in both previous and current state
+
+    :param s_prev: a collection of the previous state's elements
+    :param s_curr: a collection of the current state's elements
+
+    :return: a set containing state elements shared between current and previous state
+    """
+    if not all((s_prev, s_curr)):
+        return frozenset()
+
+    return frozenset([se for se in s_curr if se in s_prev])
+
+
+def new_state(s_prev: Optional[State],
+              s_curr: Optional[State]) -> frozenset[StateElement]:
+    """ Returns the set of state elements that are in current state but not previous
+
+    :param s_prev: a collection of the previous state's elements
+    :param s_curr: a collection of the current state's elements
+
+    :return: a set containing new state elements
+    """
+    if not all((s_prev, s_curr)):
+        return frozenset()
+
+    return frozenset([se for se in s_curr if se not in s_prev])
+
+
+def lost_state(s_prev: Optional[State],
+               s_curr: Optional[State]) -> frozenset[StateElement]:
+    """ Returns the set of state elements that are in previous state but not current
+
+    :param s_prev: a collection of the previous state's elements
+    :param s_curr: a collection of the current state's elements
+
+    :return: a set containing lost state elements
+    """
+    if not all((s_prev, s_curr)):
+        return frozenset()
+
+    return frozenset([se for se in s_prev if se not in s_curr])
+
+
 class DelegatedValueHelper:
     """ A helper class that performs calculations necessary to derive an Item's delegated value.
 
@@ -200,7 +244,16 @@ class DelegatedValueHelper:
         self._dv_trace_value = -np.inf
 
 
-class Item(ABC):
+class Activatable(ABC):
+    @abstractmethod
+    def is_on(self, state: State, *args, **kwargs) -> bool:
+        pass
+
+    def is_off(self, state: State, *args, **kwargs) -> bool:
+        return not self.is_on(state, *args, **kwargs)
+
+
+class Item(Activatable):
 
     def __init__(self, state_element: StateElement, primitive_value: float = None, *args, **kwargs) -> None:
         self._state_element = state_element
@@ -277,6 +330,31 @@ class Item(ABC):
         return repr_str(self, {'state_element': str(self._state_element)})
 
 
+# class ERConjunctiveItem:
+#     """
+#     Used to support ExtendedResult statistics when the ER_INCREMENTAL_RESULTS is disabled.
+#     """
+#
+#     def __init__(self, state_elements: Collection[StateElement], *args, **kwargs) -> None:
+#         self._state_elements = frozenset(state_elements)
+#
+#     @property
+#     def state_elements(self) -> frozenset[StateElement]:
+#         return self._state_elements
+#
+#     def is_on(self, state: State, *args, **kwargs) -> bool:
+#         return all({ReadOnlyItemPool().get(se).is_on(state, *args, **kwargs) for se in self.state_elements})
+#
+#     def copy(self) -> ERConjunctiveItem:
+#         return ERConjunctiveItem(self.state_elements)
+#
+#     def __str__(self) -> str:
+#         return ','.join(map(str, self._state_elements))
+#
+#     def __repr__(self) -> str:
+#         return repr_str(self, {'state_elements': ','.join(map(str, self._state_elements))})
+
+
 class ItemPool(metaclass=Singleton):
     _items: dict[StateElement, Item] = dict()
 
@@ -323,21 +401,21 @@ class ReadOnlyItemPool(ItemPool):
         raise NotImplementedError('ReadOnlyItemPool does not support clear operation.')
 
 
-class ItemPoolStateView:
-    def __init__(self, state: Optional[State]):
-        # The state to which this view corresponds
-        self._state = state
-        self._on_items = set([item for item in ReadOnlyItemPool() if item.is_on(state)]) if state else set()
-
-    @property
-    def state(self):
-        return self._state
-
-    def is_on(self, item: Item) -> bool:
-        return item in self._on_items
-
-    def is_off(self, item: Item) -> bool:
-        return item not in self._on_items
+# class ItemPoolStateView:
+#     def __init__(self, state: Optional[State]):
+#         # The state to which this view corresponds
+#         self._state = state
+#         self._on_items = set([item for item in ReadOnlyItemPool() if item.is_on(state)]) if state else set()
+#
+#     @property
+#     def state(self):
+#         return self._state
+#
+#     def is_on(self, item: Item) -> bool:
+#         return item in self._on_items
+#
+#     def is_off(self, item: Item) -> bool:
+#         return item not in self._on_items
 
 
 class SymbolicItem(Item):
@@ -365,6 +443,116 @@ class SymbolicItem(Item):
         return hash(self.state_element)
 
 
+# class Assertion(ABC):
+#     def __init__(self, negated: bool) -> None:
+#         self._is_negated = negated
+#
+#     @property
+#     def is_negated(self) -> bool:
+#         return self._is_negated
+#
+#     @abstractmethod
+#     def is_satisfied(self, state: State) -> bool:
+#         pass
+#
+#     @abstractmethod
+#     def __iter__(self) -> Iterator[Assertion]:
+#         pass
+#
+#     @abstractmethod
+#     def __len__(self) -> int:
+#         pass
+#
+#     @abstractmethod
+#     def __contains__(self, assertion: Assertion) -> bool:
+#         pass
+#
+#     @abstractmethod
+#     def __hash__(self) -> int:
+#         pass
+#
+#
+# class ItemAssertion(Assertion):
+#     """
+#     Implements the "leaf" class in a composite design pattern for the Assertion base class. Its interface is similar
+#     to its corresponding "composite" class (CompositeAssertion), providing a uniform client experience over all
+#     Assertion classes.
+#     """
+#
+#     def __init__(self, item: Optional[Item] = None, negated: bool = False) -> None:
+#         super().__init__(negated)
+#
+#         self._item = item
+#
+#     def is_satisfied(self, state: State) -> bool:
+#         return self._item.is_off(state) if self.is_negated else self._item.is_on(state)
+#
+#     def __iter__(self) -> Iterator[Assertion]:
+#         yield from [self._item]
+#
+#     def __len__(self) -> int:
+#         return 1
+#
+#     def __contains__(self, assertion: Assertion) -> bool:
+#         return self == assertion
+#
+#     def __eq__(self, other: Any) -> bool:
+#         if isinstance(other, ItemAssertion):
+#             return self._item == other._item and self.is_negated == other.is_negated
+#         return False if other is None else NotImplemented
+#
+#     def __hash__(self) -> int:
+#         return hash((self._item, self.is_negated))
+#
+#     def __str__(self) -> str:
+#         return f'{"~" if self.is_negated else ""}{self._item}'
+#
+#
+# class CompositeAssertion(Assertion):
+#     """
+#     Implements the "composite" class in a composite design pattern for the Assertion base class. Its interface is
+#     similar to the corresponding "leaf" class (ItemAssertion), providing a uniform client experience over all
+#     Assertion classes.
+#     """
+#
+#     def __init__(self, assertions: Collection[Assertion] = None, negated: bool = False) -> None:
+#         super().__init__(negated)
+#
+#         self._pos_asserts = frozenset(filter(lambda a: not a.negated, assertions)) if assertions else frozenset()
+#         self._neg_asserts = frozenset(filter(lambda a: a.negated, assertions)) if assertions else frozenset()
+#
+#     def is_satisfied(self, state: State) -> bool:
+#         satisfied = all({a.is_satisfied(state) for a in self})
+#         return not satisfied if self.is_negated else satisfied
+#
+#     def __iter__(self) -> Iterator[Assertion]:
+#         yield from self._pos_asserts
+#         yield from self._neg_asserts
+#
+#     def __len__(self) -> int:
+#         return len(self._pos_asserts) + len(self._neg_asserts)
+#
+#     def __contains__(self, item_assert: Assertion) -> bool:
+#         return (
+#             item_assert in self._neg_asserts
+#             if item_assert.is_negated
+#             else item_assert in self._pos_asserts
+#         )
+#
+#     def __eq__(self, other) -> bool:
+#         if isinstance(other, CompositeAssertion):
+#             return (self._pos_asserts == other._pos_asserts
+#                     and self._neg_asserts == other._neg_asserts)
+#         return False if other is None else NotImplemented
+#
+#     def __hash__(self) -> int:
+#         return hash((self._pos_asserts, self._neg_asserts))
+#
+#     def __str__(self) -> str:
+#         assertions = [str(a) for a in self] if len(self) > 0 else []
+#         return ','.join(assertions)
+
+
 class ItemAssertion:
     def __init__(self, item: Item, negated: bool = False) -> None:
         self._item = item
@@ -386,9 +574,6 @@ class ItemAssertion:
             return self._item.is_off(state, *args, **kwargs)
         else:
             return self._item.is_on(state, *args, **kwargs)
-
-    def is_satisfied_in_view(self, view: ItemPoolStateView) -> bool:
-        return self._negated and view.is_on(self._item)
 
     def copy(self) -> ItemAssertion:
         """ Performs a shallow copy of this ItemAssertion. """
@@ -427,7 +612,12 @@ class GlobalOption(Enum):
     # specific is chosen as the one for inclusion in a spin-off from that schema." (see Drescher, 1991, p. 77)
     #
     #     Note: Requires that EC_DEFER_TO_MORE_SPECIFIC is also enabled.
-    EC_MOST_SPECIFIC_ON_MULTIPLE = auto()
+    EC_MOST_SPECIFIC_ON_MULTIPLE = auto(),
+
+    # Supports the creation of result spin-off schemas incrementally. This was not supported in the original schema
+    # mechanism because of the proliferation of conjunctive results that result. It is allowed here to facilitate
+    # comparison and experimentation.
+    ER_INCREMENTAL_RESULTS = auto()
 
 
 class GlobalParams(metaclass=Singleton):
@@ -1032,14 +1222,6 @@ class StateAssertion:
         """
         return all({ia.is_satisfied(state, *args, **kwargs) for ia in self})
 
-    def is_satisfied_in_view(self, view: ItemPoolStateView) -> bool:
-        """ Satisfied when all non-negated items are On, and all negated items are Off.
-
-        :param view: an item pool view
-        :return: True if this state assertion is satisfied given the current state; False otherwise.
-        """
-        return all({not view.is_on(ia.item) if ia.negated else view.is_on(ia.item) for ia in self})
-
     def replicate_with(self, item_assert: ItemAssertion) -> StateAssertion:
         if self.__contains__(item_assert):
             raise ValueError('ItemAssertion already exists in StateAssertion')
@@ -1059,6 +1241,7 @@ NULL_STATE_ASSERT = StateAssertion()
 
 
 class ExtendedItemCollection(Observable):
+    # TODO: Move these into GlobalParams
     # thresholds for determining the relevance of items (possible that both should always have the same value)
     POS_CORR_RELEVANCE_THRESHOLD = 0.65
     NEG_CORR_RELEVANCE_THRESHOLD = 0.65
@@ -1066,10 +1249,10 @@ class ExtendedItemCollection(Observable):
     def __init__(self, suppress_list: Collection[Item] = None, null_member: ItemStats = None):
         super().__init__()
 
-        self._suppress_list = suppress_list or []
+        self._suppress_list: list[Item] = suppress_list or list()
         self._null_member = null_member
 
-        self._stats: dict[Item, ItemStats] = defaultdict(lambda: self._null_member)
+        self._stats: dict[Any, ItemStats] = defaultdict(lambda: self._null_member)
 
         self._item_pool = ItemPool()
 
@@ -1077,7 +1260,7 @@ class ExtendedItemCollection(Observable):
         self._new_relevant_items: MutableSet[ItemAssertion] = set()
 
     @property
-    def stats(self) -> dict[Item, Any]:
+    def stats(self) -> dict[Any, Any]:
         return self._stats
 
     def clear_stats(self):
@@ -1087,6 +1270,7 @@ class ExtendedItemCollection(Observable):
     def suppress_list(self) -> Collection[Item]:
         return self._suppress_list
 
+    # TODO: "relevant items" is confusing. these are item assertions. this terminology is a carry-over from Drescher.
     @property
     def relevant_items(self) -> frozenset[ItemAssertion]:
         return frozenset(self._relevant_items)
@@ -1136,14 +1320,43 @@ class ExtendedItemCollection(Observable):
         return repr_str(self, attr_values)
 
 
-# FIXME: "the schema mechanism does not build conjunctive results incrementally; only a schema with an empty result can
-# FIXME: spin off a schema with a new result item. (Such a result will be bare, since an empty result implies an
-# FIXME: empty context. Chaining to contexts that have more than one item is made possible by permitting a schema to
-# FIXME: spawn a multiple-item spin-off all at once, as follows." (See Drescher 1991, Section 4.1.4)
+class ContextRegistry(metaclass=Singleton):
+    def __init__(self) -> None:
+        self._known_contexts: MutableSet[StateAssertion] = set()
+
+    def __iter__(self) -> Iterator[StateAssertion]:
+        yield from self._known_contexts
+
+    def add(self, assertion: StateAssertion) -> None:
+        self._known_contexts.add(assertion)
 
 
-# TODO: Add a description for the purpose of the extended result
 class ExtendedResult(ExtendedItemCollection):
+    """
+        a schema’s extended result is used to identify the consequences of an agent's actions. Each extended result
+        slot keeps track of whether an item (or conjunction of items) is significantly more likely to occur when a
+        schema is activated (positive correlation) or when it is NOT activated (negative correlation). When such
+        significant items are found, result spin-offs are created.
+
+        It's important to note that, unlike extended contexts, the schema mechanism is NOT designed to build conjunctive
+        results incrementally due to the combinatorial proliferation of results that would occur (see Drescher 1991,
+        p. 78). Only a PRIMITIVE SCHEMA (i.e., a schema with an empty result) can spin-off a schema with a new
+        result item. Furthermore, multi-item result spin-offs can be create ALL-AT-ONCE (as opposed to incrementally).
+
+        The mechanism for doing this is the following (see Drescher 1991, Section 4.1.4):
+
+        (1) In addition to containing a slot for each item, a schema's extended result also includes a slot for each
+            SET of items (i.e., conjunctive context) that appears as the context of a RELIABLE schema.
+        (2) Extended results treat these SETS OF ITEMS like individual items, maintaining the same statistics.
+        (3) When an item or set of items is found to be relevant, a spin-off schema is created with that item or
+            conjunction of items.
+
+        Supports the discovery of:
+
+            reliable schemas
+            choins of schemas
+    """
+    _context_registry = ContextRegistry()
 
     def __init__(self, result: StateAssertion) -> None:
         super().__init__(suppress_list=result.items, null_member=NULL_ER_ITEM_STATS)
@@ -1164,7 +1377,7 @@ class ExtendedResult(ExtendedItemCollection):
 
     # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
     # TODO: statistics.
-    def update_all(self, activated, new: Collection[StateElement], lost: Collection[StateElement],
+    def update_all(self, activated: bool, new: Collection[StateElement], lost: Collection[StateElement],
                    count: int = 1) -> None:
 
         # "a trial for which the result was already satisfied before the action was taken does not count as a
@@ -1231,14 +1444,14 @@ class ExtendedContext(ExtendedItemCollection):
 
     # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
     # TODO: statistics.
-    def update_all(self, view: ItemPoolStateView, success: bool, count: int = 1) -> None:
+    def update_all(self, state: State, success: bool, count: int = 1) -> None:
         # bypass updates when a more specific spinoff schema exists
         if (GlobalParams().is_enabled(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
-                and self.defer_update_to_spin_offs(view)):
+                and self.defer_update_to_spin_offs(state)):
             return
 
         for item in self._item_pool:
-            self.update(item=item, on=view.is_on(item), success=success, count=count)
+            self.update(item=item, on=item.is_on(state), success=success, count=count)
 
         self.check_pending_relevant_items()
 
@@ -1250,8 +1463,15 @@ class ExtendedContext(ExtendedItemCollection):
             if GlobalParams().is_enabled(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA):
                 self.clear_stats()
 
-    def defer_update_to_spin_offs(self, view: ItemPoolStateView) -> bool:
-        return any({not ia.negated and view.is_on(ia.item) for ia in self.relevant_items})
+    def defer_update_to_spin_offs(self, state: State) -> bool:
+        """ Checks if this state activates previously recognized non-negated relevant items. If so, defer to spin-offs.
+
+        Note: This method supports the optional enhancement GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA
+
+        :param state: a State
+        :return: True if should defer stats updates for this state to this schema's spin-offs.
+        """
+        return any({not ia.negated and ia.is_satisfied(state) for ia in self.relevant_items})
 
     @property
     def pending_relevant_items(self) -> frozenset[ItemAssertion]:
@@ -1297,7 +1517,6 @@ class ExtendedContext(ExtendedItemCollection):
             self._pending_relevant_items.add(item_assert)
 
 
-# TODO: Candidate for the flyweight pattern?
 class Schema(Observer, Observable, UniqueIdMixin):
     """
     a three-component data structure used to express a prediction about the environmental state that
@@ -1330,8 +1549,14 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         self._stats: SchemaStats = SchemaStats()
 
+        self._is_primitive = not (context or result)
+
         self._extended_context: ExtendedContext = ExtendedContext(self._context)
-        self._extended_result: ExtendedResult = ExtendedResult(self._result)
+        self._extended_result: ExtendedResult = (
+            ExtendedResult(self._result)
+            if self._is_primitive or GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS) else
+            None
+        )
 
         # TODO: Need to update overriding conditions.
         self._overriding_conditions: Optional[StateAssertion] = None
@@ -1339,13 +1564,18 @@ class Schema(Observer, Observable, UniqueIdMixin):
         # This observer registration is used to notify the schema when a relevant item has been detected in its
         # extended context or extended result
         self._extended_context.register(self)
-        self._extended_result.register(self)
+
+        if self._is_primitive or GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS):
+            self._extended_result.register(self)
 
         # TODO: Is duration or cost needed?
 
         # The duration is the average time from the activation to the completion of an action.
         # self.duration = Schema.INITIAL_DURATION
 
+        # TODO: This may be necessary to properly balance delegated and instrumental values against the cost of
+        # TODO: obtaining that future reward. (An alternative might be to use discounted eligibility traces in the
+        # TODO: delegated value calculations.)
         # The cost is the minimum (i.e., the greatest magnitude) of any negative-valued results
         # of schemas that are implicitly activated as a side effect of the given schema’s [explicit]
         # activation on that occasion (see Drescher, 1991, p.55).
@@ -1420,12 +1650,12 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         :return: True if this is a primitive schema; False otherwise.
         """
-        return self.context is NULL_STATE_ASSERT and self.result is NULL_STATE_ASSERT
+        return self._is_primitive
 
     def update(self,
                activated: bool,
-               v_prev: Optional[ItemPoolStateView],
-               v_curr: ItemPoolStateView,
+               s_prev: Optional[State],
+               s_curr: State,
                new: Collection[StateElement] = None,
                lost: Collection[StateElement] = None, count=1) -> None:
         """
@@ -1434,8 +1664,8 @@ class Schema(Observer, Observable, UniqueIdMixin):
             context and/or result. These will be received via schema's 'receive' method.
 
         :param activated: True if this schema was implicitly or explicitly activated; False otherwise
-        :param v_prev: a view of the set of items that were On in the item pool for the previous state
-        :param v_curr: a view of the set of items that are On in the item pool for the current state
+        :param s_prev: the previous state
+        :param s_curr: the current state
         :param new: the state elements in current but not previous state
         :param lost: the state elements in previous but not current state
         :param count: the number of updates to perform
@@ -1445,17 +1675,18 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         # TODO: Is this correct? Can I find a Drescher quote to support this interpretation?
         # True if this schema was activated AND its result obtained; False otherwise
-        success: bool = activated and self.result.is_satisfied_in_view(v_curr)
+        success: bool = activated and self.result.is_satisfied(s_curr)
 
         # update top-level stats
         self._stats.update(activated=activated, success=success, count=count)
 
         # update extended result stats
-        self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
+        if self._extended_result:
+            self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
 
         # update extended context stats
-        if activated and v_prev:
-            self._extended_context.update_all(view=v_prev, success=success, count=count)
+        if activated and s_prev:
+            self._extended_context.update_all(state=s_prev, success=success, count=count)
 
     # invoked by the schema's extended context or extended result when one of their items is
     # determined to be relevant
@@ -1670,7 +1901,6 @@ class SchemaTree:
         """
         self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
 
-    # TODO: Change this to use a view rather than state?
     def find_all_satisfied(self, state: State, *args, **kwargs) -> Collection[SchemaTreeNode]:
         """ Returns a collection of tree nodes containing schemas with contexts that are satisfied by this state.
 

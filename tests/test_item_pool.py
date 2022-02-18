@@ -5,11 +5,8 @@ from unittest import TestCase
 
 import test_share
 from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import ItemPoolStateView
 from schema_mechanism.data_structures import ReadOnlyItemPool
-from schema_mechanism.data_structures import State
 from schema_mechanism.data_structures import SymbolicItem
-from schema_mechanism.func_api import sym_state
 from test_share.test_func import common_test_setup
 
 
@@ -158,51 +155,3 @@ class TestReadOnlyItemPool(TestCase):
         self.assertEqual(n_items, len(ro_pool))
 
         self.assertRaises(NotImplementedError, lambda: ro_pool.clear())
-
-
-class TestItemPoolStateView(TestCase):
-    def setUp(self) -> None:
-        common_test_setup()
-
-    def test(self):
-        pool = ItemPool()
-        for i in range(100):
-            _ = pool.get(str(i))
-
-        state = sym_state('1,2,3')
-        view = ItemPoolStateView(state=state)
-
-        for i in pool:
-            if i.state_element in state:
-                self.assertTrue(view.is_on(i))
-            else:
-                self.assertFalse(view.is_on(i))
-
-    @test_share.performance_test
-    def test_performance(self):
-        n_items = 100_000
-
-        pool = ItemPool()
-        for i in range(n_items):
-            _ = pool.get(str(i))
-
-        n_distinct_states = n_items
-        n_state_elements = 10
-
-        state = State(sample(range(n_distinct_states), k=n_state_elements))
-
-        # test view creation time
-        start = time()
-        view = ItemPoolStateView(state=state)
-        end = time()
-        elapsed_time = end - start
-        print(f'Time creating item pool view for {n_items:,} {elapsed_time}s')
-
-        elapsed_time = 0
-        for i in pool:
-            start = time()
-            view.is_on(i)
-            end = time()
-            elapsed_time += end - start
-
-        print(f'Time retrieving state for {n_items:,} in view: {elapsed_time}s')
