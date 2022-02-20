@@ -515,6 +515,9 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
         return Schema(action=schema.action, context=new_context, result=schema.result)
 
     elif Schema.SpinOffType.RESULT == spin_off_type:
+        if not GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS) and not schema.is_primitive():
+            raise ValueError('Result spin-off for primitive schemas only (unless ER_INCREMENTAL_RESULTS enabled)')
+
         new_result = (
             StateAssertion(asserts=(assertion,))
             if schema.result is NULL_STATE_ASSERT

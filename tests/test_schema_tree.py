@@ -137,7 +137,7 @@ class TestSchemaTree(TestCase):
         # ValueError raised if list of result spin_offs is empty
         self.assertRaises(ValueError, lambda: self.tree.add_result_spin_offs(self.s1, spin_offs=[]))
 
-        source = self.s1_1_2_3_1
+        source = self.s2
         spin_offs = [create_result_spin_off(source, sym_item_assert(f'{i}')) for i in range(5)]
 
         # adding single result spinoff schema to tree

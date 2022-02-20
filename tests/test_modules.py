@@ -6,6 +6,7 @@ from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.func_api import sym_item_assert
+from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import create_spin_off
 from test_share.test_func import common_test_setup
@@ -113,38 +114,48 @@ class TestModuleFunctions(TestCase):
                                                               spin_off_type=Schema.SpinOffType.RESULT,
                                                               assertion=sym_item_assert('2')))
 
-    # def test_spinoff_schema_2(self):
-    #     # test spinoff behavior when ER_INCREMENTAL_RESULTS is disabled
-    #     if GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS):
-    #         GlobalParams().options.remove(GlobalOption.ER_INCREMENTAL_RESULTS)
-    #
-    #     # test bare schema spin-off
-    #     ###########################
-    #
-    #     s1 = sym_schema('/action/')
-    #
-    #     # result spin-off from item assertion
-    #     s2 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, assertion=sym_assert('1'))
-    #
-    #     self.assertEqual(s1.action, s2.action)
-    #     self.assertEqual(1, len(s2.result))
-    #     self.assertTrue(sym_assert('1') in s2.result)
-    #     self.assertIs(NULL_STATE_ASSERT, s2.context)
-    #
-    #     # result spin-off from state assertion
-    #     s3 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, assertion=sym_state_assert('1,2'))
-    #
-    #     self.assertEqual(s1.action, s3.action)
-    #     self.assertEqual(2, len(s3.result))
-    #     self.assertTrue(sym_assert('1') in s3.result)
-    #     self.assertTrue(sym_assert('2') in s3.result)
-    #     self.assertIs(NULL_STATE_ASSERT, s3.context)
-    #
-    #     # test: result spin-offs MUST originate from primitive schemas (unless ER_INCREMENTAL_RESULTS enabled)
-    #     self.assertRaises(ValueError, lambda: create_spin_off(schema=s3,
-    #                                                           spin_off_type=Schema.SpinOffType.RESULT,
-    #                                                           assertion=sym_assert('3')))
-    #
-    #     self.assertRaises(ValueError, lambda: create_spin_off(schema=s3,
-    #                                                           spin_off_type=Schema.SpinOffType.RESULT,
-    #                                                           assertion=sym_state_assert('3,4')))
+    def test_spinoff_schema_2(self):
+        # test spinoff behavior when ER_INCREMENTAL_RESULTS is disabled
+        if GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS):
+            GlobalParams().options.remove(GlobalOption.ER_INCREMENTAL_RESULTS)
+
+        # test bare schema spin-off
+        ###########################
+
+        s1 = sym_schema('/action/')
+
+        # result spin-off from item assertion
+        s2 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, assertion=sym_item_assert('1'))
+
+        self.assertEqual(s1.action, s2.action)
+        self.assertEqual(1, len(s2.result))
+        self.assertTrue(sym_item_assert('1') in s2.result)
+        self.assertIs(NULL_STATE_ASSERT, s2.context)
+
+        # result spin-off from item assertion with conjunctive item
+        s3 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, assertion=sym_item_assert('~(~1,2)'))
+
+        self.assertEqual(s1.action, s3.action)
+        self.assertEqual(1, len(s3.result))
+        self.assertTrue(sym_item_assert('~(~1,2)') in s3.result)
+        self.assertIs(NULL_STATE_ASSERT, s3.context)
+
+        s_non_prim_1 = sym_schema('/action/11,12')
+        s_non_prim_2 = sym_schema('10,/action/~(1,2),')
+
+        # test: result spin-offs MUST originate from primitive schemas (unless ER_INCREMENTAL_RESULTS enabled)
+        self.assertRaises(ValueError, lambda: create_spin_off(schema=s_non_prim_1,
+                                                              spin_off_type=Schema.SpinOffType.RESULT,
+                                                              assertion=sym_item_assert('3')))
+
+        self.assertRaises(ValueError, lambda: create_spin_off(schema=s_non_prim_2,
+                                                              spin_off_type=Schema.SpinOffType.RESULT,
+                                                              assertion=sym_item_assert('3')))
+
+        self.assertRaises(ValueError, lambda: create_spin_off(schema=s_non_prim_1,
+                                                              spin_off_type=Schema.SpinOffType.RESULT,
+                                                              assertion=sym_item_assert('~(3,4)')))
+
+        self.assertRaises(ValueError, lambda: create_spin_off(schema=s_non_prim_2,
+                                                              spin_off_type=Schema.SpinOffType.RESULT,
+                                                              assertion=sym_item_assert('~(3,4)')))

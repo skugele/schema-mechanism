@@ -1777,6 +1777,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         """
 
         # TODO: Is this correct? Can I find a Drescher quote to support this interpretation?
+        # TODO: What about primitive schemas? Should everything be considered a success?
         # True if this schema was activated AND its result obtained; False otherwise
         success: bool = activated and self.result.is_satisfied(s_curr)
 
@@ -1787,6 +1788,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         if self._extended_result:
             self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
 
+        # TODO: should primitive schemas have an extended context???
         # update extended context stats
         if activated and s_prev:
             self._extended_context.update_all(state=s_prev, success=success, count=count)
