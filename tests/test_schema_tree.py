@@ -4,15 +4,15 @@ from time import time
 from unittest import TestCase
 
 import test_share
-from schema_mechanism.data_structures import Action
-from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import Schema
-from schema_mechanism.data_structures import SchemaTree
-from schema_mechanism.data_structures import SchemaTreeNode
-from schema_mechanism.data_structures import State
+from schema_mechanism.core import Action
+from schema_mechanism.core import ItemPool
+from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaTree
+from schema_mechanism.core import SchemaTreeNode
+from schema_mechanism.core import State
 from schema_mechanism.func_api import actions
 from schema_mechanism.func_api import primitive_schemas
-from schema_mechanism.func_api import sym_assert
+from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_schema_tree_node
 from schema_mechanism.func_api import sym_state
@@ -40,13 +40,13 @@ class TestSchemaTree(TestCase):
         self.s1 = sym_schema('/A1/')
         self.s2 = sym_schema('/A2/')
 
-        self.s1_1 = sym_schema('1/A1/')
-        self.s1_2 = sym_schema('2/A1/')
-        self.s1_3 = sym_schema('3/A1/')
-        self.s1_4 = sym_schema('4/A1/')
+        self.s1_1 = sym_schema('1,/A1/')
+        self.s1_2 = sym_schema('2,/A1/')
+        self.s1_3 = sym_schema('3,/A1/')
+        self.s1_4 = sym_schema('4,/A1/')
 
-        self.s2_1 = sym_schema('1/A2/')
-        self.s2_2 = sym_schema('2/A2/')
+        self.s2_1 = sym_schema('1,/A2/')
+        self.s2_2 = sym_schema('2,/A2/')
 
         self.s1_1_1 = sym_schema('1,2/A1/')
         self.s1_1_2 = sym_schema('1,3/A1/')
@@ -106,60 +106,60 @@ class TestSchemaTree(TestCase):
             self.assertIn(p, tree)
             self.assertIn(p, tree.get(p).schemas)
 
-    def test_add_context_spinoffs(self):
-        # ValueError raised if list of context spinoffs is empty
+    def test_add_context_spin_offs(self):
+        # ValueError raised if list of context spin-offs is empty
         self.assertRaises(ValueError, lambda: self.tree.add_context_spin_offs(self.s1, spin_offs=[]))
 
         source = self.s1_1_2_3_1
-        spinoffs = [create_context_spin_off(source, sym_assert(f'{i}')) for i in range(10, 15)]
+        spin_offs = [create_context_spin_off(source, sym_item_assert(f'{i}')) for i in range(10, 15)]
 
         # adding single context spinoff schema to tree
         len_before_add = len(self.tree)
-        self.tree.add_context_spin_offs(source, spinoffs[0:1])
+        self.tree.add_context_spin_offs(source, spin_offs[0:1])
         len_after_add = len(self.tree)
 
         self.assertEqual(len_before_add + 1, len_after_add)
-        self.assertIn(spinoffs[0], self.tree)
-        self.assertIn(spinoffs[0], self.tree.get(spinoffs[0]).schemas)
+        self.assertIn(spin_offs[0], self.tree)
+        self.assertIn(spin_offs[0], self.tree.get(spin_offs[0]).schemas)
 
         # adding multiple context spin-off schemas to tree
         len_before_add = len(self.tree)
-        self.tree.add_context_spin_offs(source, spinoffs[1:])
+        self.tree.add_context_spin_offs(source, spin_offs[1:])
         len_after_add = len(self.tree)
 
-        self.assertEqual(len_before_add + len(spinoffs[1:]), len_after_add)
+        self.assertEqual(len_before_add + len(spin_offs[1:]), len_after_add)
 
-        for p in spinoffs:
+        for p in spin_offs:
             self.assertIn(p, self.tree)
             self.assertIn(p, self.tree.get(p).schemas)
 
     def test_add_result_spinoffs(self):
-        # ValueError raised if list of result spinoffs is empty
+        # ValueError raised if list of result spin_offs is empty
         self.assertRaises(ValueError, lambda: self.tree.add_result_spin_offs(self.s1, spin_offs=[]))
 
         source = self.s1_1_2_3_1
-        spinoffs = [create_result_spin_off(source, sym_assert(f'{i}')) for i in range(5)]
+        spin_offs = [create_result_spin_off(source, sym_item_assert(f'{i}')) for i in range(5)]
 
         # adding single result spinoff schema to tree
         len_before_add = len(self.tree)
-        self.tree.add_result_spin_offs(source, spinoffs[0:1])
+        self.tree.add_result_spin_offs(source, spin_offs[0:1])
         len_after_add = len(self.tree)
 
         # number of tree nodes SHOULD NOT CHANGE when adding result spin-offs
         self.assertEqual(len_before_add, len_after_add)
 
-        self.assertIn(spinoffs[0], self.tree)
-        self.assertIn(spinoffs[0], self.tree.get(spinoffs[0]).schemas)
+        self.assertIn(spin_offs[0], self.tree)
+        self.assertIn(spin_offs[0], self.tree.get(spin_offs[0]).schemas)
 
         # adding multiple result spin-off schemas to tree
         len_before_add = len(self.tree)
-        self.tree.add_result_spin_offs(source, spinoffs[1:])
+        self.tree.add_result_spin_offs(source, spin_offs[1:])
         len_after_add = len(self.tree)
 
         # number of tree nodes SHOULD NOT CHANGE when adding result spin-offs
         self.assertEqual(len_before_add, len_after_add)
 
-        for p in spinoffs:
+        for p in spin_offs:
             self.assertIn(p, self.tree)
             self.assertIn(p, self.tree.get(p).schemas)
 
@@ -174,26 +174,26 @@ class TestSchemaTree(TestCase):
 
     def test_is_valid_node_3(self):
         # unattached schema should be invalid
-        s_unattached = sym_schema_tree_node('7/A4/')
+        s_unattached = sym_schema_tree_node('7,/A4/')
         self.assertFalse(self.tree.is_valid_node(s_unattached))
 
     def test_is_valid_node_4(self):
         # the children of root should only be primitive schemas
-        s_illegal_parent = sym_schema('1/A3/')
+        s_illegal_parent = sym_schema('1,/A3/')
         self.tree.add_primitives((s_illegal_parent,))
         s_illegal_parent_node = self.tree.get(s_illegal_parent)
         self.assertFalse(self.tree.is_valid_node(s_illegal_parent_node))
 
     def test_is_valid_node_5(self):
         # non-primitive nodes should have the same action as their parents
-        s_illegal_action = sym_schema('1/A3/')
+        s_illegal_action = sym_schema('1,/A3/')
         self.tree.add_context_spin_offs(self.s1, (s_illegal_action,))
         s_illegal_action_node = self.tree.get(s_illegal_action)
         self.assertFalse(self.tree.is_valid_node(s_illegal_action_node))
 
     def test_is_valid_node_6(self):
         s1 = sym_schema('/A1/')
-        s1_1 = sym_schema('1/A1/')
+        s1_1 = sym_schema('1,/A1/')
         s1_1_1 = sym_schema('1,2/A1/')
 
         tree = SchemaTree()
@@ -204,7 +204,7 @@ class TestSchemaTree(TestCase):
         for n in tree:
             self.assertTrue(tree.is_valid_node(n))
 
-        # children should have all of the context item assertions of their parents
+        # children should have all of the context item assertion of their parents
         s_illegal_context = sym_schema('1,5,6/A1/')
         tree.add_context_spin_offs(s1_1_1, (s_illegal_context,))
 
@@ -217,7 +217,7 @@ class TestSchemaTree(TestCase):
         self.assertEqual(0, len(invalid_nodes))
 
         # adding invalid nodes
-        invalid_1 = sym_schema('1/A3/')
+        invalid_1 = sym_schema('1,/A3/')
         invalid_2 = sym_schema('1,2,3,4,5/A1/')
 
         # invalid due to parent and child having different actions
@@ -238,7 +238,7 @@ class TestSchemaTree(TestCase):
         self.assertTrue(all({s in tree for s in p_schemas}))
 
         # any other schema SHOULD NOT be contained in tree
-        another = sym_schema('9/A7/')
+        another = sym_schema('9,/A7/')
         self.assertNotIn(another, tree)
 
         # after adding, another schema should be contained in tree
@@ -246,10 +246,10 @@ class TestSchemaTree(TestCase):
         self.assertIn(another, tree)
 
         # contains should work for SchemaTreeNodes as well
-        node_another = sym_schema_tree_node('9/A7/')
+        node_another = sym_schema_tree_node('9,/A7/')
         self.assertIn(node_another, tree)
 
-        node_missing = sym_schema_tree_node('1/A4/')
+        node_missing = sym_schema_tree_node('1,/A4/')
         self.assertNotIn(node_missing, tree)
 
     @test_share.string_test
@@ -303,7 +303,7 @@ class TestSchemaTree(TestCase):
         elapsed_time = 0
         schema = sample(list(chain.from_iterable([c.schemas for c in tree.root.children])), k=1)[0]
         for state_element in range(n_iters):
-            spinoff = create_spin_off(schema, Schema.SpinOffType.CONTEXT, sym_assert(str(state_element)))
+            spinoff = create_spin_off(schema, Schema.SpinOffType.CONTEXT, sym_item_assert(str(state_element)))
 
             start = time()
             tree.add_context_spin_offs(schema, (spinoff,))
@@ -324,7 +324,7 @@ class TestSchemaTree(TestCase):
         elapsed_time = 0
         schema = sample(list(chain.from_iterable([c.schemas for c in tree.root.children])), k=1)[0]
         for state_element in range(n_iters):
-            spinoff = create_spin_off(schema, Schema.SpinOffType.RESULT, sym_assert(str(state_element)))
+            spinoff = create_spin_off(schema, Schema.SpinOffType.RESULT, sym_item_assert(str(state_element)))
 
             start = time()
             tree.add_result_spin_offs(schema, (spinoff,))
@@ -353,7 +353,7 @@ class TestSchemaTree(TestCase):
 
         elapsed_time = 0
         for i in range(n_schemas - 1):
-            spinoff = create_spin_off(schema, Schema.SpinOffType.CONTEXT, sym_assert(str(i)))
+            spinoff = create_spin_off(schema, Schema.SpinOffType.CONTEXT, sym_item_assert(str(i)))
             start = time()
             tree.add_context_spin_offs(schema, (spinoff,))
             end = time()
@@ -384,7 +384,7 @@ class TestSchemaTree(TestCase):
 
         elapsed_time = 0
         for state_element in range(n_schemas - 1):
-            spinoff = create_spin_off(schema, Schema.SpinOffType.CONTEXT, sym_assert(str(state_element)))
+            spinoff = create_spin_off(schema, Schema.SpinOffType.CONTEXT, sym_item_assert(str(state_element)))
             start = time()
             tree.add_context_spin_offs(schema, (spinoff,))
             end = time()

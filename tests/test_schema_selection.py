@@ -1,7 +1,7 @@
 from collections import defaultdict
 from unittest import TestCase
 
-from schema_mechanism.data_structures import ItemPool
+from schema_mechanism.core import ItemPool
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.modules import primitive_values
@@ -16,24 +16,21 @@ class TestSchemaSelection(TestCase):
 
         pool = ItemPool()
 
-        self.i1 = pool.get('1', 0.0)
-        self.i2 = pool.get('2', 0.0)
-        self.i3 = pool.get('3', 0.95)
-        self.i4 = pool.get('4', -1.0)
-        self.i5 = pool.get('5', 2.0)
-        self.i6 = pool.get('6', -3.0)
+        self.i1 = pool.get('1', primitive_value=0.0)
+        self.i2 = pool.get('2', primitive_value=0.0)
+        self.i3 = pool.get('3', primitive_value=0.95)
+        self.i4 = pool.get('4', primitive_value=-1.0)
+        self.i5 = pool.get('5', primitive_value=2.0)
+        self.i6 = pool.get('6', primitive_value=-3.0)
 
         self.s_prim = sym_schema('/A1/')  # total value = 0.0
-        self.s1 = sym_schema('1,2/A1/3')  # total value = 0.95
-        self.s2 = sym_schema('1,2/A1/4')  # total value = -1.0
-        self.s3 = sym_schema('1,2/A1/5')  # total value = 2.0
+        self.s1 = sym_schema('1,2/A1/3,')  # total value = 0.95
+        self.s2 = sym_schema('1,2/A1/4,')  # total value = -1.0
+        self.s3 = sym_schema('1,2/A1/5,')  # total value = 2.0
         self.s4 = sym_schema('1,2/A1/3,4')  # total value = -0.05
         self.s5 = sym_schema('1,2/A1/3,4,5')  # total value = 1.95
         self.s6 = sym_schema('1,2/A1/3,4,5,6')  # total value = -1.05
-        self.s7 = sym_schema('1,2/A1/3,4,5,~6')  # total value = 1.95
-
-    def test_init(self):
-        pass
+        self.s7 = sym_schema('1,2/A1/3,4,5,~6')  # total value = 4.95
 
     def test_primitive_values(self):
         # sanity checks
@@ -45,7 +42,7 @@ class TestSchemaSelection(TestCase):
         # noinspection PyTypeChecker
         self.assertEqual(0, len(primitive_values(schemas=None)))
 
-        expected_values = [0.0, 0.95, -1.0, 2.0, -0.05, 1.95, -1.05, 1.95]
+        expected_values = [0.0, 0.95, -1.0, 2.0, -0.05, 1.95, -1.05, 4.95]
         actual_values = primitive_values(
             schemas=[self.s_prim, self.s1, self.s2, self.s3, self.s4, self.s5, self.s6, self.s7])
 

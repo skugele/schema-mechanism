@@ -1,7 +1,7 @@
 import unittest
 from collections import Counter
 
-from schema_mechanism.data_structures import Action
+from schema_mechanism.core import Action
 from schema_mechanism.examples.multi_arm_bandits import BanditEnvironment
 from schema_mechanism.examples.multi_arm_bandits import Machine
 from schema_mechanism.func_api import sym_state

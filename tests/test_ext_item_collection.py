@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from schema_mechanism.data_structures import ExtendedItemCollection
+from schema_mechanism.core import ExtendedItemCollection
 from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_items
 from test_share.test_classes import MockObserver
@@ -11,13 +11,13 @@ class TestExtendedItemCollection(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self.eic = ExtendedItemCollection(suppress_list=sym_items('1,2,3'))
+        self.eic = ExtendedItemCollection(suppressed_items=sym_items('1,2,3'))
 
         self.obs = MockObserver()
         self.eic.register(self.obs)
 
     def test_suppress_list(self):
-        self.assertListEqual(list(self.eic.suppress_list), list(sym_items('1,2,3')))
+        self.assertListEqual(list(self.eic.suppressed_items), list(sym_items('1,2,3')))
 
     def test_relevant_items(self):
         self.assertEqual(0, len(self.eic.relevant_items))
@@ -29,10 +29,10 @@ class TestExtendedItemCollection(TestCase):
     def test_known_relevant_item(self):
         a1 = sym_assert('1')
         self.eic.update_relevant_items(a1)
-        self.assertTrue(self.eic.known_relevant_item(a1))
+        self.assertTrue(a1 in self.eic.relevant_items)
 
         a2 = sym_assert('2')
-        self.assertFalse(self.eic.known_relevant_item(a2))
+        self.assertFalse(a2 in self.eic.relevant_items)
 
     def test_register_and_unregister(self):
         obs = MockObserver()

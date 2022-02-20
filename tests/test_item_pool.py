@@ -4,9 +4,11 @@ from time import time
 from unittest import TestCase
 
 import test_share
-from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import ReadOnlyItemPool
-from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.core import ConjunctiveItem
+from schema_mechanism.core import ItemPool
+from schema_mechanism.core import ReadOnlyItemPool
+from schema_mechanism.core import SymbolicItem
+from schema_mechanism.func_api import sym_state_assert
 from test_share.test_func import common_test_setup
 
 
@@ -28,7 +30,7 @@ class TestSharedItemPool(TestCase):
         # test case: verify correct item type and primitive value
         item1 = pool.get('1', primitive_value=1.0, item_type=SymbolicItem)
         self.assertIsInstance(item1, SymbolicItem)
-        self.assertEqual('1', item1.state_element)
+        self.assertEqual('1', item1.source)
         self.assertEqual(1.0, item1.primitive_value)
 
         # test case: duplicated state elements return identical instances
@@ -56,6 +58,33 @@ class TestSharedItemPool(TestCase):
         self.assertIsInstance(item4, SymbolicItem)
         self.assertTrue(all(item4 != other for other in [item1, item2, item3]))
 
+    def test_get_all(self):
+        pool = ItemPool()
+
+        # populate SymbolicItems
+        state_elements = frozenset(str(i) for i in range(10))
+        for se in state_elements:
+            _ = pool.get(se, item_type=SymbolicItem)
+
+        # populate ConjunctiveItems
+        state_assertions = frozenset((
+            sym_state_assert('1,2'),
+            sym_state_assert('1,3'),
+            sym_state_assert('~2,4'),
+        ))
+        for sa in state_assertions:
+            _ = pool.get(sa, item_type=ConjunctiveItem)
+
+        expected_set = set(pool.get(se) for se in state_elements)
+        actual_set = pool.get_all(item_type=SymbolicItem)
+
+        self.assertSetEqual(expected_set, actual_set)
+
+        expected_set = set(pool.get(sa, item_type=ConjunctiveItem) for sa in state_assertions)
+        actual_set = pool.get_all(item_type=ConjunctiveItem)
+
+        self.assertSetEqual(expected_set, actual_set)
+
     def test_contains(self):
         pool = ItemPool()
 
@@ -72,15 +101,25 @@ class TestSharedItemPool(TestCase):
     def test_iterator(self):
         pool = ItemPool()
 
-        for value in range(100):
-            _ = pool.get(str(value))
+        # populate SymbolicItems
+        state_elements = frozenset(str(i) for i in range(10))
+        for se in state_elements:
+            _ = pool.get(se, item_type=SymbolicItem)
+
+        # populate ConjunctiveItems
+        state_assertions = frozenset((
+            sym_state_assert('1,2'),
+            sym_state_assert('1,3'),
+            sym_state_assert('~2,4'),
+        ))
+        for sa in state_assertions:
+            _ = pool.get(sa, item_type=ConjunctiveItem)
 
         encountered = defaultdict(lambda: 0)
         for item in pool:
-            self.assertIsInstance(item, SymbolicItem)
             encountered[item] += 1
 
-        self.assertEqual(100, len(encountered))
+        self.assertEqual(sum(encountered[k] for k in encountered.keys()), len(state_elements) + len(state_assertions))
         self.assertTrue(all({encountered[k] == 1 for k in encountered.keys()}))
 
     @test_share.performance_test
@@ -135,7 +174,7 @@ class TestReadOnlyItemPool(TestCase):
 
         pool = ItemPool()
         for i in range(n_items):
-            pool.get(str(i))
+            _ = pool.get(str(i))
 
         self.assertEqual(n_items, len(pool))
 
@@ -148,7 +187,7 @@ class TestReadOnlyItemPool(TestCase):
         for i in range(n_items):
             item = pool.get(str(i))
             self.assertIsNotNone(item)
-            self.assertEqual(str(i), item.state_element)
+            self.assertEqual(str(i), item.source)
 
         # test non-existent element returns None and DOES NOT add any new elements
         self.assertIsNone(ro_pool.get('nope'))

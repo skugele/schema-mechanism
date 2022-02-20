@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from schema_mechanism.data_structures import Action
+from schema_mechanism.core import Action
 from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_with_null_is_false
 from test_share.test_func import is_hash_consistent

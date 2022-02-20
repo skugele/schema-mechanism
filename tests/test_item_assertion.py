@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from schema_mechanism.data_structures import ItemAssertion
+from schema_mechanism.core import ItemAssertion
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from test_share.test_func import common_test_setup
@@ -26,10 +26,10 @@ class TestItemAssertion(TestCase):
         self.assertEqual(self.item, self.ia.item)
 
         # check default negated value is False
-        self.assertEqual(False, self.ia.negated)
+        self.assertEqual(False, self.ia.is_negated)
 
         # check setting of non-default negated value to True
-        self.assertEqual(True, self.ia_neg.negated)
+        self.assertEqual(True, self.ia_neg.is_negated)
 
         # check setting of primitive value
         self.assertEqual(1.0, self.ia.item.primitive_value)
@@ -37,7 +37,7 @@ class TestItemAssertion(TestCase):
         # check immutability
         try:
             # noinspection PyPropertyAccess
-            self.ia.negated = False
+            self.ia.is_negated = False
             self.fail('ItemAssertion is not immutable as expected: able to set negated directly')
         except AttributeError:
             pass

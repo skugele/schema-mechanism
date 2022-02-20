@@ -1,10 +1,11 @@
 from random import sample
 from unittest import TestCase
 
-from schema_mechanism.data_structures import ExtendedResult
-from schema_mechanism.data_structures import ItemAssertion
-from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import NULL_ER_ITEM_STATS
+from schema_mechanism.core import ExtendedResult
+from schema_mechanism.core import GlobalParams
+from schema_mechanism.core import ItemAssertion
+from schema_mechanism.core import ItemPool
+from schema_mechanism.core import NULL_ER_ITEM_STATS
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
 from test_share.test_classes import MockObserver
@@ -34,11 +35,11 @@ class TestExtendedResult(TestCase):
             self.assertIs(NULL_ER_ITEM_STATS, self.er.stats[i])
 
         for ia in self.result:
-            self.assertIn(ia.item, self.er.suppress_list)
+            self.assertIn(ia.item, self.er.suppressed_items)
 
     def test_update_1(self):
         # testing updates for Items
-        state = sample(range(self.N_ITEMS), k=10)
+        state = list(map(str, sample(range(self.N_ITEMS), k=10)))
 
         # update an item from this state assuming the action was taken
         new_item = sym_item(state[0])
@@ -95,7 +96,7 @@ class TestExtendedResult(TestCase):
     #             self.assertIs(NULL_ER_ITEM_STATS, item_stats)
     #
     # def test_update_all(self):
-    #     # add state assertions to pool
+    #     # add state assertion to pool
     #
     #     updated_sa = [
     #         StateAssertionPool().get(sym_asserts('~0,3')),  # positive transition (on=True)
@@ -212,8 +213,8 @@ class TestExtendedResult(TestCase):
         self.assertEqual(1, len(self.er.new_relevant_items))
 
         i1_stats = self.er.stats[i1]
-        self.assertTrue(i1_stats.positive_transition_corr > self.er.POS_CORR_RELEVANCE_THRESHOLD)
-        self.assertTrue(i1_stats.negative_transition_corr <= self.er.NEG_CORR_RELEVANCE_THRESHOLD)
+        self.assertTrue(i1_stats.positive_transition_corr > GlobalParams().pos_corr_threshold)
+        self.assertTrue(i1_stats.negative_transition_corr <= GlobalParams().neg_corr_threshold)
 
         # verify only one relevant item
         self.assertEqual(1, len(self.er.relevant_items))
@@ -235,15 +236,15 @@ class TestExtendedResult(TestCase):
     def test_relevant_items_2(self):
         i1 = sym_item('100')
 
-        self.assertIn(i1, self.er.suppress_list)
+        self.assertIn(i1, self.er.suppressed_items)
 
         # test updates that SHOULD NOT result in relevant item determination
         self.er.update(i1, on=True, activated=True, count=10)
         self.er.update(i1, on=False, activated=False, count=10)
 
         i1_stats = self.er.stats[i1]
-        self.assertTrue(i1_stats.positive_transition_corr > self.er.POS_CORR_RELEVANCE_THRESHOLD)
-        self.assertTrue(i1_stats.negative_transition_corr <= self.er.NEG_CORR_RELEVANCE_THRESHOLD)
+        self.assertTrue(i1_stats.positive_transition_corr > GlobalParams().pos_corr_threshold)
+        self.assertTrue(i1_stats.negative_transition_corr <= GlobalParams().neg_corr_threshold)
 
         # verify suppressed item NOT in relevant items list
         self.assertEqual(0, len(self.er.relevant_items))

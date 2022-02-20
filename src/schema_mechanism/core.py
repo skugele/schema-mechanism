@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 from abc import ABC
 from abc import abstractmethod
 from collections import defaultdict
@@ -26,15 +27,25 @@ from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import repr_str
+from schema_mechanism.util import warn
+
 # Type Aliases
 ##############
-from schema_mechanism.util import warn
 
 StateElement = Hashable
 
 
 # Classes
 #########
+class Activatable(ABC):
+    @abstractmethod
+    def is_on(self, state: State, *args, **kwargs) -> bool:
+        pass
+
+    def is_off(self, state: State, *args, **kwargs) -> bool:
+        return not self.is_on(state, *args, **kwargs)
+
+
 class State:
     def __init__(self, elements: Collection[StateElement], label: Optional[str] = None) -> None:
         self._elements = frozenset(elements)
@@ -52,6 +63,7 @@ class State:
     def primitive_value(self) -> float:
         if not self._elements:
             return 0.0
+
         return sum(ReadOnlyItemPool().get(se).primitive_value for se in self._elements)
 
     @property
@@ -92,48 +104,70 @@ class State:
         return f'{e_str} ({self._label})' if self._label else e_str
 
 
-def held_state(s_prev: State, s_curr: State) -> frozenset[StateElement]:
-    """ Returns the set of state elements that are in both previous and current state
+def held_state(s_prev: State, s_curr: State) -> frozenset[Item]:
+    """ Returns the set of items that are On in both the current and previous states
 
     :param s_prev: a collection of the previous state's elements
     :param s_curr: a collection of the current state's elements
 
-    :return: a set containing state elements shared between current and previous state
+    :return: a (potentially empty) set of Items
     """
     if not all((s_prev, s_curr)):
         return frozenset()
 
-    return frozenset([se for se in s_curr if se in s_prev])
+    # singular
+    held = [ItemPool().get(se) for se in s_curr if se in s_prev]
+
+    # conjunctions
+    for ci in ItemPool().get_all(item_type=ConjunctiveItem):
+        if ci.is_on(s_curr) and ci.is_on(s_prev):
+            held.append(ci)
+
+    return frozenset(held)
 
 
-def new_state(s_prev: Optional[State],
-              s_curr: Optional[State]) -> frozenset[StateElement]:
-    """ Returns the set of state elements that are in current state but not previous
+def new_state(s_prev: Optional[State], s_curr: Optional[State]) -> frozenset[Item]:
+    """ Returns the set of items that are On in current state but not the previous state
 
     :param s_prev: a collection of the previous state's elements
     :param s_curr: a collection of the current state's elements
 
-    :return: a set containing new state elements
+    :return: a (potentially empty) set of Items
     """
     if not all((s_prev, s_curr)):
         return frozenset()
 
-    return frozenset([se for se in s_curr if se not in s_prev])
+    # singular
+    new = [ItemPool().get(se) for se in s_curr if se not in s_prev]
+
+    # conjunctions
+    for ci in ItemPool().get_all(item_type=ConjunctiveItem):
+        if ci.is_on(s_curr) and not ci.is_on(s_prev):
+            new.append(ci)
+
+    return frozenset(new)
 
 
-def lost_state(s_prev: Optional[State],
-               s_curr: Optional[State]) -> frozenset[StateElement]:
-    """ Returns the set of state elements that are in previous state but not current
+def lost_state(s_prev: Optional[State], s_curr: Optional[State]) -> frozenset[Item]:
+    """ Returns the set of items that are On in previous state but not current state
 
     :param s_prev: a collection of the previous state's elements
     :param s_curr: a collection of the current state's elements
 
-    :return: a set containing lost state elements
+    :return: a (potentially empty) set of Items
     """
     if not all((s_prev, s_curr)):
         return frozenset()
 
-    return frozenset([se for se in s_prev if se not in s_curr])
+    # singular
+    lost = [ItemPool().get(se) for se in s_prev if se not in s_curr]
+
+    # conjunctions
+    for ci in ItemPool().get_all(item_type=ConjunctiveItem):
+        if ci.is_on(s_prev) and not ci.is_on(s_curr):
+            lost.append(ci)
+
+    return frozenset(lost)
 
 
 class DelegatedValueHelper:
@@ -244,26 +278,16 @@ class DelegatedValueHelper:
         self._dv_trace_value = -np.inf
 
 
-class Activatable(ABC):
-    @abstractmethod
-    def is_on(self, state: State, *args, **kwargs) -> bool:
-        pass
-
-    def is_off(self, state: State, *args, **kwargs) -> bool:
-        return not self.is_on(state, *args, **kwargs)
-
-
 class Item(Activatable):
 
-    def __init__(self, state_element: StateElement, primitive_value: float = None, *args, **kwargs) -> None:
-        self._state_element = state_element
-
+    def __init__(self, source: Any, primitive_value: float = None, *args, **kwargs) -> None:
+        self._source = source
         self._primitive_value = primitive_value or 0.0
         self._delegated_value_helper = DelegatedValueHelper(item=self)
 
     @property
-    def state_element(self) -> StateElement:
-        return self._state_element
+    def source(self) -> Any:
+        return self._source
 
     @property
     def primitive_value(self) -> float:
@@ -322,70 +346,78 @@ class Item(Activatable):
 
     # TODO: Need to be really careful with the default hash implementations which produce different values between
     # TODO: runs. This will kill and direct serialization/deserialization of data structures that rely on hashes.
-
-    def __str__(self) -> str:
-        return str(self._state_element)
-
-    def __repr__(self) -> str:
-        return repr_str(self, {'state_element': str(self._state_element)})
+    @abstractmethod
+    def __hash__(self) -> int:
+        pass
 
 
-# class ERConjunctiveItem:
-#     """
-#     Used to support ExtendedResult statistics when the ER_INCREMENTAL_RESULTS is disabled.
-#     """
-#
-#     def __init__(self, state_elements: Collection[StateElement], *args, **kwargs) -> None:
-#         self._state_elements = frozenset(state_elements)
-#
-#     @property
-#     def state_elements(self) -> frozenset[StateElement]:
-#         return self._state_elements
-#
-#     def is_on(self, state: State, *args, **kwargs) -> bool:
-#         return all({ReadOnlyItemPool().get(se).is_on(state, *args, **kwargs) for se in self.state_elements})
-#
-#     def copy(self) -> ERConjunctiveItem:
-#         return ERConjunctiveItem(self.state_elements)
-#
-#     def __str__(self) -> str:
-#         return ','.join(map(str, self._state_elements))
-#
-#     def __repr__(self) -> str:
-#         return repr_str(self, {'state_elements': ','.join(map(str, self._state_elements))})
-
-
+# TODO: rename to ItemFactory???
 class ItemPool(metaclass=Singleton):
-    _items: dict[StateElement, Item] = dict()
+    """
+    Implements a flyweight design pattern for Item types.
+    """
+    _items: dict[Type[Item], dict[Any, Item]] = dict()
 
-    def __contains__(self, state_element: StateElement):
-        return state_element in self._items
+    def __contains__(self, source: Any) -> bool:
+        for type_dict in self._items.values():
+            if source in type_dict:
+                return True
+        return False
 
     def __len__(self) -> int:
-        return len(self._items)
+        return sum(len(d) for d in self._items.values())
 
     def __iter__(self) -> Iterator[Item]:
-        yield from self._items.values()
+        for type_dict in self._items.values():
+            yield from type_dict.values()
 
     def clear(self):
         self._items.clear()
 
-    def get(self,
-            state_element: StateElement,
-            primitive_value: Optional[float] = None,
-            item_type: Optional[Type[Item]] = None,
-            **kwargs) -> Item:
-        obj = self._items.get(state_element)
-        if not kwargs.get('read_only', False):
+    def get(self, source: Any, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
+        read_only = kwargs.get('read_only', False)
+        search_all = False if item_type else True
+        item_type = item_type or GlobalParams().DEFAULT_ITEM_TYPE
 
-            # create and add item if it doesn't already exist
-            if obj is None:
-                self._items[state_element] = obj = (
-                    item_type(state_element=state_element, primitive_value=primitive_value, **kwargs)
-                    if item_type
-                    else SymbolicItem(state_element=state_element, primitive_value=primitive_value, **kwargs)
-                )
+        type_dict = self._get_type_dict(item_type, read_only)
+        obj = self._search(source) if search_all else type_dict.get(source)
 
+        # create new item and add to pool if not found and not read_only
+        if not obj and not read_only:
+            obj = type_dict[source] = item_type(source, **kwargs)
+
+        return obj
+
+    def get_all(self, item_type: Optional[Type[Item]] = None) -> frozenset[Item]:
+        """ Returns all items for a type. If not type supplied, then every item will be returned.
+
+        :param item_type: an Item Type
+        :return: a set of Items
+        """
+        return frozenset(
+            # items for a single type dictionary
+            self._items.get(item_type, dict()).values() if item_type
+
+            # items from all type dictionaries
+            else itertools.chain.from_iterable([td.values() for td in self._type_dicts()])
+        )
+
+    def _get_type_dict(self, item_type: Optional[Type[Item]], read_only: bool = False) -> dict[Any, Item]:
+        item_type = item_type or GlobalParams().DEFAULT_ITEM_TYPE
+
+        type_dict = self._items.get(item_type)
+        if not type_dict and not read_only:
+            self._items[item_type] = type_dict = dict()
+        return type_dict
+
+    def _type_dicts(self) -> Collection[dict[Any, Item]]:
+        return self._items.values()
+
+    def _search(self, source: Any) -> Optional[Item]:
+        obj = None
+        for type_dict in self._type_dicts():
+            if obj := type_dict.get(source):
+                break
         return obj
 
 
@@ -393,9 +425,9 @@ class ReadOnlyItemPool(ItemPool):
     def __init__(self):
         self._pool = ItemPool()
 
-    def get(self, state_element: StateElement, item_type: Optional[Type[Item]] = None, **kwargs) -> Item:
+    def get(self, source: Any, item_type: Optional[Type[Item]] = None, **kwargs) -> Item:
         kwargs['read_only'] = True
-        return self._pool.get(state_element, item_type, **kwargs)
+        return self._pool.get(source, item_type=item_type, **kwargs)
 
     def clear(self):
         raise NotImplementedError('ReadOnlyItemPool does not support clear operation.')
@@ -421,185 +453,97 @@ class ReadOnlyItemPool(ItemPool):
 class SymbolicItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
-    def __init__(self, state_element: StateElement, primitive_value: float = None, *args, **kwargs):
-        super().__init__(state_element, primitive_value, *args, **kwargs)
+    def __init__(self, source: StateElement, primitive_value: float = None, *args, **kwargs):
+        super().__init__(source=source, primitive_value=primitive_value, *args, **kwargs)
 
     @property
-    def state_element(self) -> StateElement:
-        return super().state_element
+    def source(self) -> StateElement:
+        return super().source
 
     def is_on(self, state: State, *args, **kwargs) -> bool:
-        return self.state_element in state
+        return self.source in state
 
     def copy(self) -> Item:
-        return SymbolicItem(self.state_element)
+        return SymbolicItem(self.source)
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, SymbolicItem):
-            return self.state_element == other.state_element
+            return self.source == other.source
         return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
-        return hash(self.state_element)
-
-
-# class Assertion(ABC):
-#     def __init__(self, negated: bool) -> None:
-#         self._is_negated = negated
-#
-#     @property
-#     def is_negated(self) -> bool:
-#         return self._is_negated
-#
-#     @abstractmethod
-#     def is_satisfied(self, state: State) -> bool:
-#         pass
-#
-#     @abstractmethod
-#     def __iter__(self) -> Iterator[Assertion]:
-#         pass
-#
-#     @abstractmethod
-#     def __len__(self) -> int:
-#         pass
-#
-#     @abstractmethod
-#     def __contains__(self, assertion: Assertion) -> bool:
-#         pass
-#
-#     @abstractmethod
-#     def __hash__(self) -> int:
-#         pass
-#
-#
-# class ItemAssertion(Assertion):
-#     """
-#     Implements the "leaf" class in a composite design pattern for the Assertion base class. Its interface is similar
-#     to its corresponding "composite" class (CompositeAssertion), providing a uniform client experience over all
-#     Assertion classes.
-#     """
-#
-#     def __init__(self, item: Optional[Item] = None, negated: bool = False) -> None:
-#         super().__init__(negated)
-#
-#         self._item = item
-#
-#     def is_satisfied(self, state: State) -> bool:
-#         return self._item.is_off(state) if self.is_negated else self._item.is_on(state)
-#
-#     def __iter__(self) -> Iterator[Assertion]:
-#         yield from [self._item]
-#
-#     def __len__(self) -> int:
-#         return 1
-#
-#     def __contains__(self, assertion: Assertion) -> bool:
-#         return self == assertion
-#
-#     def __eq__(self, other: Any) -> bool:
-#         if isinstance(other, ItemAssertion):
-#             return self._item == other._item and self.is_negated == other.is_negated
-#         return False if other is None else NotImplemented
-#
-#     def __hash__(self) -> int:
-#         return hash((self._item, self.is_negated))
-#
-#     def __str__(self) -> str:
-#         return f'{"~" if self.is_negated else ""}{self._item}'
-#
-#
-# class CompositeAssertion(Assertion):
-#     """
-#     Implements the "composite" class in a composite design pattern for the Assertion base class. Its interface is
-#     similar to the corresponding "leaf" class (ItemAssertion), providing a uniform client experience over all
-#     Assertion classes.
-#     """
-#
-#     def __init__(self, assertions: Collection[Assertion] = None, negated: bool = False) -> None:
-#         super().__init__(negated)
-#
-#         self._pos_asserts = frozenset(filter(lambda a: not a.negated, assertions)) if assertions else frozenset()
-#         self._neg_asserts = frozenset(filter(lambda a: a.negated, assertions)) if assertions else frozenset()
-#
-#     def is_satisfied(self, state: State) -> bool:
-#         satisfied = all({a.is_satisfied(state) for a in self})
-#         return not satisfied if self.is_negated else satisfied
-#
-#     def __iter__(self) -> Iterator[Assertion]:
-#         yield from self._pos_asserts
-#         yield from self._neg_asserts
-#
-#     def __len__(self) -> int:
-#         return len(self._pos_asserts) + len(self._neg_asserts)
-#
-#     def __contains__(self, item_assert: Assertion) -> bool:
-#         return (
-#             item_assert in self._neg_asserts
-#             if item_assert.is_negated
-#             else item_assert in self._pos_asserts
-#         )
-#
-#     def __eq__(self, other) -> bool:
-#         if isinstance(other, CompositeAssertion):
-#             return (self._pos_asserts == other._pos_asserts
-#                     and self._neg_asserts == other._neg_asserts)
-#         return False if other is None else NotImplemented
-#
-#     def __hash__(self) -> int:
-#         return hash((self._pos_asserts, self._neg_asserts))
-#
-#     def __str__(self) -> str:
-#         assertions = [str(a) for a in self] if len(self) > 0 else []
-#         return ','.join(assertions)
-
-
-class ItemAssertion:
-    def __init__(self, item: Item, negated: bool = False) -> None:
-        self._item = item
-        self._negated = negated
-
-    @property
-    def item(self) -> Item:
-        return self._item
-
-    @property
-    def negated(self) -> bool:
-        return self._negated
-
-    def is_on(self, state: State, *args, **kwargs) -> bool:
-        return self._item.is_on(state, *args, **kwargs)
-
-    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
-        if self._negated:
-            return self._item.is_off(state, *args, **kwargs)
-        else:
-            return self._item.is_on(state, *args, **kwargs)
-
-    def copy(self) -> ItemAssertion:
-        """ Performs a shallow copy of this ItemAssertion. """
-        return ItemAssertion(item=self.item, negated=self.negated)
-
-    def __eq__(self, other: Any) -> bool:
-        if isinstance(other, ItemAssertion):
-            return self._item == other._item and self._negated == other._negated
-        elif isinstance(other, Item):
-            return self._item == other
-
-        return False if other is None else NotImplemented
-
-    def __hash__(self) -> int:
-        """ Returns a hash of this object.
-
-        :return: an integer hash of this object
-        """
-        return hash((self._item, self._negated))
+        return hash(self.source)
 
     def __str__(self) -> str:
-        return f'{"~" if self._negated else ""}{self._item.state_element}'
+        return str(self.source)
 
     def __repr__(self) -> str:
-        return repr_str(self, {'item': self.item,
-                               'negated': self.negated})
+        return repr_str(self, {'source': str(self.source)})
+
+
+# TODO: There may be a subtle bug here when the StateAssertion is negated and the ConjunctiveItem containing
+# TODO: that negated assertion is included in a negated ItemAssertion or StateAssertion.
+class ConjunctiveItem(Item):
+    """ A StateAssertion wrapper that functions like an Item.
+
+    This class is primarily used to support ExtendedResult statistics when the ER_INCREMENTAL_RESULTS is disabled.
+    """
+
+    def __init__(self, source: StateAssertion) -> None:
+        if len(source) < 2:
+            raise ValueError('Source assertion must have at least two elements')
+
+        super().__init__(source=source, primitive_value=source.primitive_value)
+
+    @property
+    def source(self) -> StateAssertion:
+        return super().source
+
+    def is_on(self, state: State, *args, **kwargs) -> bool:
+        return self.source.is_satisfied(state)
+
+    @property
+    def avg_accessible_value(self) -> float:
+        return self.source.avg_accessible_value
+
+    @property
+    def delegated_value(self) -> float:
+        return self.source.delegated_value
+
+    # TODO: is this correct? where is this update occurring?
+    def update_delegated_value(self, *args, **kwargs) -> None:
+        # do nothing. updates to delegated value handled elsewhere.
+        pass
+
+    def copy(self) -> Item:
+        return ConjunctiveItem(self.source.copy())
+
+    def __contains__(self, assertion: Assertion) -> bool:
+        if isinstance(assertion, ItemAssertion):
+            return assertion in self.source
+        return False
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, ConjunctiveItem):
+            return self.source == other.source
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.source)
+
+    def __str__(self) -> str:
+        return f'{"~" if self.source.is_negated else ""}({",".join(str(ia) for ia in self.source)})'
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'assertion': self.source, 'negated': self.source.is_negated})
+
+
+def non_conjunctive_items(items: Collection[Item]) -> Collection[Item]:
+    return list(filter(lambda i: not isinstance(i, ConjunctiveItem), items))
+
+
+def conjunctive_items(items: Collection[Item]) -> Collection[Item]:
+    return list(filter(lambda i: isinstance(i, ConjunctiveItem), items))
 
 
 class GlobalOption(Enum):
@@ -623,13 +567,23 @@ class GlobalOption(Enum):
 class GlobalParams(metaclass=Singleton):
     DEFAULT_LEARN_RATE = 0.01
 
+    # thresholds for determining the relevance of items (possible that both should always have the same value)
+    DEFAULT_POS_CORR_THRESHOLD = 0.65
+    DEFAULT_NEG_CORR_THRESHOLD = 0.65
+
     # TODO: What default options make sense?
     DEFAULT_OPTIONS = frozenset((
 
     ))
 
+    DEFAULT_ITEM_TYPE = SymbolicItem
+    DEFAULT_CONJUNCTIVE_ITEM_TYPE = ConjunctiveItem
+
     def __init__(self) -> None:
         self._learn_rate: float = 0.0
+        self._pos_corr_threshold: float = 0.0
+        self._neg_corr_threshold: float = 0.0
+
         self._options: Optional[MutableSet[GlobalOption]] = None
 
         self._set_default_values()
@@ -645,6 +599,44 @@ class GlobalParams(metaclass=Singleton):
         self._learn_rate = value
 
     @property
+    def pos_corr_threshold(self) -> float:
+        """ Gets the positive correlation threshold for relevance.
+
+        :return: a float between 0.0 and 1.0 (inclusive)
+        """
+        return self._pos_corr_threshold
+
+    @pos_corr_threshold.setter
+    def pos_corr_threshold(self, value: float) -> None:
+        """ Sets the positive correlation threshold for relevance.
+
+        :param value: the new positive correlation threshold--a float between 0.0 and 1.0 (inclusive)
+        :return: None
+        """
+        if value < 0.0 or value > 1.0:
+            raise ValueError('positive correlation threshold must be between zero and one (inclusive).')
+        self._pos_corr_threshold = value
+
+    @property
+    def neg_corr_threshold(self) -> float:
+        """ Gets the negative correlation threshold for relevance.
+
+        :return: a float between 0.0 and 1.0 (inclusive)
+        """
+        return self._pos_corr_threshold
+
+    @neg_corr_threshold.setter
+    def neg_corr_threshold(self, value: float) -> None:
+        """ Sets the negative correlation threshold for relevance.
+
+        :param value: the new negative correlation threshold--a float between 0.0 and 1.0 (inclusive)
+        :return: None
+        """
+        if value < 0.0 or value > 1.0:
+            raise ValueError('negative correlation threshold must be between zero and one (inclusive).')
+        self._pos_corr_threshold = value
+
+    @property
     def options(self) -> MutableSet[GlobalOption]:
         return self._options
 
@@ -656,20 +648,23 @@ class GlobalParams(metaclass=Singleton):
         options = set(enhancements)
         if GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE in enhancements:
             if GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA not in enhancements:
-                warn('Optional enhancement EC_MOST_SPECIFIC_ON_MULTIPLE requires EC_DEFER_TO_MORE_SPECIFIC!')
-                warn('Optional enhancement EC_DEFER_TO_MORE_SPECIFIC_SCHEMA was added automatically.')
+                warn('Option EC_MOST_SPECIFIC_ON_MULTIPLE requires EC_DEFER_TO_MORE_SPECIFIC!')
+                warn('Option EC_DEFER_TO_MORE_SPECIFIC_SCHEMA was added automatically.')
                 options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
 
         return options
 
-    def is_enabled(self, enhancement: GlobalOption) -> bool:
-        return enhancement in self._options
+    def is_enabled(self, option: GlobalOption) -> bool:
+        return option in self._options
 
     def reset(self):
         self._set_default_values()
 
     def _set_default_values(self) -> None:
         self.learn_rate = GlobalParams.DEFAULT_LEARN_RATE
+        self.pos_corr_threshold = GlobalParams.DEFAULT_POS_CORR_THRESHOLD
+        self.neg_corr_threshold = GlobalParams.DEFAULT_NEG_CORR_THRESHOLD
+
         self.options = GlobalParams.DEFAULT_OPTIONS
 
 
@@ -1163,11 +1158,114 @@ class CompositeAction:
     pass
 
 
-class StateAssertion:
+class Assertion(ABC):
+    def __init__(self, negated: bool) -> None:
+        self._is_negated = negated
 
-    def __init__(self, item_asserts: Optional[Collection[ItemAssertion, ...]] = None):
-        self._pos_asserts = frozenset(filter(lambda ia: not ia.negated, item_asserts)) if item_asserts else frozenset()
-        self._neg_asserts = frozenset(filter(lambda ia: ia.negated, item_asserts)) if item_asserts else frozenset()
+    @abstractmethod
+    def __iter__(self) -> Iterator[Assertion]:
+        pass
+
+    @abstractmethod
+    def __len__(self) -> int:
+        pass
+
+    @abstractmethod
+    def __contains__(self, assertion: Assertion) -> bool:
+        pass
+
+    @abstractmethod
+    def __hash__(self) -> int:
+        pass
+
+    @property
+    def is_negated(self) -> bool:
+        return self._is_negated
+
+    @abstractmethod
+    def is_satisfied(self, state: State) -> bool:
+        pass
+
+    @property
+    @abstractmethod
+    def items(self) -> frozenset[Item]:
+        pass
+
+    @staticmethod
+    def replicate_with(old: Assertion, new: Assertion) -> StateAssertion:
+        for ia in new:
+            if ia in old:
+                raise ValueError('New assertion already exists in old assertion')
+
+        return StateAssertion(asserts=(*old, *new))
+
+
+class ItemAssertion(Assertion):
+
+    def __init__(self, item: Item, negated: bool = False) -> None:
+        super().__init__(negated)
+
+        self._item = item
+
+    @property
+    def item(self) -> Item:
+        return self._item
+
+    @property
+    def items(self) -> frozenset[Item]:
+        return frozenset([self._item])
+
+    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
+        if self.is_negated:
+            return self._item.is_off(state, *args, **kwargs)
+        else:
+            return self._item.is_on(state, *args, **kwargs)
+
+    # TODO: Can this be removed???
+    def copy(self) -> ItemAssertion:
+        """ Performs a shallow copy of this ItemAssertion. """
+        return ItemAssertion(item=self._item, negated=self.is_negated)
+
+    def __iter__(self) -> Iterator[Assertion]:
+        yield from [self]
+
+    def __len__(self) -> int:
+        return 1
+
+    def __contains__(self, assertion: Assertion) -> bool:
+        return self == assertion
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, ItemAssertion):
+            return self._item == other._item and self.is_negated == other.is_negated
+        elif isinstance(other, Item):
+            return self._item == other
+
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        """ Returns a hash of this object.
+
+        :return: an integer hash of this object
+        """
+        return hash((self._item, self.is_negated))
+
+    def __str__(self) -> str:
+        return f'{"~" if self.is_negated else ""}{self._item}'
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'item': self._item, 'negated': self.is_negated})
+
+
+class StateAssertion(Assertion):
+
+    def __init__(self, asserts: Optional[Collection[ItemAssertion, ...]] = None, negated: bool = False):
+        super().__init__(negated)
+
+        self._pos_asserts = frozenset(filter(lambda ia: not ia.is_negated, asserts)) if asserts else frozenset()
+        self._neg_asserts = frozenset(filter(lambda ia: ia.is_negated, asserts)) if asserts else frozenset()
+
+        self._items = frozenset(itertools.chain.from_iterable(a.items for a in asserts)) if asserts else frozenset()
 
     def __iter__(self) -> Iterator[ItemAssertion]:
         yield from self._pos_asserts
@@ -1177,7 +1275,7 @@ class StateAssertion:
         return len(self._pos_asserts) + len(self._neg_asserts)
 
     def __contains__(self, item_assert: ItemAssertion) -> bool:
-        return (item_assert in self._neg_asserts if item_assert.negated
+        return (item_assert in self._neg_asserts if item_assert.is_negated
                 else item_assert in self._pos_asserts)
 
     def __eq__(self, other) -> bool:
@@ -1194,11 +1292,11 @@ class StateAssertion:
         return ','.join(map(str, self))
 
     def __repr__(self) -> str:
-        return repr_str(self, {'item_asserts': str(self)})
+        return repr_str(self, {'asserts': str(self)})
 
     @property
-    def items(self) -> Collection[Item]:
-        return [ia.item for ia in self]
+    def items(self) -> frozenset[Item]:
+        return self._items
 
     def copy(self) -> StateAssertion:
         """ Returns a shallow copy of this object.
@@ -1222,66 +1320,58 @@ class StateAssertion:
         """
         return all({ia.is_satisfied(state, *args, **kwargs) for ia in self})
 
-    def replicate_with(self, item_assert: ItemAssertion) -> StateAssertion:
-        if self.__contains__(item_assert):
-            raise ValueError('ItemAssertion already exists in StateAssertion')
-
-        return StateAssertion(item_asserts=(*self, item_assert))
+    @property
+    def primitive_value(self):
+        return (
+                sum(ia.item.primitive_value for ia in self._pos_asserts) -
+                sum(ia.item.primitive_value for ia in self._neg_asserts)
+        )
 
     @property
-    def total_primitive_value(self):
-        return sum(ia.item.primitive_value for ia in self._pos_asserts)
-
-    @property
-    def total_delegated_value(self):
+    def delegated_value(self):
         return sum(ia.item.delegated_value for ia in self._pos_asserts)
+
+    @property
+    def avg_accessible_value(self) -> float:
+        return sum(ia.item.avg_accessible_value for ia in self._pos_asserts)
 
 
 NULL_STATE_ASSERT = StateAssertion()
 
 
 class ExtendedItemCollection(Observable):
-    # TODO: Move these into GlobalParams
-    # thresholds for determining the relevance of items (possible that both should always have the same value)
-    POS_CORR_RELEVANCE_THRESHOLD = 0.65
-    NEG_CORR_RELEVANCE_THRESHOLD = 0.65
-
-    def __init__(self, suppress_list: Collection[Item] = None, null_member: ItemStats = None):
+    def __init__(self, suppressed_items: Collection[Item] = None, null_member: ItemStats = None):
         super().__init__()
 
-        self._suppress_list: list[Item] = suppress_list or list()
         self._null_member = null_member
+
+        self._suppressed_items: list[Item] = suppressed_items or list()
+
+        # TODO: these names are confusing... they are not items!
+        self._relevant_items: MutableSet[Assertion] = set()
+        self._new_relevant_items: MutableSet[Assertion] = set()
 
         self._stats: dict[Any, ItemStats] = defaultdict(lambda: self._null_member)
 
         self._item_pool = ItemPool()
 
-        self._relevant_items: MutableSet[ItemAssertion] = set()
-        self._new_relevant_items: MutableSet[ItemAssertion] = set()
-
     @property
     def stats(self) -> dict[Any, Any]:
         return self._stats
 
-    def clear_stats(self):
-        self._stats.clear()
-
     @property
-    def suppress_list(self) -> Collection[Item]:
-        return self._suppress_list
+    def suppressed_items(self) -> Collection[Item]:
+        return self._suppressed_items
 
-    # TODO: "relevant items" is confusing. these are item assertions. this terminology is a carry-over from Drescher.
+    # TODO: "relevant items" is confusing. these are item assertion. this terminology is a carry-over from Drescher.
     @property
-    def relevant_items(self) -> frozenset[ItemAssertion]:
+    def relevant_items(self) -> frozenset[Assertion]:
         return frozenset(self._relevant_items)
 
-    def update_relevant_items(self, item_assert: ItemAssertion):
-        if item_assert not in self._relevant_items:
-            self._relevant_items.add(item_assert)
-            self._new_relevant_items.add(item_assert)
-
-    def known_relevant_item(self, item_assert: ItemAssertion) -> bool:
-        return item_assert in self._relevant_items
+    def update_relevant_items(self, assertion: Assertion):
+        if assertion not in self._relevant_items:
+            self._relevant_items.add(assertion)
+            self._new_relevant_items.add(assertion)
 
     def notify_all(self, *args, **kwargs) -> None:
         if 'source' not in kwargs:
@@ -1292,12 +1382,13 @@ class ExtendedItemCollection(Observable):
         # clears the set
         self._new_relevant_items = set()
 
+    # TODO: this is an ugly design! there must be a better way....
     @property
-    def new_relevant_items(self) -> frozenset[ItemAssertion]:
+    def new_relevant_items(self) -> frozenset[Assertion]:
         return frozenset(self._new_relevant_items)
 
     @new_relevant_items.setter
-    def new_relevant_items(self, value: Collection[ItemAssertion]) -> None:
+    def new_relevant_items(self, value: Collection[Assertion]) -> None:
         self._new_relevant_items = frozenset(value)
 
     def __str__(self) -> str:
@@ -1320,15 +1411,28 @@ class ExtendedItemCollection(Observable):
         return repr_str(self, attr_values)
 
 
-class ContextRegistry(metaclass=Singleton):
+class AssertionRegistry(metaclass=Singleton):
+    """ Stores learned assertion.
+
+    Note: this class is primarily used by extended results to store learned contexts. It supports the creation of
+    "conjunctive" result spin-off schemas. (See Drescher 1991, Sec. 4.1.4 for details on result conjunctions.)
+
+    """
+
     def __init__(self) -> None:
-        self._known_contexts: MutableSet[StateAssertion] = set()
+        self._assertions: MutableSet[Assertion] = set()
 
-    def __iter__(self) -> Iterator[StateAssertion]:
-        yield from self._known_contexts
+    def __len__(self) -> int:
+        return len(self._assertions)
 
-    def add(self, assertion: StateAssertion) -> None:
-        self._known_contexts.add(assertion)
+    def __iter__(self) -> Iterator[Assertion]:
+        yield from self._assertions
+
+    def __contains__(self, assertion: Assertion) -> bool:
+        return assertion in self._assertions
+
+    def add(self, assertion: Assertion) -> None:
+        self._assertions.add(assertion)
 
 
 class ExtendedResult(ExtendedItemCollection):
@@ -1356,10 +1460,9 @@ class ExtendedResult(ExtendedItemCollection):
             reliable schemas
             choins of schemas
     """
-    _context_registry = ContextRegistry()
 
     def __init__(self, result: StateAssertion) -> None:
-        super().__init__(suppress_list=result.items, null_member=NULL_ER_ITEM_STATS)
+        super().__init__(suppressed_items=result.items, null_member=NULL_ER_ITEM_STATS)
 
     @property
     def stats(self) -> dict[Item, ERItemStats]:
@@ -1372,37 +1475,37 @@ class ExtendedResult(ExtendedItemCollection):
 
         item_stats.update(on=on, activated=activated, count=count)
 
-        if item not in self.suppress_list:
+        if item not in self.suppressed_items:
             self._check_for_relevance(item, item_stats)
 
     # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
     # TODO: statistics.
-    def update_all(self, activated: bool, new: Collection[StateElement], lost: Collection[StateElement],
+    def update_all(self, activated: bool, new: Collection[Item], lost: Collection[Item],
                    count: int = 1) -> None:
 
         # "a trial for which the result was already satisfied before the action was taken does not count as a
         # positive-transition trial; and one for which the result was already unsatisfied does not count
         # as a negative-transition trial" (see Drescher, 1991, p. 72)
         if new:
-            for se in new:
-                self.update(item=self._item_pool.get(se), on=True, activated=activated, count=count)
+            for item in new:
+                self.update(item=item, on=True, activated=activated, count=count)
 
         if lost:
-            for se in lost:
-                self.update(item=self._item_pool.get(se), on=False, activated=activated, count=count)
+            for item in lost:
+                self.update(item=item, on=False, activated=activated, count=count)
 
         if self.new_relevant_items:
             self.notify_all(source=self)
 
     def _check_for_relevance(self, item: Item, item_stats: ERItemStats) -> None:
-        if item_stats.positive_transition_corr > self.POS_CORR_RELEVANCE_THRESHOLD:
+        if item_stats.positive_transition_corr > GlobalParams().pos_corr_threshold:
             item_assert = ItemAssertion(item)
-            if not self.known_relevant_item(item_assert):
+            if item_assert not in self.relevant_items:
                 self.update_relevant_items(item_assert)
 
-        elif item_stats.negative_transition_corr > self.NEG_CORR_RELEVANCE_THRESHOLD:
+        elif item_stats.negative_transition_corr > GlobalParams().neg_corr_threshold:
             item_assert = ItemAssertion(item, negated=True)
-            if not self.known_relevant_item(item_assert):
+            if item_assert not in self.relevant_items:
                 self.update_relevant_items(item_assert)
 
 
@@ -1423,7 +1526,7 @@ class ExtendedContext(ExtendedItemCollection):
     """
 
     def __init__(self, context: StateAssertion) -> None:
-        super().__init__(suppress_list=context.items, null_member=NULL_EC_ITEM_STATS)
+        super().__init__(suppressed_items=context.items, null_member=NULL_EC_ITEM_STATS)
 
         self._pending_relevant_items = set()
         self._pending_max_specificity = -np.inf
@@ -1439,7 +1542,7 @@ class ExtendedContext(ExtendedItemCollection):
 
         item_stats.update(on, success, count)
 
-        if item not in self.suppress_list:
+        if item not in self.suppressed_items:
             self._check_for_relevance(item, item_stats)
 
     # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
@@ -1461,7 +1564,7 @@ class ExtendedContext(ExtendedItemCollection):
             # after spinoff, all stats are reset to remove the influence of relevant items in stats; tracking the
             # correlations for these items is deferred to the schema's context spin-offs
             if GlobalParams().is_enabled(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA):
-                self.clear_stats()
+                self.stats.clear()
 
     def defer_update_to_spin_offs(self, state: State) -> bool:
         """ Checks if this state activates previously recognized non-negated relevant items. If so, defer to spin-offs.
@@ -1471,7 +1574,7 @@ class ExtendedContext(ExtendedItemCollection):
         :param state: a State
         :return: True if should defer stats updates for this state to this schema's spin-offs.
         """
-        return any({not ia.negated and ia.is_satisfied(state) for ia in self.relevant_items})
+        return any({not ia.is_negated and ia.is_satisfied(state) for ia in self.relevant_items})
 
     @property
     def pending_relevant_items(self) -> frozenset[ItemAssertion]:
@@ -1495,12 +1598,12 @@ class ExtendedContext(ExtendedItemCollection):
     def _check_for_relevance(self, item: Item, item_stats: ECItemStats) -> None:
         # if item is relevant, a new item assertion is created
         item_assert = (
-            ItemAssertion(item) if item_stats.success_corr > self.POS_CORR_RELEVANCE_THRESHOLD
-            else ItemAssertion(item, negated=True) if item_stats.failure_corr > self.NEG_CORR_RELEVANCE_THRESHOLD
-            else None
+            ItemAssertion(item) if item_stats.success_corr > GlobalParams().pos_corr_threshold else
+            ItemAssertion(item, negated=True) if item_stats.failure_corr > GlobalParams().neg_corr_threshold else
+            None
         )
 
-        if item_assert and not self.known_relevant_item(item_assert):
+        if item_assert and item_assert not in self.relevant_items:
             specificity = self.stats[item].specificity
 
             # if enabled, this enhancement allows only a single relevant item per update (the most "specific").
@@ -1656,8 +1759,8 @@ class Schema(Observer, Observable, UniqueIdMixin):
                activated: bool,
                s_prev: Optional[State],
                s_curr: State,
-               new: Collection[StateElement] = None,
-               lost: Collection[StateElement] = None, count=1) -> None:
+               new: Collection[Item] = None,
+               lost: Collection[Item] = None, count=1) -> None:
         """
 
             Note: As a result of these updates, one or more notifications may be generated by the schema's
@@ -1688,13 +1791,12 @@ class Schema(Observer, Observable, UniqueIdMixin):
         if activated and s_prev:
             self._extended_context.update_all(state=s_prev, success=success, count=count)
 
-    # invoked by the schema's extended context or extended result when one of their items is
-    # determined to be relevant
+    # invoked by a schema's extended context or extended result when a relevant item is discovered
     def receive(self, *args, **kwargs) -> None:
 
         # ext_source should be an ExtendedContext, ExtendedResult, or one of their subclasses
         ext_source: ExtendedItemCollection = kwargs['source']
-        relevant_items: Collection[ItemAssertion] = ext_source.new_relevant_items
+        relevant_items: Collection[Assertion] = ext_source.new_relevant_items
 
         spin_off_type = (
             Schema.SpinOffType.CONTEXT if isinstance(ext_source, ExtendedContext) else
@@ -1814,10 +1916,10 @@ class SchemaTree:
 
     1. Each tree node contains a set of schemas with identical contexts and actions.
     2. Each tree node (except the root) has the same action as their descendants.
-    3. Each tree node's depth equals the number of item assertions in its context plus one; for example, the
+    3. Each tree node's depth equals the number of item assertion in its context plus one; for example, the
     tree nodes corresponding to primitive (action only) schemas would have a tree height of one.
-    4. Each tree node's context contains all of the item assertions in their ancestors plus one new item assertion
-    not found in ANY ancestor. For example, if a node's parent's context contains item assertions 1,2,3, then it
+    4. Each tree node's context contains all of the item assertion in their ancestors plus one new item assertion
+    not found in ANY ancestor. For example, if a node's parent's context contains item assertion 1,2,3, then it
     will contain 1,2,and 3 plus a new item assertion (say 4).
 
     """
@@ -1932,7 +2034,7 @@ class SchemaTree:
         # 2. node has proper depth for context
         if len(node.context) != node.depth - 1:
             if raise_on_invalid:
-                raise ValueError('invalid node: depth must equal the number of item assertions in context minus 1')
+                raise ValueError('invalid node: depth must equal the number of item assertion in context minus 1')
             return False
 
         # checks that apply to nodes that contain non-primitive schemas (context + action)
@@ -1947,7 +2049,7 @@ class SchemaTree:
             # 4. node's context contains all of parents
             if not all({ia in node.context for ia in node.parent.context}):
                 if raise_on_invalid:
-                    raise ValueError('invalid node: context should contain all of parent\'s item assertions')
+                    raise ValueError('invalid node: context should contain all of parent\'s item assertion')
                 return False
 
             # 5. node's context contains exactly one item assertion not in parent's context

@@ -9,20 +9,24 @@ from typing import Optional
 
 import numpy as np
 
-from schema_mechanism.data_structures import Action
-from schema_mechanism.data_structures import CompositeAction
-from schema_mechanism.data_structures import GlobalStats
-from schema_mechanism.data_structures import Item
-from schema_mechanism.data_structures import ItemAssertion
-from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import NULL_STATE_ASSERT
-from schema_mechanism.data_structures import ReadOnlyItemPool
-from schema_mechanism.data_structures import Schema
-from schema_mechanism.data_structures import SchemaTree
-from schema_mechanism.data_structures import State
-from schema_mechanism.data_structures import StateAssertion
-from schema_mechanism.data_structures import lost_state
-from schema_mechanism.data_structures import new_state
+from schema_mechanism.core import Action
+from schema_mechanism.core import Assertion
+from schema_mechanism.core import CompositeAction
+from schema_mechanism.core import ConjunctiveItem
+from schema_mechanism.core import GlobalOption
+from schema_mechanism.core import GlobalParams
+from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import Item
+from schema_mechanism.core import ItemAssertion
+from schema_mechanism.core import ItemPool
+from schema_mechanism.core import NULL_STATE_ASSERT
+from schema_mechanism.core import ReadOnlyItemPool
+from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaTree
+from schema_mechanism.core import State
+from schema_mechanism.core import StateAssertion
+from schema_mechanism.core import lost_state
+from schema_mechanism.core import new_state
 from schema_mechanism.util import Observer
 
 
@@ -102,8 +106,8 @@ class SchemaMemory(Observer):
         applicable, schema = selection_details
 
         # create new and lost state element collections
-        new = new_state(selection_state, result_state)
-        lost = lost_state(selection_state, result_state)
+        new = set(ItemPool().get(se) for se in new_state(selection_state, result_state))
+        lost = set(ItemPool().get(se) for se in lost_state(selection_state, result_state))
 
         # update global statistics
         self._stats.n_updates += len(applicable)
@@ -204,7 +208,7 @@ def primitive_values(schemas: Sequence[Schema]) -> np.ndarray:
     return (
         np.array([])
         if schemas is None or len(schemas) == 0
-        else np.array([s.result.total_primitive_value for s in schemas])
+        else np.array([s.result.primitive_value for s in schemas])
     )
 
 
@@ -212,7 +216,7 @@ def delegated_values(schemas: Sequence[Schema]) -> np.ndarray:
     return (
         np.array([])
         if schemas is None or len(schemas) == 0
-        else np.array([s.result.total_delegated_value for s in schemas])
+        else np.array([s.result.delegated_value for s in schemas])
     )
 
 
@@ -481,34 +485,43 @@ class SchemaMechanism:
         return self._selection_details.selected
 
 
-def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, item_assert: ItemAssertion) -> Schema:
+def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion: Assertion) -> Schema:
     """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
 
     :param schema: the schema from which the new spin-off schema will be based
     :param spin_off_type: a supported Schema.SpinOffType
-    :param item_assert: the item assertion to add to the context or result of a spin-off schema
+    :param assertion: an assertion to add to the context or result of a spin-off schema
 
     :return: a spin-off schema based on this one
     """
+    if not schema:
+        ValueError('Schema must not be None')
+
+    if not assertion or len(assertion) == 0:
+        ValueError('Assertion must not be None or empty')
+
     if Schema.SpinOffType.CONTEXT == spin_off_type:
         new_context = (
-            StateAssertion(item_asserts=(item_assert,))
+            StateAssertion(asserts=(assertion,))
             if schema.context is NULL_STATE_ASSERT
-            else schema.context.replicate_with(item_assert)
+            else Assertion.replicate_with(old=schema.context, new=assertion)
         )
-        return Schema(action=schema.action,
-                      context=new_context,
-                      result=schema.result)
+
+        # add conjunctive contexts to ItemPool to support learning of conjunctive results
+        if not GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS):
+            if len(new_context) > 1:
+                _ = ItemPool().get(new_context, item_type=ConjunctiveItem)
+
+        return Schema(action=schema.action, context=new_context, result=schema.result)
 
     elif Schema.SpinOffType.RESULT == spin_off_type:
         new_result = (
-            StateAssertion(item_asserts=(item_assert,))
+            StateAssertion(asserts=(assertion,))
             if schema.result is NULL_STATE_ASSERT
-            else schema.result.replicate_with(item_assert)
+            else Assertion.replicate_with(old=schema.result, new=assertion)
         )
-        return Schema(action=schema.action,
-                      context=schema.context,
-                      result=new_result)
+
+        return Schema(action=schema.action, context=schema.context, result=new_result)
 
     else:
         raise ValueError(f'Unsupported spin-off mode: {spin_off_type}')

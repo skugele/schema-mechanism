@@ -6,15 +6,15 @@ from unittest.mock import MagicMock
 import numpy as np
 
 import test_share
-from schema_mechanism.data_structures import Action
-from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import NULL_STATE_ASSERT
-from schema_mechanism.data_structures import Schema
-from schema_mechanism.data_structures import State
-from schema_mechanism.data_structures import StateAssertion
-from schema_mechanism.data_structures import SymbolicItem
-from schema_mechanism.data_structures import lost_state
-from schema_mechanism.data_structures import new_state
+from schema_mechanism.core import Action
+from schema_mechanism.core import ItemPool
+from schema_mechanism.core import NULL_STATE_ASSERT
+from schema_mechanism.core import Schema
+from schema_mechanism.core import State
+from schema_mechanism.core import StateAssertion
+from schema_mechanism.core import SymbolicItem
+from schema_mechanism.core import lost_state
+from schema_mechanism.core import new_state
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
@@ -63,9 +63,9 @@ class TestSchema(TestCase):
             self.fail(f'Unexpected exception raised: {e}')
 
         # Verify immutability
-        s = Schema(context=sym_state_assert('1'),
+        s = Schema(context=sym_state_assert('1,'),
                    action=Action(),
-                   result=sym_state_assert('2'))
+                   result=sym_state_assert('2,'))
 
         try:
             # noinspection PyPropertyAccess
@@ -155,7 +155,7 @@ class TestSchema(TestCase):
 
         # Tests overriding conditions
         #############################
-        schema.overriding_conditions = sym_state_assert('5')
+        schema.overriding_conditions = sym_state_assert('5,')
 
         # expected to be applicable
         self.assertTrue(schema.is_applicable(state=sym_state('1,3,4')))
@@ -424,17 +424,14 @@ class TestSchema(TestCase):
         s_prev = State(sample(range(n_items), k=n_state_elements))
         s_curr = State(sample(range(n_items), k=n_state_elements))
 
-        v_prev = ItemPoolStateView(s_prev)
-        v_curr = ItemPoolStateView(s_curr)
-
         new = new_state(s_prev, s_curr)
         lost = lost_state(s_prev, s_curr)
 
         # TODO: This is WAY too slow...
         start = time()
         self.schema.update(activated=True,
-                           v_prev=v_prev,
-                           v_curr=v_curr,
+                           s_prev=s_prev,
+                           s_curr=s_curr,
                            new=new,
                            lost=lost)
         end = time()

@@ -4,11 +4,11 @@ from unittest import TestCase
 import numpy as np
 
 import test_share
-from schema_mechanism.data_structures import ECItemStats
-from schema_mechanism.data_structures import ERItemStats
-from schema_mechanism.data_structures import ReadOnlyECItemStats
-from schema_mechanism.data_structures import ReadOnlyERItemStats
-from schema_mechanism.data_structures import SchemaStats
+from schema_mechanism.core import ECItemStats
+from schema_mechanism.core import ERItemStats
+from schema_mechanism.core import ReadOnlyECItemStats
+from schema_mechanism.core import ReadOnlyERItemStats
+from schema_mechanism.core import SchemaStats
 from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive

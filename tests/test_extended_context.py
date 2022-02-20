@@ -3,14 +3,14 @@ from unittest import TestCase
 from unittest.mock import PropertyMock
 from unittest.mock import patch
 
-from schema_mechanism.data_structures import ExtendedContext
-from schema_mechanism.data_structures import GlobalOption
-from schema_mechanism.data_structures import GlobalParams
-from schema_mechanism.data_structures import ItemAssertion
-from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import NULL_EC_ITEM_STATS
-from schema_mechanism.data_structures import State
-from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.core import ExtendedContext
+from schema_mechanism.core import GlobalOption
+from schema_mechanism.core import GlobalParams
+from schema_mechanism.core import ItemAssertion
+from schema_mechanism.core import ItemPool
+from schema_mechanism.core import NULL_EC_ITEM_STATS
+from schema_mechanism.core import State
+from schema_mechanism.core import SymbolicItem
 from schema_mechanism.func_api import sym_asserts
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
@@ -42,10 +42,10 @@ class TestExtendedContext(TestCase):
             self.assertIs(NULL_EC_ITEM_STATS, ec.stats[i])
 
         for ia in self.context:
-            self.assertIn(ia.item, ec.suppress_list)
+            self.assertIn(ia.item, ec.suppressed_items)
 
     def test_update(self):
-        state = sample(range(self.N_ITEMS), k=10)
+        state = list(map(str, sample(range(self.N_ITEMS), k=10)))
 
         # update an item from this state assuming the action was taken
         new_item = sym_item(state[0])
@@ -53,7 +53,7 @@ class TestExtendedContext(TestCase):
 
         item_stats = self.ec.stats[new_item]
         for i in ItemPool():
-            if i.state_element != state[0]:
+            if i.source != state[0]:
                 self.assertIs(NULL_EC_ITEM_STATS, self.ec.stats[i])
             else:
                 self.assertIsNot(NULL_EC_ITEM_STATS, item_stats)
@@ -78,7 +78,7 @@ class TestExtendedContext(TestCase):
         for i in ItemPool():
             item_stats = self.ec.stats[i]
 
-            if i.state_element in state:
+            if i.source in state:
                 self.assertEqual(1, item_stats.n_on)
                 self.assertEqual(1, item_stats.n_success_and_on)
 
@@ -142,7 +142,7 @@ class TestExtendedContext(TestCase):
         defer_state_1 = sym_state('1,5')
         defer_state_2 = sym_state('1,7,8')
 
-        with patch(target='schema_mechanism.data_structures.ExtendedContext.relevant_items',
+        with patch(target='schema_mechanism.core.ExtendedContext.relevant_items',
                    new_callable=PropertyMock) as mock_relevant_items:
             mock_relevant_items.return_value = set(sym_asserts('5,~6,7'))
             ec = ExtendedContext(context=sym_state_assert('1,~2'))
@@ -182,8 +182,8 @@ class TestExtendedContext(TestCase):
         self.ec.update(i1, on=True, success=True)
 
         i1_stats = self.ec.stats[i1]
-        self.assertTrue(i1_stats.success_corr > self.ec.POS_CORR_RELEVANCE_THRESHOLD)
-        self.assertTrue(i1_stats.failure_corr <= self.ec.NEG_CORR_RELEVANCE_THRESHOLD)
+        self.assertTrue(i1_stats.success_corr > GlobalParams().pos_corr_threshold)
+        self.assertTrue(i1_stats.failure_corr <= GlobalParams().neg_corr_threshold)
 
         self.assertEqual(1, len(self.ec.pending_relevant_items))
         self.ec.check_pending_relevant_items()
@@ -213,15 +213,15 @@ class TestExtendedContext(TestCase):
     def test_relevant_items_2(self):
         i1 = sym_item('100')
 
-        self.assertIn(i1, self.ec.suppress_list)
+        self.assertIn(i1, self.ec.suppressed_items)
 
         # test updates that SHOULD NOT result in relevant item determination
         self.ec.update(i1, on=True, success=True, count=10)
         self.ec.update(i1, on=False, success=False, count=10)
 
         i1_stats = self.ec.stats[i1]
-        self.assertTrue(i1_stats.success_corr > self.ec.POS_CORR_RELEVANCE_THRESHOLD)
-        self.assertTrue(i1_stats.failure_corr <= self.ec.NEG_CORR_RELEVANCE_THRESHOLD)
+        self.assertTrue(i1_stats.success_corr > GlobalParams().pos_corr_threshold)
+        self.assertTrue(i1_stats.failure_corr <= GlobalParams().neg_corr_threshold)
 
         # verify suppressed item NOT in relevant items list
         self.assertEqual(0, len(self.ec.pending_relevant_items))

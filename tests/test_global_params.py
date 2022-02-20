@@ -1,7 +1,7 @@
 import unittest
 
-from schema_mechanism.data_structures import GlobalOption
-from schema_mechanism.data_structures import GlobalParams
+from schema_mechanism.core import GlobalOption
+from schema_mechanism.core import GlobalParams
 from test_share.test_func import common_test_setup
 
 

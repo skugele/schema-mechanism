@@ -1,9 +1,9 @@
 from collections import Hashable
 from typing import Any
 
-from schema_mechanism.data_structures import GlobalParams
-from schema_mechanism.data_structures import GlobalStats
-from schema_mechanism.data_structures import ItemPool
+from schema_mechanism.core import GlobalParams
+from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import ItemPool
 
 
 def common_test_setup():

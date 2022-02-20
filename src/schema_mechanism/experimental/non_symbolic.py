@@ -3,7 +3,7 @@ from typing import Any
 
 import numpy as np
 
-from schema_mechanism.data_structures import Item
+from schema_mechanism.core import Item
 from schema_mechanism.util import cosine_sims
 
 ContinuousStateElement = np.ndarray

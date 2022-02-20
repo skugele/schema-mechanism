@@ -1,3 +1,4 @@
+import unittest
 from random import sample
 from time import time
 from unittest import TestCase
@@ -5,13 +6,15 @@ from unittest import TestCase
 import numpy as np
 
 import test_share
-from schema_mechanism.data_structures import DelegatedValueHelper
-from schema_mechanism.data_structures import GlobalParams
-from schema_mechanism.data_structures import GlobalStats
-from schema_mechanism.data_structures import ItemPool
-from schema_mechanism.data_structures import State
-from schema_mechanism.data_structures import SymbolicItem
+from schema_mechanism.core import ConjunctiveItem
+from schema_mechanism.core import DelegatedValueHelper
+from schema_mechanism.core import GlobalParams
+from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import ItemPool
+from schema_mechanism.core import State
+from schema_mechanism.core import SymbolicItem
 from schema_mechanism.func_api import sym_state
+from schema_mechanism.func_api import sym_state_assert
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_consistent
@@ -28,15 +31,15 @@ class TestSymbolicItem(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self.item = SymbolicItem(state_element='1234', primitive_value=1.0)
+        self.item = SymbolicItem(source='1234', primitive_value=1.0)
 
     def test_init(self):
         # both the state element and the primitive value should be set properly
-        self.assertEqual('1234', self.item.state_element)
+        self.assertEqual('1234', self.item.source)
         self.assertEqual(1.0, self.item.primitive_value)
 
         # default primitive value should be 0.0
-        i = SymbolicItem(state_element='1234')
+        i = SymbolicItem(source='1234')
         self.assertEqual(0.0, i.primitive_value)
 
     def test_primitive_value(self):
@@ -284,3 +287,95 @@ class TestDelegatedValueHelper(TestCase):
 
         self.assertEqual(3.25, self.dvh.avg_accessible_value)
         self.assertEqual(self.dvh.avg_accessible_value - GlobalStats().baseline_value, self.dvh.delegated_value)
+
+
+class TestConjunctiveItem(unittest.TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+        self.pool = ItemPool()
+
+        # fill ItemPool
+        _ = self.pool.get('1', primitive_value=-1.0)
+        _ = self.pool.get('2', primitive_value=0.0)
+        _ = self.pool.get('3', primitive_value=3.0)
+        _ = self.pool.get('4', primitive_value=-3.0)
+
+        self.sa = sym_state_assert('1,2,~3,4')
+        self.item = ConjunctiveItem(source=self.sa)
+
+    def test_init(self):
+        # test: the source should be set properly
+        self.assertEqual(self.sa, self.item.source)
+
+        # test: default primitive value should be 0.0
+        i = SymbolicItem(source=sym_state_assert('UNK1,UNK2'))
+        self.assertEqual(0.0, i.primitive_value)
+
+    def test_primitive_value(self):
+        # test: a item's primitive value should equal the primitive value of its source assertion
+        self.assertEqual(self.sa.primitive_value, self.item.primitive_value)
+
+    def test_is_on(self):
+        # item expected to be ON for these states
+        self.assertTrue(self.item.is_on(sym_state('1,2,4')))
+        self.assertTrue(self.item.is_on(sym_state('1,2,4,5,6')))
+
+        # item expected to be OFF for these states
+        self.assertFalse(self.item.is_on(sym_state('')))
+        self.assertFalse(self.item.is_on(sym_state('1,2,3,4')))
+        self.assertFalse(self.item.is_on(sym_state('1,4')))
+        self.assertFalse(self.item.is_on(sym_state('2,4')))
+
+    def test_copy(self):
+        copy = self.item.copy()
+
+        self.assertEqual(self.item, copy)
+        self.assertIsNot(self.item, copy)
+
+    def test_equal(self):
+        copy = self.item.copy()
+        other = ConjunctiveItem(sym_state_assert('~7,8,9'))
+
+        self.assertEqual(self.item, self.item)
+        self.assertEqual(self.item, copy)
+        self.assertNotEqual(self.item, other)
+
+        self.assertTrue(is_eq_reflexive(self.item))
+        self.assertTrue(is_eq_symmetric(x=self.item, y=copy))
+        self.assertTrue(is_eq_transitive(x=self.item, y=copy, z=copy.copy()))
+        self.assertTrue(is_eq_consistent(x=self.item, y=copy))
+        self.assertTrue(is_eq_with_null_is_false(self.item))
+
+    def test_hash(self):
+        self.assertIsInstance(hash(self.item), int)
+        self.assertTrue(is_hash_consistent(self.item))
+        self.assertTrue(is_hash_same_for_equal_objects(x=self.item, y=self.item.copy()))
+
+    def test_item_from_pool(self):
+        sa1 = sym_state_assert('2,~3,~4')
+
+        len_before = len(self.pool)
+        item1 = self.pool.get(source=sa1, item_type=ConjunctiveItem)
+
+        self.assertIsInstance(item1, ConjunctiveItem)
+        self.assertEqual(sa1, item1.source)
+        self.assertEqual(sa1.primitive_value, item1.primitive_value)
+        self.assertEqual(len_before + 1, len(self.pool))
+        self.assertIn(sa1, self.pool)
+
+        len_before = len(self.pool)
+        item2 = self.pool.get(source=sa1, item_type=ConjunctiveItem)
+
+        self.assertIs(item1, item2)
+        self.assertEqual(len_before, len(self.pool))
+
+        sa2 = sym_state_assert('2,3,4')
+
+        len_before = len(self.pool)
+        item3 = self.pool.get(source=sa2, item_type=ConjunctiveItem)
+
+        self.assertNotEqual(item2, item3)
+        self.assertEqual(sa2, item3.source)
+        self.assertEqual(len_before + 1, len(self.pool))
+        self.assertIn(sa2, self.pool)

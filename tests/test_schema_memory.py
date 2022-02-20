@@ -2,12 +2,12 @@ from unittest import TestCase
 from unittest.mock import ANY
 from unittest.mock import MagicMock
 
-from schema_mechanism.data_structures import Schema
-from schema_mechanism.data_structures import SchemaTree
+from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaTree
 from schema_mechanism.func_api import actions
 from schema_mechanism.func_api import primitive_schemas
-from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_asserts
+from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import SchemaMemory
@@ -27,14 +27,14 @@ class TestSchemaMemory(TestCase):
         s2 = sym_schema('/A2/')
         self.tree.add_primitives((s1, s2))
 
-        s1_1 = sym_schema('1/A1/')
-        s1_2 = sym_schema('2/A1/')
-        s1_3 = sym_schema('3/A1/')
-        s1_4 = sym_schema('4/A1/')
+        s1_1 = sym_schema('1,/A1/')
+        s1_2 = sym_schema('2,/A1/')
+        s1_3 = sym_schema('3,/A1/')
+        s1_4 = sym_schema('4,/A1/')
         self.tree.add_context_spin_offs(s1, (s1_1, s1_2, s1_3, s1_4))
 
-        s2_1 = sym_schema('1/A2/')
-        s2_2 = sym_schema('2/A2/')
+        s2_1 = sym_schema('1,/A2/')
+        s2_2 = sym_schema('2,/A2/')
         self.tree.add_context_spin_offs(s2, (s2_1, s2_2))
 
         s1_1_1 = sym_schema('1,2/A1/')
@@ -54,7 +54,7 @@ class TestSchemaMemory(TestCase):
         s1_1_2_3_1 = sym_schema('1,3,7,~9/A1/')
         self.tree.add_context_spin_offs(s1_1_2_3, (s1_1_2_3_1,))
 
-        s1_1_r100 = sym_schema('1/A1/100')
+        s1_1_r100 = sym_schema('1,/A1/100,')
         self.tree.add_result_spin_offs(s1_1, (s1_1_r100,))
 
         # Tree contents:
@@ -92,12 +92,12 @@ class TestSchemaMemory(TestCase):
         primitives = primitive_schemas(actions(5))
         tree.add_primitives(primitives)
 
-        s1_1 = create_context_spin_off(primitives[0], sym_assert('1'))
-        s1_2 = create_context_spin_off(primitives[0], sym_assert('2'))
+        s1_1 = create_context_spin_off(primitives[0], sym_item_assert('1'))
+        s1_2 = create_context_spin_off(primitives[0], sym_item_assert('2'))
         tree.add_context_spin_offs(primitives[0], (s1_1, s1_2))
 
-        s1_1r1 = create_result_spin_off(s1_1, sym_assert('3'))
-        s1_1r2 = create_result_spin_off(s1_1, sym_assert('4'))
+        s1_1r1 = create_result_spin_off(s1_1, sym_item_assert('3'))
+        s1_1r2 = create_result_spin_off(s1_1, sym_item_assert('4'))
         tree.add_result_spin_offs(s1_1, (s1_1r1, s1_1r2))
 
         sm = SchemaMemory.from_tree(tree)
@@ -131,7 +131,7 @@ class TestSchemaMemory(TestCase):
         for node in nodes:
             self.assertTrue(node.context.is_satisfied(state))
 
-        # case 3: includes nodes with context assertions that are negated
+        # case 3: includes nodes with context assertion that are negated
         state = sym_state('1,3,5,7')
         nodes = self.sm.all_applicable(state)
         self.assertEqual(12, len(nodes))
@@ -144,7 +144,7 @@ class TestSchemaMemory(TestCase):
         selection_state = sym_state('1,3,5,7,12')
         result_state = sym_state('10,11,12')
 
-        selected_schema = sym_schema('1,3,5,7/A1/10')
+        selected_schema = sym_schema('1,3,5,7/A1/10,')
 
         all_schemas = set(self.sm.schemas)
         applicable_schemas = set(self.sm.all_applicable(selection_state))
@@ -179,7 +179,7 @@ class TestSchemaMemory(TestCase):
         self.sm.receive(
             source=sym_schema('1,3,7,~9/A1/'),
             spin_off_type=Schema.SpinOffType.CONTEXT,
-            relevant_items=[sym_assert('11')]
+            relevant_items=[sym_item_assert('11')]
         )
         self.assertIn(sym_schema('1,3,7,~9,11/A1/'), self.sm)
         self.assertEqual(n_schemas + 1, len(self.sm))
@@ -188,13 +188,13 @@ class TestSchemaMemory(TestCase):
         # create a result spin-off
         n_schemas = len(self.sm)
 
-        self.assertNotIn(sym_schema('1,3,7,~9/A1/100'), self.sm)
+        self.assertNotIn(sym_schema('1,3,7,~9/A1/100,'), self.sm)
         self.sm.receive(
             source=sym_schema('1,3,7,~9/A1/'),
             spin_off_type=Schema.SpinOffType.RESULT,
-            relevant_items=[sym_assert('100')]
+            relevant_items=[sym_item_assert('100')]
         )
-        self.assertIn(sym_schema('1,3,7,~9/A1/100'), self.sm)
+        self.assertIn(sym_schema('1,3,7,~9/A1/100,'), self.sm)
         self.assertEqual(n_schemas + 1, len(self.sm))
 
     def test_receive_3(self):
@@ -216,15 +216,15 @@ class TestSchemaMemory(TestCase):
         # create multiple result spin-offs
         n_schemas = len(self.sm)
 
-        self.assertNotIn(sym_schema('1,3,7,~9/A1/100'), self.sm)
-        self.assertNotIn(sym_schema('1,3,7,~9/A1/101'), self.sm)
+        self.assertNotIn(sym_schema('1,3,7,~9/A1/100,'), self.sm)
+        self.assertNotIn(sym_schema('1,3,7,~9/A1/101,'), self.sm)
         self.sm.receive(
             source=sym_schema('1,3,7,~9/A1/'),
             spin_off_type=Schema.SpinOffType.RESULT,
             relevant_items=sym_asserts('100,101')
         )
-        self.assertIn(sym_schema('1,3,7,~9/A1/100'), self.sm)
-        self.assertIn(sym_schema('1,3,7,~9/A1/101'), self.sm)
+        self.assertIn(sym_schema('1,3,7,~9/A1/100,'), self.sm)
+        self.assertIn(sym_schema('1,3,7,~9/A1/101,'), self.sm)
         self.assertEqual(n_schemas + 2, len(self.sm))
 
     def test_receive_5(self):
@@ -234,7 +234,7 @@ class TestSchemaMemory(TestCase):
         self.assertIn(sym_schema('1,3/A1/'), self.sm)
         self.assertNotIn(sym_schema('3,6/A1/'), self.sm)
         self.sm.receive(
-            source=sym_schema('3/A1/'),
+            source=sym_schema('3,/A1/'),
             spin_off_type=Schema.SpinOffType.CONTEXT,
             relevant_items=sym_asserts('1,6')
         )
@@ -248,15 +248,15 @@ class TestSchemaMemory(TestCase):
         # create multiple result spin-offs, one of which already exists in schema memory
         n_schemas = len(self.sm)
 
-        self.assertIn(sym_schema('1/A1/100'), self.sm)
-        self.assertNotIn(sym_schema('1/A1/101'), self.sm)
+        self.assertIn(sym_schema('1,/A1/100,'), self.sm)
+        self.assertNotIn(sym_schema('1,/A1/101,'), self.sm)
         self.sm.receive(
-            source=sym_schema('1/A1/'),
+            source=sym_schema('1,/A1/'),
             spin_off_type=Schema.SpinOffType.RESULT,
             relevant_items=sym_asserts('100,101')
         )
-        self.assertIn(sym_schema('1/A1/100'), self.sm)
-        self.assertIn(sym_schema('1/A1/101'), self.sm)
+        self.assertIn(sym_schema('1,/A1/100,'), self.sm)
+        self.assertIn(sym_schema('1,/A1/101,'), self.sm)
 
         # should only be one new schema
         self.assertEqual(n_schemas + 1, len(self.sm))
