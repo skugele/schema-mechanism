@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import sys
 from abc import ABC
 from abc import abstractmethod
 from collections import defaultdict
@@ -8,11 +9,14 @@ from collections.abc import Collection
 from collections.abc import Hashable
 from collections.abc import Iterator
 from collections.abc import MutableSet
+from datetime import datetime
 from enum import Enum
+from enum import IntEnum
 from enum import auto
 from enum import unique
 from typing import Any
 from typing import Optional
+from typing import TextIO
 from typing import Type
 from typing import Union
 
@@ -27,7 +31,6 @@ from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import repr_str
-from schema_mechanism.util import warn
 
 # Type Aliases
 ##############
@@ -271,8 +274,8 @@ class DelegatedValueHelper:
         if self._dv_trace_value == -np.inf:
             raise ValueError('invalid trace value: -np.inf.')
 
-        error = self._dv_trace_value - self._dv_avg_accessible_value
-        self._dv_avg_accessible_value += GlobalParams().learn_rate * error
+        err = self._dv_trace_value - self._dv_avg_accessible_value
+        self._dv_avg_accessible_value += GlobalParams().learn_rate * err
 
         # clear trace value
         self._dv_trace_value = -np.inf
@@ -528,10 +531,19 @@ def conjunctive_items(items: Collection[Item]) -> Collection[Item]:
     return list(filter(lambda i: isinstance(i, ConjunctiveItem), items))
 
 
+class Verbosity(IntEnum):
+    DEBUG = 0
+    INFO = 1
+    WARN = 2
+    ERROR = 3
+    FATAL = 4
+    NONE = 5
+
+
 class GlobalOption(Enum):
     # "There is an embellishment of the marginal attribution algorithm--deferring to a more specific applicable schema--
     #  that often enables the discovery of an item who relevance has been obscured." (see Drescher,1991, pp. 75-76)
-    EC_DEFER_TO_MORE_SPECIFIC_SCHEMA = auto
+    EC_DEFER_TO_MORE_SPECIFIC_SCHEMA = auto()
 
     # "[another] embellishment also reduces redundancy: when a schema's extended context simultaneously detects the
     # relevance of several items--that is, their statistics pass the significance threshold on the same trial--the most
@@ -539,6 +551,12 @@ class GlobalOption(Enum):
     #
     #     Note: Requires that EC_DEFER_TO_MORE_SPECIFIC is also enabled.
     EC_MOST_SPECIFIC_ON_MULTIPLE = auto()
+
+    # "The machinery's sensitivity to results is amplified by an embellishment of marginal attribution: when a given
+    #  schema is idle (i.e., it has not just completed an activation), the updating of its extended result data is
+    #  suppressed for any state transition which is explained--meaning that the transition is predicted as the result
+    #  of a reliable schema whose activation has just completed." (see Drescher, 1991, p. 73)
+    ER_SUPPRESS_UPDATE_ON_EXPLAINED = auto()
 
     # Supports the creation of result spin-off schemas incrementally. This was not supported in the original schema
     # mechanism because of the proliferation of conjunctive results that result. It is allowed here to facilitate
@@ -553,25 +571,38 @@ class GlobalOption(Enum):
 
 
 class GlobalParams(metaclass=Singleton):
+    # verbosity used to determine the active print/warn statements
+    DEFAULT_VERBOSITY = Verbosity.WARN
+
+    # format string used by output functions (debug, info, warn, error, fatal)
+    DEFAULT_OUTPUT_FORMAT = '{timestamp} [{severity}] - "{message}"'
+
+    # determines step size for incremental updates (e.g., this is used for delegated value updates)
     DEFAULT_LEARN_RATE = 0.01
 
-    # thresholds for determining the relevance of items (possible that both should always have the same value)
-    DEFAULT_POS_CORR_THRESHOLD = 0.65
-    DEFAULT_NEG_CORR_THRESHOLD = 0.65
+    # thresholds for determining the relevance of items (1.0 -> correlation always occurs)
+    DEFAULT_POS_CORR_THRESHOLD = 0.75
+    DEFAULT_NEG_CORR_THRESHOLD = 0.75
+
+    # success threshold used for determining that a schema is reliable (1.0 -> schema always succeeds)
+    DEFAULT_RELIABILITY_THRESHOLD = 0.95
 
     # TODO: What default options make sense?
     DEFAULT_OPTIONS = frozenset((
 
     ))
 
+    # used by ItemFactory
     DEFAULT_ITEM_TYPE = SymbolicItem
     DEFAULT_CONJUNCTIVE_ITEM_TYPE = ConjunctiveItem
 
     def __init__(self) -> None:
+        self._verbosity: Verbosity = Verbosity.NONE
+        self._output_format: str = ''
         self._learn_rate: float = 0.0
         self._pos_corr_threshold: float = 0.0
         self._neg_corr_threshold: float = 0.0
-
+        self._reliability: float = 0.0
         self._options: Optional[MutableSet[GlobalOption]] = None
 
         self._set_default_values()
@@ -625,6 +656,63 @@ class GlobalParams(metaclass=Singleton):
         self._pos_corr_threshold = value
 
     @property
+    def reliability_threshold(self) -> float:
+        """ Gets the threshold for schema reliability.
+
+        :return: a float between 0.0 and 1.0 (inclusive)
+        """
+        return self._reliability
+
+    @reliability_threshold.setter
+    def reliability_threshold(self, value: float) -> None:
+        """ Sets the threshold for schema reliability.
+
+        :param value: the new schema reliability threshold--a float between 0.0 and 1.0 (inclusive)
+        :return: None
+        """
+        if value < 0.0 or value > 1.0:
+            raise ValueError('schema reliability threshold must be between zero and one (inclusive).')
+        self._pos_corr_threshold = value
+
+    @property
+    def verbosity(self) -> Verbosity:
+        """ Gets the current output verbosity.
+
+        :return: a Verbosity value
+        """
+        return self._verbosity
+
+    @verbosity.setter
+    def verbosity(self, value: Verbosity) -> None:
+        """ Sets the output verbosity.
+
+        :param value: the new output verbosity
+        :return: None
+        """
+        if value not in Verbosity:
+            raise ValueError(f'Invalid verbosity. Supported values include: {[v for v in Verbosity]}')
+        self._verbosity = value
+
+    @property
+    def output_format(self) -> str:
+        """ Gets the format string used for diagnostic and informational messages.
+
+        :return: a Verbosity value
+        """
+        return self._output_format
+
+    @output_format.setter
+    def output_format(self, value: Verbosity) -> None:
+        """ Sets the format string used for diagnostic and informational messages.
+
+        Supported variables in format include: {message}, {timestamp}, and {severity}.
+
+        :param value: the new format string
+        :return: None
+        """
+        self._output_format = value
+
+    @property
     def options(self) -> MutableSet[GlobalOption]:
         return self._options
 
@@ -649,10 +737,11 @@ class GlobalParams(metaclass=Singleton):
         self._set_default_values()
 
     def _set_default_values(self) -> None:
+        self.verbosity = GlobalParams.DEFAULT_VERBOSITY
+        self.output_format = GlobalParams.DEFAULT_OUTPUT_FORMAT
         self.learn_rate = GlobalParams.DEFAULT_LEARN_RATE
         self.pos_corr_threshold = GlobalParams.DEFAULT_POS_CORR_THRESHOLD
         self.neg_corr_threshold = GlobalParams.DEFAULT_NEG_CORR_THRESHOLD
-
         self.options = GlobalParams.DEFAULT_OPTIONS
 
 
@@ -1575,7 +1664,11 @@ class ExtendedContext(ExtendedItemCollection):
         :param state: a State
         :return: True if should defer stats updates for this state to this schema's spin-offs.
         """
-        return any({not ia.is_negated and ia.is_satisfied(state) for ia in self.relevant_items})
+        for ia in self.relevant_items:
+            if not ia.is_negated and ia.is_satisfied(state):
+                debug(f'deferring update to spin_off for state {state} due to relevant assertion {ia}')
+                return True
+        return False
 
     @property
     def pending_relevant_items(self) -> frozenset[ItemAssertion]:
@@ -1740,7 +1833,10 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         :return: the schema's reliability
         """
-        return np.NAN if self.stats.n_activated == 0 else self.stats.n_success / self.stats.n_activated
+        return (
+            np.NAN if self.is_primitive() or self.stats.n_activated == 0
+            else self.stats.n_success / self.stats.n_activated
+        )
 
     @property
     def stats(self) -> SchemaStats:
@@ -1774,24 +1870,25 @@ class Schema(Observer, Observable, UniqueIdMixin):
                s_prev: Optional[State],
                s_curr: State,
                new: Collection[Item] = None,
-               lost: Collection[Item] = None, count=1) -> None:
+               lost: Collection[Item] = None,
+               explained: Optional[bool] = None,
+               count=1) -> None:
         """
 
             Note: As a result of these updates, one or more notifications may be generated by the schema's
             context and/or result. These will be received via schema's 'receive' method.
 
-        :param activated: True if this schema was implicitly or explicitly activated; False otherwise
+        :param activated: True if this schema was implicitly or explicitly activated
         :param s_prev: the previous state
         :param s_curr: the current state
         :param new: the state elements in current but not previous state
         :param lost: the state elements in previous but not current state
+        :param explained: True if a reliable schema was activated that "explained" the last state transition
         :param count: the number of updates to perform
 
         :return: None
         """
 
-        # TODO: Is this correct? Can I find a Drescher quote to support this interpretation?
-        # TODO: What about primitive schemas? Should everything be considered a success?
         # True if this schema was activated AND its result obtained; False otherwise
         success: bool = activated and self.result.is_satisfied(s_curr)
 
@@ -1800,9 +1897,9 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         # update extended result stats
         if self._extended_result:
-            self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
+            if not GlobalParams().is_enabled(GlobalOption.ER_SUPPRESS_UPDATE_ON_EXPLAINED) or not explained:
+                self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
 
-        # TODO: should primitive schemas have an extended context???
         # update extended context stats
         if all((self._extended_context, activated, s_prev)):
             self._extended_context.update_all(state=s_prev, success=success, count=count)
@@ -1858,10 +1955,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
     def __str__(self) -> str:
         return (
                 f'{self.context}/{self.action}/{self.result} ' +
-                f'[rel: {self.reliability:.2}; ' +
-                f'n_act: {self.stats.n_activated}; ' +
-                f'n_succ: {self.stats.n_success}; ' +
-                f'n_fail: {self.stats.n_fail};] '
+                f'[rel: {self.reliability:.2}]'
         )
 
     def __repr__(self) -> str:
@@ -1873,7 +1967,11 @@ class Schema(Observer, Observable, UniqueIdMixin):
                                'reliability': self.reliability, })
 
 
-# TODO: This might serve as a more general COMPOSITE (design pattern) that implements part of the Schema interface
+def is_reliable(schema: Schema, threshold: Optional[float] = None) -> bool:
+    threshold = threshold or GlobalParams().reliability_threshold
+    return schema.reliability != np.NAN and schema.reliability >= threshold
+
+
 class SchemaTreeNode(NodeMixin):
     def __init__(self,
                  context: Optional[StateAssertion] = None,
@@ -2145,3 +2243,37 @@ class SchemaTree:
             return node
         except KeyError:
             raise ValueError('Source schema does not have a corresponding tree node.')
+
+
+def _output_fd(level: Verbosity) -> TextIO:
+    return sys.stdout if level < Verbosity.WARN else sys.stderr
+
+
+def _timestamp() -> str:
+    return datetime.now().isoformat()
+
+
+def _display_message(message: str, level: Verbosity) -> None:
+    if level >= GlobalParams().verbosity:
+        out = GlobalParams().output_format.format(timestamp=_timestamp(), severity=level.name, message=message)
+        print(out, file=_output_fd(level))
+
+
+def debug(message):
+    _display_message(message=message, level=Verbosity.DEBUG)
+
+
+def info(message):
+    _display_message(message=message, level=Verbosity.INFO)
+
+
+def warn(message):
+    _display_message(message=message, level=Verbosity.WARN)
+
+
+def error(message):
+    _display_message(message=message, level=Verbosity.ERROR)
+
+
+def fatal(message):
+    _display_message(message=message, level=Verbosity.FATAL)

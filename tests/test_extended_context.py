@@ -25,6 +25,9 @@ class TestExtendedContext(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
+        GlobalParams().pos_corr_threshold = 0.65
+        GlobalParams().neg_corr_threshold = 0.65
+
         pool = ItemPool()
 
         for i in range(self.N_ITEMS):

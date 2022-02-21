@@ -25,6 +25,7 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
+from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
 from schema_mechanism.util import Observer
@@ -112,31 +113,34 @@ class SchemaMemory(Observer):
         # update global statistics
         self._stats.n_updates += len(applicable)
 
+        # state transition explained by activated reliable schema (see GlobalOption.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
+        explained = False
+
         # I'm assuming that only APPLICABLE schemas should be updated. This is based on the belief that all
         # of the probabilities within a schema are really conditioned on the context being satisfied, even
         # though this fact is implicit.
-        for app in applicable:
+        activated_schemas = [s for s in applicable if s.action == schema.action]
+        non_activated_schemas = [s for s in applicable if s.action != schema.action]
 
-            # TODO: Enhancement #1: "The machinery's sensitivity to results is amplified by an embellishment of marginal
-            # TODO: attribution: when a given schema is idle (i.e., it has not just completed an activation), the updating of its
-            # TODO: extended result data is suppressed for any state transition which is explained--meaning that the transition is
-            # TODO: predicted as the result of a reliable schema whose activation has just completed." (see Drescher, 1991, p. 73)
+        # all activated schemas must be updated BEFORE non-activated. this supports ER_SUPPRESS_UPDATE_ON_EXPLAINED.
+        for s in activated_schemas:
+            if s.action == schema.action:
+                explained |= True if is_reliable(schema) else False
 
-            # activated
-            if app.action == schema.action:
-                app.update(activated=True,
-                           s_prev=selection_state,
-                           s_curr=result_state,
-                           new=new,
-                           lost=lost)
+                s.update(activated=True,
+                         s_prev=selection_state,
+                         s_curr=result_state,
+                         new=new,
+                         lost=lost,
+                         explained=explained)
 
-            # non-activated
-            else:
-                app.update(activated=False,
-                           s_prev=selection_state,
-                           s_curr=result_state,
-                           new=new,
-                           lost=lost)
+        for s in non_activated_schemas:
+            s.update(activated=False,
+                     s_prev=selection_state,
+                     s_curr=result_state,
+                     new=new,
+                     lost=lost,
+                     explained=explained)
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
         return list(itertools.chain.from_iterable(n.schemas for n in self._schema_tree.find_all_satisfied(state)))

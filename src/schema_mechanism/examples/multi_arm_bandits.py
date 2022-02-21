@@ -8,13 +8,13 @@ from schema_mechanism.core import GlobalOption
 from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import State
 from schema_mechanism.core import StateElement
+from schema_mechanism.core import Verbosity
+from schema_mechanism.core import debug
+from schema_mechanism.core import info
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.util import Observable
-
-DEFAULT_N_MACHINES = 5
-DEFAULT_N_STEPS = 5000
 
 
 # state elements
@@ -159,19 +159,37 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description='Godot AI Bridge (GAB) - DEMO Environment Action Client')
 
-    parser.add_argument('--n_machines', type=int, required=False, default=DEFAULT_N_MACHINES,
-                        help=f'the id of the agent to which this action will be sent (default: {DEFAULT_N_MACHINES})')
-    parser.add_argument('--steps', type=int, required=False, default=DEFAULT_N_STEPS,
-                        help=f'the id of the agent to which this action will be sent (default: {DEFAULT_N_STEPS})')
+    parser.add_argument('--n_machines', type=int, required=False, default=N_MACHINES,
+                        help=f'the id of the agent to which this action will be sent (default: {N_MACHINES})')
+    parser.add_argument('--steps', type=int, required=False, default=N_STEPS,
+                        help=f'the id of the agent to which this action will be sent (default: {N_STEPS})')
 
     return parser.parse_args()
 
 
+def display_known_schemas(sm_: SchemaMechanism) -> None:
+    debug(f'*********************************')
+    debug(f'known schemas ({len(sm.known_schemas)})')
+    for s in sm_.known_schemas:
+        debug(s)
+    debug(f'*********************************')
+
+
 if __name__ == '__main__':
+    N_MACHINES = 2
+    N_STEPS = 1000
+
+    random.seed(8675309)
+
+    GlobalParams().verbosity = Verbosity.DEBUG
+    GlobalParams().output_format = '{message}'
+
     GlobalParams().options.add(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE)
     GlobalParams().options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
-    # GlobalParams().options.add(GlobalOption.ER_POSITIVE_ASSERTIONS_ONLY)
+    GlobalParams().options.add(GlobalOption.ER_POSITIVE_ASSERTIONS_ONLY)
     GlobalParams().options.add(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY)
+    GlobalParams().options.add(GlobalOption.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
+
     # GlobalParams().options.add(GlobalOption.ER_INCREMENTAL_RESULTS)
 
     args = parse_args()
@@ -188,20 +206,16 @@ if __name__ == '__main__':
                          primitive_items=[i_win, i_lose, i_pay])
 
     for n in range(args.steps):
-        # print(f'State[{n}]: ', env.current_state)
+        display_known_schemas(sm)
 
-        # action = random.choice(env.actions)
+        state = env.current_state
+        info(f'State[{n}]: {env.current_state}')
         schema = sm.select(env.current_state)
-        print(f'Selected Schema[{n}]: ', schema)
-        # print(schema.extended_context)
-        # print(schema.extended_result)
-        # print(f'Action[{n}]: {schema.action}')
+        info(f'Selected Schema[{n}]: {schema}')
         result = env.step(schema.action)
+        info(f'Result[{n}]: {env.current_state}')
 
-    print(f'n_schema: {len(sm.known_schemas)}')
-    for s in sm.known_schemas:
-        print(s)
-    print(f'---------------------------------')
+    info(f'n_schema: {len(sm.known_schemas)}')
 
     for m in machines:
-        print(repr(m))
+        info(repr(m))

@@ -18,6 +18,9 @@ class TestExtendedResult(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
+        GlobalParams().pos_corr_threshold = 0.65
+        GlobalParams().neg_corr_threshold = 0.65
+
         # populate item pool
         self._item_pool = ItemPool()
         for i in range(self.N_ITEMS):
@@ -61,126 +64,6 @@ class TestExtendedResult(TestCase):
                               item_stats.n_off_and_activated,
                               item_stats.n_off_and_not_activated]:
                     self.assertEqual(0, value)
-
-    # def test_update_2(self):
-    #     # testing updates for StateAssertions
-    #     updated = [
-    #         sym_state_assert('1,2,~3'),
-    #         sym_state_assert('7,8'),
-    #     ]
-    #
-    #     for sa in updated:
-    #         self.er.update(sa, on=True, activated=True)
-    #
-    #     not_updated = [
-    #         sym_state_assert('3,4,5'),
-    #         sym_state_assert('~7,8'),
-    #     ]
-    #
-    #     for sa in StateAssertionPool():
-    #         item_stats = self.er.stats[sa]
-    #         if sa in updated:
-    #             self.assertIsNot(NULL_ER_ITEM_STATS, item_stats)
-    #
-    #             for value in [item_stats.n_on,
-    #                           item_stats.n_on_and_activated]:
-    #                 self.assertEqual(1, value)
-    #
-    #             for value in [item_stats.n_off,
-    #                           item_stats.n_on_and_not_activated,
-    #                           item_stats.n_off_and_activated,
-    #                           item_stats.n_off_and_not_activated]:
-    #                 self.assertEqual(0, value)
-    #
-    #         elif sa in not_updated:
-    #             self.assertIs(NULL_ER_ITEM_STATS, item_stats)
-    #
-    # def test_update_all(self):
-    #     # add state assertion to pool
-    #
-    #     updated_sa = [
-    #         StateAssertionPool().get(sym_asserts('~0,3')),  # positive transition (on=True)
-    #         StateAssertionPool().get(sym_asserts('~0,4')),  # positive transition (on=True)
-    #         StateAssertionPool().get(sym_asserts('~0,5')),  # positive transition (on=True)
-    #         StateAssertionPool().get(sym_asserts('3,4')),  # positive transition (on=True)
-    #         StateAssertionPool().get(sym_asserts('4,5')),  # positive transition (on=True)
-    #         StateAssertionPool().get(sym_asserts('~0,3,4')),  # positive transition (on=True)
-    #         StateAssertionPool().get(sym_asserts('~0,4,5')),  # positive transition (on=True)
-    #         StateAssertionPool().get(sym_asserts('~0,3,4,5')),  # positive transition (on=True)
-    #     ]
-    #
-    #     updated_sa_off = [
-    #         StateAssertionPool().get(sym_asserts('0,1')),  # negative transition (on=False)
-    #     ]
-    #
-    #     not_updated_sa = [
-    #         StateAssertionPool().get(sym_asserts('1,2')),
-    #         StateAssertionPool().get(sym_asserts('0,1,2,3')),
-    #         StateAssertionPool().get(sym_asserts('~1,2')),
-    #         StateAssertionPool().get(sym_asserts('~0,1')),  # positive transition (on=True)
-    #         StateAssertionPool().get(sym_asserts('1,2,3')),  # positive transition (on=True)
-    #     ]
-    #
-    #     s_prev = sym_state('0,1,2')
-    #     s_curr = sym_state('1,2,3,4,5')
-    #
-    #     new = new_state(s_prev=s_prev, s_curr=s_curr)
-    #     lost = lost_state(s_prev=s_prev, s_curr=s_curr)
-    #
-    #     # update all items in this state simulating case of action taken
-    #     self.er.update_all(activated=True, s_prev=s_prev, s_curr=s_curr, new=new, lost=lost)
-    #
-    #     # test that all items in the state have been updated
-    #     for se in new:
-    #         item_stats = self.er.stats[self._item_pool.get(se)]
-    #         self.assertEqual(1, item_stats.n_on)
-    #         self.assertEqual(1, item_stats.n_on_and_activated)
-    #
-    #         self.assertEqual(0, item_stats.n_off)
-    #         self.assertEqual(0, item_stats.n_off_and_activated)
-    #
-    #         self.assertEqual(0, item_stats.n_off_and_not_activated)
-    #         self.assertEqual(0, item_stats.n_on_and_not_activated)
-    #
-    #     for se in lost:
-    #         item_stats = self.er.stats[self._item_pool.get(se)]
-    #         self.assertEqual(1, item_stats.n_off)
-    #         self.assertEqual(1, item_stats.n_off_and_activated)
-    #
-    #         self.assertEqual(0, item_stats.n_on)
-    #         self.assertEqual(0, item_stats.n_on_and_activated)
-    #
-    #         self.assertEqual(0, item_stats.n_on_and_not_activated)
-    #         self.assertEqual(0, item_stats.n_off_and_not_activated)
-    #
-    #     for sa in updated_sa_on:
-    #         item_stats = self.er.stats[sa]
-    #         self.assertIsNot(NULL_ER_ITEM_STATS, item_stats)
-    #
-    #         self.assertEqual(1, item_stats.n_on)
-    #         self.assertEqual(1, item_stats.n_on_and_activated)
-    #
-    #         self.assertEqual(0, item_stats.n_off)
-    #         self.assertEqual(0, item_stats.n_off_and_activated)
-    #
-    #         self.assertEqual(0, item_stats.n_off_and_not_activated)
-    #         self.assertEqual(0, item_stats.n_on_and_not_activated)
-    #
-    #     for sa in updated_sa_off:
-    #         item_stats = self.er.stats[sa]
-    #         self.assertIsNot(NULL_ER_ITEM_STATS, item_stats)
-    #
-    #         self.assertEqual(1, item_stats.n_off)
-    #         self.assertEqual(1, item_stats.n_off_and_activated)
-    #
-    #         self.assertEqual(0, item_stats.n_on)
-    #         self.assertEqual(0, item_stats.n_on_and_activated)
-    #
-    #         self.assertEqual(0, item_stats.n_on_and_not_activated)
-    #         self.assertEqual(0, item_stats.n_off_and_not_activated)
-    #
-    #     for sa in not_updated_sa:
-    #         self.assertIs(NULL_ER_ITEM_STATS, self.er.stats[sa])
 
     def test_register_and_unregister(self):
         observer = MockObserver()

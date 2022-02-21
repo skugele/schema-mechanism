@@ -164,10 +164,10 @@ class TestSchemaMemory(TestCase):
             s.update.assert_called()
 
             if s.action == selected_schema.action:
-                s.update.assert_called_with(activated=True, s_prev=ANY, s_curr=ANY, new=ANY, lost=ANY)
+                s.update.assert_called_with(activated=True, s_prev=ANY, s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
 
             else:
-                s.update.assert_called_with(activated=False, s_prev=ANY, s_curr=ANY, new=ANY, lost=ANY)
+                s.update.assert_called_with(activated=False, s_prev=ANY, s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
 
         for s in non_applicable_schemas:
             s.update.assert_not_called()
