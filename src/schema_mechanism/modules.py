@@ -106,8 +106,8 @@ class SchemaMemory(Observer):
         applicable, schema = selection_details
 
         # create new and lost state element collections
-        new = set(ItemPool().get(se) for se in new_state(selection_state, result_state))
-        lost = set(ItemPool().get(se) for se in lost_state(selection_state, result_state))
+        new = new_state(selection_state, result_state)
+        lost = lost_state(selection_state, result_state)
 
         # update global statistics
         self._stats.n_updates += len(applicable)

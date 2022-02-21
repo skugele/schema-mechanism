@@ -3,16 +3,18 @@ import random
 from collections.abc import Sequence
 from typing import Optional
 
-from schema_mechanism.data_structures import Action
-from schema_mechanism.data_structures import State
-from schema_mechanism.data_structures import StateElement
+from schema_mechanism.core import Action
+from schema_mechanism.core import GlobalOption
+from schema_mechanism.core import GlobalParams
+from schema_mechanism.core import State
+from schema_mechanism.core import StateElement
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.util import Observable
 
-DEFAULT_N_MACHINES = 1
-DEFAULT_N_STEPS = 1000
+DEFAULT_N_MACHINES = 5
+DEFAULT_N_STEPS = 5000
 
 
 # state elements
@@ -126,19 +128,23 @@ class BanditEnvironment(Observable):
 
         # at machine, just won
         elif self._current_state in self._machine_win_states:
+            m_ndx = self._machine_win_states.index(self._current_state)
             if action == Action('deposit'):
-                m_ndx = self._machine_win_states.index(self._current_state)
                 self._current_state = self._machine_play_states[m_ndx]
             elif action == Action('stand'):
                 self._current_state = sym_state('S')
+            else:
+                self._current_state = self._machine_base_states[m_ndx]
 
         # at machine, just lost
         elif self._current_state in self._machine_lose_states:
+            m_ndx = self._machine_lose_states.index(self._current_state)
             if action == Action('deposit'):
-                m_ndx = self._machine_lose_states.index(self._current_state)
                 self._current_state = self._machine_play_states[m_ndx]
             elif action == Action('stand'):
                 self._current_state = sym_state('S')
+            else:
+                self._current_state = self._machine_base_states[m_ndx]
 
         return self._current_state
 
@@ -162,6 +168,12 @@ def parse_args():
 
 
 if __name__ == '__main__':
+    GlobalParams().options.add(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE)
+    GlobalParams().options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+    # GlobalParams().options.add(GlobalOption.ER_POSITIVE_ASSERTIONS_ONLY)
+    GlobalParams().options.add(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY)
+    # GlobalParams().options.add(GlobalOption.ER_INCREMENTAL_RESULTS)
+
     args = parse_args()
 
     machines = [Machine(str(id_), p_win=random.uniform(0, 1)) for id_ in range(args.n_machines)]
@@ -176,10 +188,20 @@ if __name__ == '__main__':
                          primitive_items=[i_win, i_lose, i_pay])
 
     for n in range(args.steps):
-        print(f'State[{n}]: ', env.current_state)
+        # print(f'State[{n}]: ', env.current_state)
 
-        action = random.choice(env.actions)
-        # schema = sm.select(env.current_state)
-        # print(f'Selected Schema[{n}]: ', schema)
+        # action = random.choice(env.actions)
+        schema = sm.select(env.current_state)
+        print(f'Selected Schema[{n}]: ', schema)
+        # print(schema.extended_context)
+        # print(schema.extended_result)
         # print(f'Action[{n}]: {schema.action}')
-        result = env.step(action)
+        result = env.step(schema.action)
+
+    print(f'n_schema: {len(sm.known_schemas)}')
+    for s in sm.known_schemas:
+        print(s)
+    print(f'---------------------------------')
+
+    for m in machines:
+        print(repr(m))

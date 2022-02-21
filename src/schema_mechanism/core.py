@@ -119,7 +119,7 @@ def held_state(s_prev: State, s_curr: State) -> frozenset[Item]:
     held = [ItemPool().get(se) for se in s_curr if se in s_prev]
 
     # conjunctions
-    for ci in ItemPool().get_all(item_type=ConjunctiveItem):
+    for ci in ItemPool().conjunctive_items:
         if ci.is_on(s_curr) and ci.is_on(s_prev):
             held.append(ci)
 
@@ -141,7 +141,7 @@ def new_state(s_prev: Optional[State], s_curr: Optional[State]) -> frozenset[Ite
     new = [ItemPool().get(se) for se in s_curr if se not in s_prev]
 
     # conjunctions
-    for ci in ItemPool().get_all(item_type=ConjunctiveItem):
+    for ci in ItemPool().conjunctive_items:
         if ci.is_on(s_curr) and not ci.is_on(s_prev):
             new.append(ci)
 
@@ -163,7 +163,7 @@ def lost_state(s_prev: Optional[State], s_curr: Optional[State]) -> frozenset[It
     lost = [ItemPool().get(se) for se in s_prev if se not in s_curr]
 
     # conjunctions
-    for ci in ItemPool().get_all(item_type=ConjunctiveItem):
+    for ci in ItemPool().conjunctive_items:
         if ci.is_on(s_prev) and not ci.is_on(s_curr):
             lost.append(ci)
 
@@ -356,68 +356,47 @@ class ItemPool(metaclass=Singleton):
     """
     Implements a flyweight design pattern for Item types.
     """
-    _items: dict[Type[Item], dict[Any, Item]] = dict()
+    _items: dict[StateElement, Item] = dict()
+    _conjunctive_items: dict[StateAssertion, ConjunctiveItem] = dict()
 
     def __contains__(self, source: Any) -> bool:
-        for type_dict in self._items.values():
-            if source in type_dict:
-                return True
-        return False
+        return source in ItemPool._items or source in ItemPool._conjunctive_items
 
     def __len__(self) -> int:
-        return sum(len(d) for d in self._items.values())
+        return len(ItemPool._items) + len(ItemPool._conjunctive_items)
 
     def __iter__(self) -> Iterator[Item]:
-        for type_dict in self._items.values():
-            yield from type_dict.values()
+        yield from ItemPool._items.values()
+        yield from ItemPool._conjunctive_items.values()
+
+    @property
+    def items(self) -> Collection[Item]:
+        return ItemPool._items.values()
+
+    @property
+    def conjunctive_items(self) -> Collection[ConjunctiveItem]:
+        return ItemPool._conjunctive_items.values()
 
     def clear(self):
-        self._items.clear()
+        ItemPool._items.clear()
+        ItemPool._conjunctive_items.clear()
 
     def get(self, source: Any, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
         read_only = kwargs.get('read_only', False)
-        search_all = False if item_type else True
         item_type = item_type or GlobalParams().DEFAULT_ITEM_TYPE
 
-        type_dict = self._get_type_dict(item_type, read_only)
-        obj = self._search(source) if search_all else type_dict.get(source)
+        type_dict = (
+            ItemPool._conjunctive_items
+            if item_type is GlobalParams().DEFAULT_CONJUNCTIVE_ITEM_TYPE
+            else ItemPool._items
+        )
+
+        obj = type_dict.get(source)
 
         # create new item and add to pool if not found and not read_only
         if not obj and not read_only:
             obj = type_dict[source] = item_type(source, **kwargs)
 
-        return obj
-
-    def get_all(self, item_type: Optional[Type[Item]] = None) -> frozenset[Item]:
-        """ Returns all items for a type. If not type supplied, then every item will be returned.
-
-        :param item_type: an Item Type
-        :return: a set of Items
-        """
-        return frozenset(
-            # items for a single type dictionary
-            self._items.get(item_type, dict()).values() if item_type
-
-            # items from all type dictionaries
-            else itertools.chain.from_iterable([td.values() for td in self._type_dicts()])
-        )
-
-    def _get_type_dict(self, item_type: Optional[Type[Item]], read_only: bool = False) -> dict[Any, Item]:
-        item_type = item_type or GlobalParams().DEFAULT_ITEM_TYPE
-
-        type_dict = self._items.get(item_type)
-        if not type_dict and not read_only:
-            self._items[item_type] = type_dict = dict()
-        return type_dict
-
-    def _type_dicts(self) -> Collection[dict[Any, Item]]:
-        return self._items.values()
-
-    def _search(self, source: Any) -> Optional[Item]:
-        obj = None
-        for type_dict in self._type_dicts():
-            if obj := type_dict.get(source):
-                break
         return obj
 
 
@@ -453,11 +432,14 @@ class ReadOnlyItemPool(ItemPool):
 class SymbolicItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
-    def __init__(self, source: StateElement, primitive_value: float = None, *args, **kwargs):
+    def __init__(self, source: str, primitive_value: float = None, *args, **kwargs):
+        if not isinstance(source, str):
+            raise ValueError('Source for symbolic item must be a string')
+
         super().__init__(source=source, primitive_value=primitive_value, *args, **kwargs)
 
     @property
-    def source(self) -> StateElement:
+    def source(self) -> str:
         return super().source
 
     def is_on(self, state: State, *args, **kwargs) -> bool:
@@ -549,19 +531,25 @@ def conjunctive_items(items: Collection[Item]) -> Collection[Item]:
 class GlobalOption(Enum):
     # "There is an embellishment of the marginal attribution algorithm--deferring to a more specific applicable schema--
     #  that often enables the discovery of an item who relevance has been obscured." (see Drescher,1991, pp. 75-76)
-    EC_DEFER_TO_MORE_SPECIFIC_SCHEMA = auto,
+    EC_DEFER_TO_MORE_SPECIFIC_SCHEMA = auto
 
     # "[another] embellishment also reduces redundancy: when a schema's extended context simultaneously detects the
     # relevance of several items--that is, their statistics pass the significance threshold on the same trial--the most
     # specific is chosen as the one for inclusion in a spin-off from that schema." (see Drescher, 1991, p. 77)
     #
     #     Note: Requires that EC_DEFER_TO_MORE_SPECIFIC is also enabled.
-    EC_MOST_SPECIFIC_ON_MULTIPLE = auto(),
+    EC_MOST_SPECIFIC_ON_MULTIPLE = auto()
 
     # Supports the creation of result spin-off schemas incrementally. This was not supported in the original schema
     # mechanism because of the proliferation of conjunctive results that result. It is allowed here to facilitate
     # comparison and experimentation.
     ER_INCREMENTAL_RESULTS = auto()
+
+    # Modifies the schema mechanism to only create context spin-offs containing positive assertions.
+    EC_POSITIVE_ASSERTIONS_ONLY = auto()
+
+    # Modifies the schema mechanism to only create result spin-offs containing positive assertions.
+    ER_POSITIVE_ASSERTIONS_ONLY = auto()
 
 
 class GlobalParams(metaclass=Singleton):
@@ -1345,7 +1333,8 @@ class ExtendedItemCollection(Observable):
 
         self._null_member = null_member
 
-        self._suppressed_items: list[Item] = suppressed_items or list()
+        # TODO: why is this not a set like the relevant item containers???
+        self._suppressed_items: list[Item] = list(suppressed_items) or list()
 
         # TODO: these names are confusing... they are not items!
         self._relevant_items: MutableSet[Assertion] = set()
@@ -1362,6 +1351,10 @@ class ExtendedItemCollection(Observable):
     @property
     def suppressed_items(self) -> Collection[Item]:
         return self._suppressed_items
+
+    def update_suppressed_items(self, item) -> None:
+        if item not in self._suppressed_items:
+            self._suppressed_items.append(item)
 
     # TODO: "relevant items" is confusing. these are item assertion. this terminology is a carry-over from Drescher.
     @property
@@ -1508,6 +1501,14 @@ class ExtendedResult(ExtendedItemCollection):
             if item_assert not in self.relevant_items:
                 self.update_relevant_items(item_assert)
 
+    def update_relevant_items(self, assertion: Assertion):
+        # TODO: need to guarantee that only item assertions are being added here....
+        if GlobalParams().is_enabled(GlobalOption.ER_POSITIVE_ASSERTIONS_ONLY) and assertion.is_negated:
+            # TODO: need to verify that this is a SINGLE item or conjunctive item!
+            self.update_suppressed_items(assertion.items)
+        else:
+            super().update_relevant_items(assertion)
+
 
 class ExtendedContext(ExtendedItemCollection):
     """
@@ -1553,7 +1554,7 @@ class ExtendedContext(ExtendedItemCollection):
                 and self.defer_update_to_spin_offs(state)):
             return
 
-        for item in self._item_pool:
+        for item in self._item_pool.items:
             self.update(item=item, on=item.is_on(state), success=success, count=count)
 
         self.check_pending_relevant_items()
@@ -1619,6 +1620,14 @@ class ExtendedContext(ExtendedItemCollection):
 
             self._pending_relevant_items.add(item_assert)
 
+    def update_relevant_items(self, assertion: Assertion):
+        # TODO: need to guarantee that only item assertions are being added here....
+        if GlobalParams().is_enabled(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY) and assertion.is_negated:
+            # TODO: need to verify that this is a SINGLE item or conjunctive item!
+            self.update_suppressed_items(assertion.items)
+        else:
+            super().update_relevant_items(assertion)
+
 
 class Schema(Observer, Observable, UniqueIdMixin):
     """
@@ -1654,7 +1663,11 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         self._is_primitive = not (context or result)
 
-        self._extended_context: ExtendedContext = ExtendedContext(self._context)
+        self._extended_context: ExtendedContext = (
+            ExtendedContext(self._context)
+            if not self._is_primitive else
+            None
+        )
         self._extended_result: ExtendedResult = (
             ExtendedResult(self._result)
             if self._is_primitive or GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS) else
@@ -1666,7 +1679,8 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         # This observer registration is used to notify the schema when a relevant item has been detected in its
         # extended context or extended result
-        self._extended_context.register(self)
+        if not self._is_primitive:
+            self._extended_context.register(self)
 
         if self._is_primitive or GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS):
             self._extended_result.register(self)
@@ -1790,7 +1804,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         # TODO: should primitive schemas have an extended context???
         # update extended context stats
-        if activated and s_prev:
+        if all((self._extended_context, activated, s_prev)):
             self._extended_context.update_all(state=s_prev, success=success, count=count)
 
     # invoked by a schema's extended context or extended result when a relevant item is discovered

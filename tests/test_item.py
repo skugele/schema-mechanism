@@ -309,7 +309,7 @@ class TestConjunctiveItem(unittest.TestCase):
         self.assertEqual(self.sa, self.item.source)
 
         # test: default primitive value should be 0.0
-        i = SymbolicItem(source=sym_state_assert('UNK1,UNK2'))
+        i = SymbolicItem(source='UNK1')
         self.assertEqual(0.0, i.primitive_value)
 
     def test_primitive_value(self):

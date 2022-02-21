@@ -104,15 +104,15 @@ class TestMultiArmedBandits(unittest.TestCase):
             self.assertEqual(sym_state('M0'), env.step(action))
 
     def test_step_7(self):
-        # test: all actions other than stand and deposit SHOULD result in NO CHANGE in current state
+        # test: all actions other than stand and deposit should result in M0 from lose (W) state
         env = BanditEnvironment(machines=self.machines, init_state=sym_state('M0,W'))
         for action in [Action(a_str) for a_str in ['play', *[f'sit(M{m.id})' for m in self.machines]]]:
-            self.assertEqual(sym_state('M0,W'), env.step(action))
+            self.assertEqual(sym_state('M0'), env.step(action))
 
     def test_step_8(self):
-        # test: all actions other than stand and deposit SHOULD result in NO CHANGE in current state
+        # test: all actions other than stand and deposit should result in M0 from win (L) state
         env = BanditEnvironment(machines=self.machines, init_state=sym_state('M0,L'))
         for action in [Action(a_str) for a_str in ['play', *[f'sit(M{m.id})' for m in self.machines]]]:
-            self.assertEqual(sym_state('M0,L'), env.step(action))
+            self.assertEqual(sym_state('M0'), env.step(action))
 
     # TODO: test for invalid moves that return to the same state

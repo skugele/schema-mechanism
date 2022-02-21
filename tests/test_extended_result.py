@@ -21,7 +21,7 @@ class TestExtendedResult(TestCase):
         # populate item pool
         self._item_pool = ItemPool()
         for i in range(self.N_ITEMS):
-            _ = self._item_pool.get(i)
+            _ = self._item_pool.get(str(i))
 
         self.result = sym_state_assert('100,101')
         self.er = ExtendedResult(result=self.result)

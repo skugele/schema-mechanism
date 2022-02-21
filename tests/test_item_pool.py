@@ -58,33 +58,6 @@ class TestSharedItemPool(TestCase):
         self.assertIsInstance(item4, SymbolicItem)
         self.assertTrue(all(item4 != other for other in [item1, item2, item3]))
 
-    def test_get_all(self):
-        pool = ItemPool()
-
-        # populate SymbolicItems
-        state_elements = frozenset(str(i) for i in range(10))
-        for se in state_elements:
-            _ = pool.get(se, item_type=SymbolicItem)
-
-        # populate ConjunctiveItems
-        state_assertions = frozenset((
-            sym_state_assert('1,2'),
-            sym_state_assert('1,3'),
-            sym_state_assert('~2,4'),
-        ))
-        for sa in state_assertions:
-            _ = pool.get(sa, item_type=ConjunctiveItem)
-
-        expected_set = set(pool.get(se) for se in state_elements)
-        actual_set = pool.get_all(item_type=SymbolicItem)
-
-        self.assertSetEqual(expected_set, actual_set)
-
-        expected_set = set(pool.get(sa, item_type=ConjunctiveItem) for sa in state_assertions)
-        actual_set = pool.get_all(item_type=ConjunctiveItem)
-
-        self.assertSetEqual(expected_set, actual_set)
-
     def test_contains(self):
         pool = ItemPool()
 
