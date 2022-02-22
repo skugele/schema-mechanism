@@ -265,14 +265,14 @@ class TestStateAssertion(TestCase):
         print(f'other shit: {elapsed_time_2}')
 
     def test_replicate_with_2(self):
-        # test: OLD state assertion with NEW non-conjunctive item assertion
+        # test: OLD state assertion with NEW non-composite item assertion
         old = sym_state_assert('1,2,3')
         new = sym_item_assert('4')
 
         sa = Assertion.replicate_with(old, new)
         self.assertEqual(sym_state_assert('1,2,3,4'), sa)
 
-        # test: OLD state assertion with NEW conjunctive item assertion
+        # test: OLD state assertion with NEW composite item assertion
         old = sym_state_assert('1,2,3')
         new = ItemAssertion(CompositeItem(sym_state_assert('4,~5')), negated=True)
 

@@ -105,12 +105,12 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertIn(sym_assert('~4'), sa)
         self.assertIn(sym_assert('5'), sa)
 
-        # test: single conjunctive item
+        # test: single composite item
         sa = sym_assert('(1,2,3),')
         self.assertIsInstance(sa, StateAssertion)
         self.assertEqual(1, len(sa))
 
-        # test: single negated conjunctive item
+        # test: single negated composite item
         sa = sym_assert('~(1,2,3),')
         self.assertIsInstance(sa, StateAssertion)
         self.assertEqual(1, len(sa))
@@ -185,7 +185,7 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertIn(sym_assert('4'), schema.result)
         self.assertNotIn(sym_assert('5'), schema.result)
 
-    def test_sym_conjunctive_item(self):
+    def test_sym_composite_item(self):
         self.assertIsInstance(sym_item('(1,2)'), CompositeItem)
 
         self.assertEqual(CompositeItem(sym_state_assert('1,2')), sym_item('(1,2)'))

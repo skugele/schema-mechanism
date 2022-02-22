@@ -51,7 +51,7 @@ class ObjectTransformer(Transformer):
 
     def composite_item(self, tokens: list[Any]) -> Item:
         (state_assertion,) = tokens
-        self.opt_kwargs['item_type'] = GlobalParams().DEFAULT_CONJUNCTIVE_ITEM_TYPE
+        self.opt_kwargs['item_type'] = GlobalParams().DEFAULT_COMPOSITE_ITEM_TYPE
         return ItemPool().get(source=state_assertion, **self.opt_kwargs)
 
     def item_assertion(self, tokens: list[Any]) -> ItemAssertion:

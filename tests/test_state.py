@@ -152,7 +152,7 @@ class TestStateFunctions(TestCase):
         self.s_empty = sym_state('')
         self.s_none = None
 
-        # add conjunctive items to pool
+        # add composite items to pool
         pool = ItemPool()
 
         self.ci1 = pool.get(sym_state_assert('1,2,3'), item_type=CompositeItem)  # On in s_1
@@ -167,14 +167,14 @@ class TestStateFunctions(TestCase):
         self.assertEqual(0, len(held_state(s_prev=self.s_none, s_curr=self.s_none)))
 
     def test_held_state_2(self):
-        # basic (non-conjunctive) items
+        # basic (non-composite) items
         self.assertSetEqual(set(sym_items('4,5')),
                             set(non_composite_items(held_state(s_prev=self.s_1, s_curr=self.s_2))))
         self.assertSetEqual(set(sym_items('4,5')),
                             set(non_composite_items(held_state(s_prev=self.s_2, s_curr=self.s_1))))
 
     def test_held_state_3(self):
-        # conjunctive items
+        # composite items
         self.assertSetEqual({self.ci2}, set(composite_items(held_state(s_prev=self.s_1, s_curr=self.s_2))))
         self.assertSetEqual({self.ci2}, set(composite_items(held_state(s_prev=self.s_2, s_curr=self.s_1))))
 
@@ -185,14 +185,14 @@ class TestStateFunctions(TestCase):
         self.assertEqual(0, len(lost_state(s_prev=self.s_none, s_curr=self.s_none)))
 
     def test_lost_state_2(self):
-        # basic (non-conjunctive) items
+        # basic (non-composite) items
         self.assertSetEqual(set(sym_items('1,2,3')),
                             set(non_composite_items(lost_state(s_prev=self.s_1, s_curr=self.s_2))))
         self.assertSetEqual(set(sym_items('6,7,8')),
                             set(non_composite_items(lost_state(s_prev=self.s_2, s_curr=self.s_1))))
 
     def test_lost_state_3(self):
-        # conjunctive items
+        # composite items
         self.assertSetEqual({self.ci1}, set(composite_items(lost_state(s_prev=self.s_1, s_curr=self.s_2))))
         self.assertSetEqual({self.ci3, self.ci4}, set(composite_items(lost_state(s_prev=self.s_2, s_curr=self.s_1))))
 
@@ -203,13 +203,13 @@ class TestStateFunctions(TestCase):
         self.assertEqual(0, len(new_state(s_prev=self.s_none, s_curr=self.s_none)))
 
     def test_new_state_2(self):
-        # basic (non-conjunctive) items
+        # basic (non-composite) items
         self.assertSetEqual(set(sym_items('6,7,8')),
                             set(non_composite_items(new_state(s_prev=self.s_1, s_curr=self.s_2))))
         self.assertSetEqual(set(sym_items('1,2,3')),
                             set(non_composite_items(new_state(s_prev=self.s_2, s_curr=self.s_1))))
 
     def test_new_state_3(self):
-        # conjunctive items
+        # composite items
         self.assertSetEqual({self.ci3, self.ci4}, set(composite_items(new_state(s_prev=self.s_1, s_curr=self.s_2))))
         self.assertSetEqual({self.ci1}, set(composite_items(new_state(s_prev=self.s_2, s_curr=self.s_1))))

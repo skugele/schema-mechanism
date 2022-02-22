@@ -79,7 +79,7 @@ class TestSharedItemPool(TestCase):
         for se in state_elements:
             _ = pool.get(se, item_type=SymbolicItem)
 
-        # populate ConjunctiveItems
+        # populate CompositeItems
         state_assertions = frozenset((
             sym_state_assert('1,2'),
             sym_state_assert('1,3'),

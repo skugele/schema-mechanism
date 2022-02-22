@@ -132,7 +132,7 @@ class TestModuleFunctions(TestCase):
         self.assertTrue(sym_item_assert('1') in s2.result)
         self.assertIs(NULL_STATE_ASSERT, s2.context)
 
-        # result spin-off from item assertion with conjunctive item
+        # result spin-off from item assertion with composite item
         s3 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, assertion=sym_item_assert('~(~1,2)'))
 
         self.assertEqual(s1.action, s3.action)

@@ -135,7 +135,7 @@ def held_state(s_prev: State, s_curr: State) -> frozenset[Item]:
     held = [ItemPool().get(se) for se in s_curr if se in s_prev]
 
     # conjunctions
-    for ci in ItemPool().conjunctive_items:
+    for ci in ItemPool().composite_items:
         if ci.is_on(s_curr) and ci.is_on(s_prev):
             held.append(ci)
 
@@ -157,7 +157,7 @@ def new_state(s_prev: Optional[State], s_curr: Optional[State]) -> frozenset[Ite
     new = [ItemPool().get(se) for se in s_curr if se not in s_prev]
 
     # conjunctions
-    for ci in ItemPool().conjunctive_items:
+    for ci in ItemPool().composite_items:
         if ci.is_on(s_curr) and not ci.is_on(s_prev):
             new.append(ci)
 
@@ -179,7 +179,7 @@ def lost_state(s_prev: Optional[State], s_curr: Optional[State]) -> frozenset[It
     lost = [ItemPool().get(se) for se in s_prev if se not in s_curr]
 
     # conjunctions
-    for ci in ItemPool().conjunctive_items:
+    for ci in ItemPool().composite_items:
         if ci.is_on(s_prev) and not ci.is_on(s_curr):
             lost.append(ci)
 
@@ -372,37 +372,37 @@ class ItemPool(metaclass=Singleton):
     Implements a flyweight design pattern for Item types.
     """
     _items: dict[StateElement, Item] = dict()
-    _conjunctive_items: dict[StateAssertion, CompositeItem] = dict()
+    _composite_items: dict[StateAssertion, CompositeItem] = dict()
 
     def __contains__(self, source: Any) -> bool:
-        return source in ItemPool._items or source in ItemPool._conjunctive_items
+        return source in ItemPool._items or source in ItemPool._composite_items
 
     def __len__(self) -> int:
-        return len(ItemPool._items) + len(ItemPool._conjunctive_items)
+        return len(ItemPool._items) + len(ItemPool._composite_items)
 
     def __iter__(self) -> Iterator[Item]:
         yield from ItemPool._items.values()
-        yield from ItemPool._conjunctive_items.values()
+        yield from ItemPool._composite_items.values()
 
     @property
     def items(self) -> Collection[Item]:
         return ItemPool._items.values()
 
     @property
-    def conjunctive_items(self) -> Collection[CompositeItem]:
-        return ItemPool._conjunctive_items.values()
+    def composite_items(self) -> Collection[CompositeItem]:
+        return ItemPool._composite_items.values()
 
     def clear(self):
         ItemPool._items.clear()
-        ItemPool._conjunctive_items.clear()
+        ItemPool._composite_items.clear()
 
     def get(self, source: Any, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
         read_only = kwargs.get('read_only', False)
         item_type = item_type or GlobalParams().DEFAULT_ITEM_TYPE
 
         type_dict = (
-            ItemPool._conjunctive_items
-            if item_type is GlobalParams().DEFAULT_CONJUNCTIVE_ITEM_TYPE
+            ItemPool._composite_items
+            if item_type is GlobalParams().DEFAULT_COMPOSITE_ITEM_TYPE
             else ItemPool._items
         )
 
@@ -571,7 +571,7 @@ class GlobalOption(Enum):
     ER_SUPPRESS_UPDATE_ON_EXPLAINED = auto()
 
     # Supports the creation of result spin-off schemas incrementally. This was not supported in the original schema
-    # mechanism because of the proliferation of conjunctive results that result. It is allowed here to facilitate
+    # mechanism because of the proliferation of composite results that result. It is allowed here to facilitate
     # comparison and experimentation.
     ER_INCREMENTAL_RESULTS = auto()
 
@@ -606,7 +606,7 @@ class GlobalParams(metaclass=Singleton):
 
     # used by ItemFactory
     DEFAULT_ITEM_TYPE = SymbolicItem
-    DEFAULT_CONJUNCTIVE_ITEM_TYPE = CompositeItem
+    DEFAULT_COMPOSITE_ITEM_TYPE = CompositeItem
 
     # used by delegated value helper
     DEFAULT_DV_TRACE_MAX_LEN = 5
@@ -1541,7 +1541,7 @@ class AssertionRegistry(metaclass=Singleton):
     """ Stores learned assertion.
 
     Note: this class is primarily used by extended results to store learned contexts. It supports the creation of
-    "conjunctive" result spin-off schemas. (See Drescher 1991, Sec. 4.1.4 for details on result conjunctions.)
+    "composite" result spin-off schemas. (See Drescher 1991, Sec. 4.1.4 for details on result conjunctions.)
 
     """
 
@@ -1568,7 +1568,7 @@ class ExtendedResult(ExtendedItemCollection):
         schema is activated (positive correlation) or when it is NOT activated (negative correlation). When such
         significant items are found, result spin-offs are created.
 
-        It's important to note that, unlike extended contexts, the schema mechanism is NOT designed to build conjunctive
+        It's important to note that, unlike extended contexts, the schema mechanism is NOT designed to build composite
         results incrementally due to the combinatorial proliferation of results that would occur (see Drescher 1991,
         p. 78). Only a PRIMITIVE SCHEMA (i.e., a schema with an empty result) can spin-off a schema with a new
         result item. Furthermore, multi-item result spin-offs can be create ALL-AT-ONCE (as opposed to incrementally).
@@ -1576,7 +1576,7 @@ class ExtendedResult(ExtendedItemCollection):
         The mechanism for doing this is the following (see Drescher 1991, Section 4.1.4):
 
         (1) In addition to containing a slot for each item, a schema's extended result also includes a slot for each
-            SET of items (i.e., conjunctive context) that appears as the context of a RELIABLE schema.
+            SET of items (i.e., composite context) that appears as the context of a RELIABLE schema.
         (2) Extended results treat these SETS OF ITEMS like individual items, maintaining the same statistics.
         (3) When an item or set of items is found to be relevant, a spin-off schema is created with that item or
             conjunction of items.
@@ -1637,7 +1637,7 @@ class ExtendedResult(ExtendedItemCollection):
     def update_relevant_items(self, assertion: Assertion):
         # TODO: need to guarantee that only item assertions are being added here....
         if GlobalParams().is_enabled(GlobalOption.ER_POSITIVE_ASSERTIONS_ONLY) and assertion.is_negated:
-            # TODO: need to verify that this is a SINGLE item or conjunctive item!
+            # TODO: need to verify that this is a SINGLE item or composite item!
             self.update_suppressed_items(assertion.items)
         else:
             super().update_relevant_items(assertion)
@@ -1736,7 +1736,7 @@ class ExtendedContext(ExtendedItemCollection):
     def update_relevant_items(self, assertion: Assertion):
         # TODO: need to guarantee that only item assertions are being added here....
         if GlobalParams().is_enabled(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY) and assertion.is_negated:
-            # TODO: need to verify that this is a SINGLE item or conjunctive item!
+            # TODO: need to verify that this is a SINGLE item or composite item!
             self.update_suppressed_items(assertion.items)
         else:
             super().update_relevant_items(assertion)

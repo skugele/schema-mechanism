@@ -289,7 +289,7 @@ class TestDelegatedValueHelper(TestCase):
         self.assertEqual(self.dvh.avg_accessible_value - GlobalStats().baseline_value, self.dvh.delegated_value)
 
 
-class TestConjunctiveItem(unittest.TestCase):
+class TestCompositeItem(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 

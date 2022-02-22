@@ -511,7 +511,7 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
             else Assertion.replicate_with(old=schema.context, new=assertion)
         )
 
-        # add conjunctive contexts to ItemPool to support learning of conjunctive results
+        # add composite contexts to ItemPool to support learning of composite results
         if not GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS):
             if len(new_context) > 1:
                 _ = ItemPool().get(new_context, item_type=CompositeItem)
