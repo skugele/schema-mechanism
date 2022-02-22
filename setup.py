@@ -10,5 +10,5 @@ setup(name='SchemaMechanism',
       url='https://github.com/skugele/schema-mechanism',
       license='MIT',
       python_requires='>=3.9',
-      install_requires=['numpy==1.21.4', 'scikit-learn==1.0.1'],
-)
+      install_requires=['numpy==1.21.4', 'scikit-learn==1.0.1', 'lark==1.1.1', 'anytree==2.8.0'],
+      )
