@@ -42,14 +42,27 @@ StateElement = Hashable
 #########
 class Activatable(ABC):
     @abstractmethod
-    def is_on(self, state: State, *args, **kwargs) -> bool:
-        pass
+    def is_on(self, state: State, *args, **kwargs) -> bool: ...
 
     def is_off(self, state: State, *args, **kwargs) -> bool:
         return not self.is_on(state, *args, **kwargs)
 
 
-class State:
+class ValueBearer(ABC):
+    @property
+    @abstractmethod
+    def primitive_value(self) -> float: ...
+
+    @property
+    @abstractmethod
+    def avg_accessible_value(self) -> float: ...
+
+    @property
+    @abstractmethod
+    def delegated_value(self) -> float: ...
+
+
+class State(ValueBearer):
     def __init__(self, elements: Collection[StateElement], label: Optional[str] = None) -> None:
         self._elements = frozenset(elements)
         self._label = label
@@ -190,7 +203,6 @@ class DelegatedValueHelper:
     than the baseline, the delegated value will be positive. Similarly, when it is less than the baseline, the
     delegated value will be negative.
     """
-    DV_TRACE_MAX_LEN = 5
 
     def __init__(self, item: Item) -> None:
         self._item = item
@@ -248,7 +260,7 @@ class DelegatedValueHelper:
         """
         # start trace if item is On in selection state
         if self._item.is_on(state=selection_state, *args, **kwargs):
-            self._dv_trace_updates_remaining = DelegatedValueHelper.DV_TRACE_MAX_LEN
+            self._dv_trace_updates_remaining = GlobalParams().dv_trace_max_len
 
         # update trace value if updates remain
         if self._dv_trace_updates_remaining > 0:
@@ -281,7 +293,7 @@ class DelegatedValueHelper:
         self._dv_trace_value = -np.inf
 
 
-class Item(Activatable):
+class Item(Activatable, ValueBearer):
 
     def __init__(self, source: Any, primitive_value: float = None, *args, **kwargs) -> None:
         self._source = source
@@ -360,7 +372,7 @@ class ItemPool(metaclass=Singleton):
     Implements a flyweight design pattern for Item types.
     """
     _items: dict[StateElement, Item] = dict()
-    _conjunctive_items: dict[StateAssertion, ConjunctiveItem] = dict()
+    _conjunctive_items: dict[StateAssertion, CompositeItem] = dict()
 
     def __contains__(self, source: Any) -> bool:
         return source in ItemPool._items or source in ItemPool._conjunctive_items
@@ -377,7 +389,7 @@ class ItemPool(metaclass=Singleton):
         return ItemPool._items.values()
 
     @property
-    def conjunctive_items(self) -> Collection[ConjunctiveItem]:
+    def conjunctive_items(self) -> Collection[CompositeItem]:
         return ItemPool._conjunctive_items.values()
 
     def clear(self):
@@ -466,9 +478,9 @@ class SymbolicItem(Item):
         return repr_str(self, {'source': str(self.source)})
 
 
-# TODO: There may be a subtle bug here when the StateAssertion is negated and the ConjunctiveItem containing
-# TODO: that negated assertion is included in a negated ItemAssertion or StateAssertion.
-class ConjunctiveItem(Item):
+# TODO: There may be a subtle bug here when the StateAssertion is negated and the CompositeItem containing
+# TODO: that negated assertion is included in a negated ItemAssertion or StateAssertion.s
+class CompositeItem(Item, ValueBearer):
     """ A StateAssertion wrapper that functions like an Item.
 
     This class is primarily used to support ExtendedResult statistics when the ER_INCREMENTAL_RESULTS is disabled.
@@ -501,7 +513,7 @@ class ConjunctiveItem(Item):
         pass
 
     def copy(self) -> Item:
-        return ConjunctiveItem(self.source.copy())
+        return CompositeItem(self.source.copy())
 
     def __contains__(self, assertion: Assertion) -> bool:
         if isinstance(assertion, ItemAssertion):
@@ -509,7 +521,7 @@ class ConjunctiveItem(Item):
         return False
 
     def __eq__(self, other) -> bool:
-        if isinstance(other, ConjunctiveItem):
+        if isinstance(other, CompositeItem):
             return self.source == other.source
         return False if other is None else NotImplemented
 
@@ -523,12 +535,12 @@ class ConjunctiveItem(Item):
         return repr_str(self, {'assertion': self.source, 'negated': self.source.is_negated})
 
 
-def non_conjunctive_items(items: Collection[Item]) -> Collection[Item]:
-    return list(filter(lambda i: not isinstance(i, ConjunctiveItem), items))
+def non_composite_items(items: Collection[Item]) -> Collection[Item]:
+    return list(filter(lambda i: not isinstance(i, CompositeItem), items))
 
 
-def conjunctive_items(items: Collection[Item]) -> Collection[Item]:
-    return list(filter(lambda i: isinstance(i, ConjunctiveItem), items))
+def composite_items(items: Collection[Item]) -> Collection[Item]:
+    return list(filter(lambda i: isinstance(i, CompositeItem), items))
 
 
 class Verbosity(IntEnum):
@@ -594,16 +606,20 @@ class GlobalParams(metaclass=Singleton):
 
     # used by ItemFactory
     DEFAULT_ITEM_TYPE = SymbolicItem
-    DEFAULT_CONJUNCTIVE_ITEM_TYPE = ConjunctiveItem
+    DEFAULT_CONJUNCTIVE_ITEM_TYPE = CompositeItem
+
+    # used by delegated value helper
+    DEFAULT_DV_TRACE_MAX_LEN = 5
 
     def __init__(self) -> None:
         self._verbosity: Verbosity = Verbosity.NONE
-        self._output_format: str = ''
-        self._learn_rate: float = 0.0
-        self._pos_corr_threshold: float = 0.0
-        self._neg_corr_threshold: float = 0.0
-        self._reliability: float = 0.0
-        self._options: Optional[MutableSet[GlobalOption]] = None
+        self._output_format: str = str()
+        self._learn_rate: float = float()
+        self._pos_corr_threshold: float = float()
+        self._neg_corr_threshold: float = float()
+        self._reliability: float = float()
+        self._dv_trace_max_len: int = int()
+        self._options: Optional[MutableSet[GlobalOption]] = set()
 
         self._set_default_values()
 
@@ -720,6 +736,25 @@ class GlobalParams(metaclass=Singleton):
     def options(self, value: Optional[Collection[GlobalOption]]) -> None:
         self._options = self._set_options(value)
 
+    @property
+    def dv_trace_max_len(self) -> int:
+        """ Gets the maximum trace length for delegated value calculations
+
+        :return: a positive int
+        """
+        return self._dv_trace_max_len
+
+    @dv_trace_max_len.setter
+    def dv_trace_max_len(self, value: int) -> None:
+        """ Sets the maximum trace length for delegated value calculations
+
+        :param value: a positive int
+        :return: None
+        """
+        if value <= 0:
+            raise ValueError('the max delegated value trace length must be positive')
+        self._dv_trace_max_len = value
+
     def _set_options(self, enhancements: Optional[Collection[GlobalOption]]) -> MutableSet[GlobalOption]:
         options = set(enhancements)
         if GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE in enhancements:
@@ -742,6 +777,8 @@ class GlobalParams(metaclass=Singleton):
         self.learn_rate = GlobalParams.DEFAULT_LEARN_RATE
         self.pos_corr_threshold = GlobalParams.DEFAULT_POS_CORR_THRESHOLD
         self.neg_corr_threshold = GlobalParams.DEFAULT_NEG_CORR_THRESHOLD
+        self.reliability_threshold = GlobalParams.DEFAULT_RELIABILITY_THRESHOLD
+        self.dv_trace_max_len = GlobalParams.DEFAULT_DV_TRACE_MAX_LEN
         self.options = GlobalParams.DEFAULT_OPTIONS
 
 
@@ -1178,30 +1215,6 @@ class Action(UniqueIdMixin):
 
         self._label = label
 
-    @property
-    def uid(self) -> int:
-        """ a globally unique id for this action
-
-        :return: returns this object's unique id
-        """
-        return self._uid
-
-    @property
-    def label(self) -> Optional[str]:
-        """ A description of this action.
-
-        :return: returns the Action's label
-        """
-        return self._label
-
-    def copy(self) -> Action:
-        # bypasses initializer to force reuse of uid
-        copy = super().__new__(Action)
-        copy._uid = self._uid
-        copy._label = self._label
-
-        return copy
-
     def __eq__(self, other):
         if isinstance(other, Action):
             if self._label and other._label:
@@ -1220,6 +1233,22 @@ class Action(UniqueIdMixin):
     def __repr__(self) -> str:
         return repr_str(self, {'uid': self.uid,
                                'label': self.label})
+
+    @property
+    def label(self) -> Optional[str]:
+        """ A description of this action.
+
+        :return: returns the Action's label
+        """
+        return self._label
+
+    def copy(self) -> Action:
+        # bypasses initializer to force reuse of uid
+        copy = super().__new__(Action)
+        copy._uid = self._uid
+        copy._label = self._label
+
+        return copy
 
 
 # TODO: Implement composite actions.
@@ -1277,31 +1306,12 @@ class Assertion(ABC):
         return StateAssertion(asserts=(*old, *new))
 
 
-class ItemAssertion(Assertion):
+class ItemAssertion(Assertion, ValueBearer):
 
     def __init__(self, item: Item, negated: bool = False) -> None:
         super().__init__(negated)
 
         self._item = item
-
-    @property
-    def item(self) -> Item:
-        return self._item
-
-    @property
-    def items(self) -> frozenset[Item]:
-        return frozenset([self._item])
-
-    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
-        if self.is_negated:
-            return self._item.is_off(state, *args, **kwargs)
-        else:
-            return self._item.is_on(state, *args, **kwargs)
-
-    # TODO: Can this be removed???
-    def copy(self) -> ItemAssertion:
-        """ Performs a shallow copy of this ItemAssertion. """
-        return ItemAssertion(item=self._item, negated=self.is_negated)
 
     def __iter__(self) -> Iterator[Assertion]:
         yield from [self]
@@ -1333,8 +1343,42 @@ class ItemAssertion(Assertion):
     def __repr__(self) -> str:
         return repr_str(self, {'item': self._item, 'negated': self.is_negated})
 
+    @property
+    def item(self) -> Item:
+        return self._item
 
-class StateAssertion(Assertion):
+    @property
+    def items(self) -> frozenset[Item]:
+        return frozenset([self._item])
+
+    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
+        if self.is_negated:
+            return self._item.is_off(state, *args, **kwargs)
+        else:
+            return self._item.is_on(state, *args, **kwargs)
+
+    # TODO: Can this be removed???
+    def copy(self) -> ItemAssertion:
+        """ Performs a shallow copy of this ItemAssertion. """
+        return ItemAssertion(item=self._item, negated=self.is_negated)
+
+    # TODO: It's not clear how to handle negative assertions. Simply subtracting the values of those items seems
+    # TODO: incorrect, as the thing that it is not may actually be more valuable. The safest course for now seems to be
+    # TODO: to exclude negated asserts from these calculations.
+    @property
+    def primitive_value(self):
+        return 0.0 if self.is_negated else self._item.primitive_value
+
+    @property
+    def delegated_value(self):
+        return 0.0 if self.is_negated else self._item.delegated_value
+
+    @property
+    def avg_accessible_value(self) -> float:
+        return 0.0 if self.is_negated else self._item.avg_accessible_value
+
+
+class StateAssertion(Assertion, ValueBearer):
 
     def __init__(self, asserts: Optional[Collection[ItemAssertion, ...]] = None, negated: bool = False):
         super().__init__(negated)
@@ -1397,12 +1441,12 @@ class StateAssertion(Assertion):
         """
         return all({ia.is_satisfied(state, *args, **kwargs) for ia in self})
 
+    # TODO: It's not clear how to handle negative assertions. Simply subtracting the values of those items seems
+    # TODO: incorrect, as the thing that it is not may actually be more valuable. The safest course for now seems to be
+    # TODO: to exclude negated asserts from these calculations.
     @property
     def primitive_value(self):
-        return (
-                sum(ia.item.primitive_value for ia in self._pos_asserts) -
-                sum(ia.item.primitive_value for ia in self._neg_asserts)
-        )
+        return sum(ia.item.primitive_value for ia in self._pos_asserts)
 
     @property
     def delegated_value(self):
@@ -1432,6 +1476,25 @@ class ExtendedItemCollection(Observable):
         self._stats: dict[Any, ItemStats] = defaultdict(lambda: self._null_member)
 
         self._item_pool = ItemPool()
+
+    def __str__(self) -> str:
+        name = self.__class__.__name__
+        stats = '; '.join([f'{k} -> {v}' for k, v in self._stats.items()])
+
+        return f'{name}[{stats}]'
+
+    def __repr__(self) -> str:
+        item_stats = ', '.join(['{} -> {}'.format(k, v) for k, v in self.stats.items()])
+        relevant_items = ', '.join(str(i) for i in self.relevant_items)
+        new_relevant_items = ', '.join(str(i) for i in self.new_relevant_items)
+
+        attr_values = {
+            'stats': f'[{item_stats}]',
+            'relevant_items': f'[{relevant_items}]',
+            'new_relevant_items': f'[{new_relevant_items}]',
+        }
+
+        return repr_str(self, attr_values)
 
     @property
     def stats(self) -> dict[Any, Any]:
@@ -1472,25 +1535,6 @@ class ExtendedItemCollection(Observable):
     @new_relevant_items.setter
     def new_relevant_items(self, value: Collection[Assertion]) -> None:
         self._new_relevant_items = frozenset(value)
-
-    def __str__(self) -> str:
-        name = self.__class__.__name__
-        stats = '; '.join([f'{k} -> {v}' for k, v in self._stats.items()])
-
-        return f'{name}[{stats}]'
-
-    def __repr__(self) -> str:
-        item_stats = ', '.join(['{} -> {}'.format(k, v) for k, v in self.stats.items()])
-        relevant_items = ', '.join(str(i) for i in self.relevant_items)
-        new_relevant_items = ', '.join(str(i) for i in self.new_relevant_items)
-
-        attr_values = {
-            'stats': f'[{item_stats}]',
-            'relevant_items': f'[{relevant_items}]',
-            'new_relevant_items': f'[{new_relevant_items}]',
-        }
-
-        return repr_str(self, attr_values)
 
 
 class AssertionRegistry(metaclass=Singleton):
@@ -1689,6 +1733,14 @@ class ExtendedContext(ExtendedItemCollection):
         self._pending_relevant_items.clear()
         self._pending_max_specificity = -np.inf
 
+    def update_relevant_items(self, assertion: Assertion):
+        # TODO: need to guarantee that only item assertions are being added here....
+        if GlobalParams().is_enabled(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY) and assertion.is_negated:
+            # TODO: need to verify that this is a SINGLE item or conjunctive item!
+            self.update_suppressed_items(assertion.items)
+        else:
+            super().update_relevant_items(assertion)
+
     def _check_for_relevance(self, item: Item, item_stats: ECItemStats) -> None:
         # if item is relevant, a new item assertion is created
         item_assert = (
@@ -1712,14 +1764,6 @@ class ExtendedContext(ExtendedItemCollection):
                     self._pending_max_specificity = max(self._pending_max_specificity, specificity)
 
             self._pending_relevant_items.add(item_assert)
-
-    def update_relevant_items(self, assertion: Assertion):
-        # TODO: need to guarantee that only item assertions are being added here....
-        if GlobalParams().is_enabled(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY) and assertion.is_negated:
-            # TODO: need to verify that this is a SINGLE item or conjunctive item!
-            self.update_suppressed_items(assertion.items)
-        else:
-            super().update_relevant_items(assertion)
 
 
 class Schema(Observer, Observable, UniqueIdMixin):
@@ -1790,6 +1834,34 @@ class Schema(Observer, Observable, UniqueIdMixin):
         # of schemas that are implicitly activated as a side effect of the given schema’s [explicit]
         # activation on that occasion (see Drescher, 1991, p.55).
         # self.cost = Schema.INITIAL_COST
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Schema):
+            return all({s == o for s, o in
+                        [[self._context, other._context],
+                         [self._action, other._action],
+                         [self._result, other._result]]})
+
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash((self._context,
+                     self._action,
+                     self._result,))
+
+    def __str__(self) -> str:
+        return (
+                f'{self.context}/{self.action}/{self.result} ' +
+                f'[rel: {self.reliability:.2}]'
+        )
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'uid': self.uid,
+                               'context': self.context,
+                               'action': self.action,
+                               'result': self.result,
+                               'overriding_conditions': self.overriding_conditions,
+                               'reliability': self.reliability, })
 
     @property
     def context(self) -> StateAssertion:
@@ -1938,34 +2010,6 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         return new
 
-    def __eq__(self, other) -> bool:
-        if isinstance(other, Schema):
-            return all({s == o for s, o in
-                        [[self._context, other._context],
-                         [self._action, other._action],
-                         [self._result, other._result]]})
-
-        return False if other is None else NotImplemented
-
-    def __hash__(self) -> int:
-        return hash((self._context,
-                     self._action,
-                     self._result,))
-
-    def __str__(self) -> str:
-        return (
-                f'{self.context}/{self.action}/{self.result} ' +
-                f'[rel: {self.reliability:.2}]'
-        )
-
-    def __repr__(self) -> str:
-        return repr_str(self, {'uid': self.uid,
-                               'context': self.context,
-                               'action': self.action,
-                               'result': self.result,
-                               'overriding_conditions': self.overriding_conditions,
-                               'reliability': self.reliability, })
-
 
 def is_reliable(schema: Schema, threshold: Optional[float] = None) -> bool:
     threshold = threshold or GlobalParams().reliability_threshold
@@ -1983,6 +2027,20 @@ class SchemaTreeNode(NodeMixin):
         self._schemas = set()
 
         self.label = label
+
+    def __hash__(self) -> int:
+        return hash((self._context, self._action))
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, SchemaTreeNode):
+            return self._action == other._action and self._context == other._context
+
+    def __str__(self) -> str:
+        return self.label if self.label else f'{self._context}/{self._action}/'
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'context': self._context,
+                               'action': self._action, })
 
     @property
     def context(self) -> Optional[StateAssertion]:
@@ -2010,20 +2068,6 @@ class SchemaTreeNode(NodeMixin):
         return SchemaTreeNode(context=self.context,
                               action=self.action)
 
-    def __hash__(self) -> int:
-        return hash((self._context, self._action))
-
-    def __eq__(self, other) -> bool:
-        if isinstance(other, SchemaTreeNode):
-            return self._action == other._action and self._context == other._context
-
-    def __str__(self) -> str:
-        return self.label if self.label else f'{self._context}/{self._action}/'
-
-    def __repr__(self) -> str:
-        return repr_str(self, {'context': self._context,
-                               'action': self._action, })
-
 
 class SchemaTree:
     """ A search tree of SchemaTreeNodes with the following special properties:
@@ -2046,18 +2090,6 @@ class SchemaTree:
 
         if primitives:
             self.add_primitives(primitives)
-
-    @property
-    def root(self) -> SchemaTreeNode:
-        return self._root
-
-    @property
-    def n_schemas(self) -> int:
-        return self._n_schemas
-
-    @property
-    def height(self) -> int:
-        return self.root.height
 
     def __iter__(self) -> Iterator[SchemaTreeNode]:
         iter_ = LevelOrderIter(node=self.root)
@@ -2082,6 +2114,18 @@ class SchemaTree:
 
     def __str__(self) -> str:
         return RenderTree(self._root, style=AsciiStyle()).by_attr(lambda s: str(s))
+
+    @property
+    def root(self) -> SchemaTreeNode:
+        return self._root
+
+    @property
+    def n_schemas(self) -> int:
+        return self._n_schemas
+
+    @property
+    def height(self) -> int:
+        return self.root.height
 
     def get(self, schema: Schema) -> SchemaTreeNode:
         """ Retrieves the SchemaTreeNode matching this schema's context and action (if it exists).

@@ -23,14 +23,15 @@ class TestSchemaSelection(TestCase):
         self.i5 = pool.get('5', primitive_value=2.0)
         self.i6 = pool.get('6', primitive_value=-3.0)
 
-        self.s_prim = sym_schema('/A1/')  # total value = 0.0
-        self.s1 = sym_schema('1,2/A1/3,')  # total value = 0.95
-        self.s2 = sym_schema('1,2/A1/4,')  # total value = -1.0
-        self.s3 = sym_schema('1,2/A1/5,')  # total value = 2.0
-        self.s4 = sym_schema('1,2/A1/3,4')  # total value = -0.05
-        self.s5 = sym_schema('1,2/A1/3,4,5')  # total value = 1.95
-        self.s6 = sym_schema('1,2/A1/3,4,5,6')  # total value = -1.05
-        self.s7 = sym_schema('1,2/A1/3,4,5,~6')  # total value = 4.95
+        # note: negated items have zero primitive value
+        self.s_prim = sym_schema('/A1/')  # total primitive value = 0.0
+        self.s1 = sym_schema('1,2/A1/3,')  # total primitive value = 0.95
+        self.s2 = sym_schema('1,2/A1/4,')  # total primitive value = -1.0
+        self.s3 = sym_schema('1,2/A1/5,')  # total primitive value = 2.0
+        self.s4 = sym_schema('1,2/A1/3,4')  # total primitive value = -0.05
+        self.s5 = sym_schema('1,2/A1/3,4,5')  # total primitive value = 1.95
+        self.s6 = sym_schema('1,2/A1/3,4,5,6')  # total primitive value = -1.05
+        self.s7 = sym_schema('1,2/A1/3,4,5,~6')  # total primitive value = 1.95
 
     def test_primitive_values(self):
         # sanity checks
@@ -42,7 +43,7 @@ class TestSchemaSelection(TestCase):
         # noinspection PyTypeChecker
         self.assertEqual(0, len(primitive_values(schemas=None)))
 
-        expected_values = [0.0, 0.95, -1.0, 2.0, -0.05, 1.95, -1.05, 4.95]
+        expected_values = [0.0, 0.95, -1.0, 2.0, -0.05, 1.95, -1.05, 1.95]
         actual_values = primitive_values(
             schemas=[self.s_prim, self.s1, self.s2, self.s3, self.s4, self.s5, self.s6, self.s7])
 
@@ -50,10 +51,11 @@ class TestSchemaSelection(TestCase):
             self.assertAlmostEqual(exp, act)
 
     def test_delegated_values(self):
-        pass
+        # i1_d = ItemPool().get('101', item_type=MockSymbolicItem, primitive_value=1.0, delegated_value=6.0)
+        self.fail()
 
     def test_instrumental_values(self):
-        pass
+        self.fail()
 
     def test_select_1(self):
         # sanity checks

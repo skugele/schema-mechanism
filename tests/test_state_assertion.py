@@ -4,7 +4,7 @@ from unittest import TestCase
 
 import test_share
 from schema_mechanism.core import Assertion
-from schema_mechanism.core import ConjunctiveItem
+from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import State
@@ -149,7 +149,7 @@ class TestStateAssertion(TestCase):
         self.assertEqual(ia.item.primitive_value, sa.primitive_value)
 
     def test_primitive_value_3(self):
-        # test: state assertion with single NEGATED item assertion should have prim. value == -(item's prim. value)
+        # test: state assertion with single NEGATED item assertion should have prim. value == 0.0
         ia = self.asserts[1]
 
         # sanity checks
@@ -157,7 +157,7 @@ class TestStateAssertion(TestCase):
         self.assertTrue(ia.is_negated)
 
         sa = StateAssertion((ia,))
-        self.assertEqual(-ia.item.primitive_value, sa.primitive_value)
+        self.assertEqual(0.0, sa.primitive_value)
 
     def test_primitive_value_4(self):
         # test: state assertion with multiple NON-NEGATED item assertion should have prim. value == sum of item
@@ -274,7 +274,7 @@ class TestStateAssertion(TestCase):
 
         # test: OLD state assertion with NEW conjunctive item assertion
         old = sym_state_assert('1,2,3')
-        new = ItemAssertion(ConjunctiveItem(sym_state_assert('4,~5')), negated=True)
+        new = ItemAssertion(CompositeItem(sym_state_assert('4,~5')), negated=True)
 
         sa = Assertion.replicate_with(old, new)
         self.assertEqual(sym_state_assert('1,2,3,~(4,~5)'), sa)

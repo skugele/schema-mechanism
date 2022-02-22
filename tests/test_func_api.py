@@ -1,7 +1,7 @@
 import unittest
 
 from schema_mechanism.core import Action
-from schema_mechanism.core import ConjunctiveItem
+from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
@@ -186,10 +186,10 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertNotIn(sym_assert('5'), schema.result)
 
     def test_sym_conjunctive_item(self):
-        self.assertIsInstance(sym_item('(1,2)'), ConjunctiveItem)
+        self.assertIsInstance(sym_item('(1,2)'), CompositeItem)
 
-        self.assertEqual(ConjunctiveItem(sym_state_assert('1,2')), sym_item('(1,2)'))
-        self.assertEqual(ConjunctiveItem(sym_state_assert('1,~2')), sym_item('(1,~2)'))
+        self.assertEqual(CompositeItem(sym_state_assert('1,2')), sym_item('(1,2)'))
+        self.assertEqual(CompositeItem(sym_state_assert('1,~2')), sym_item('(1,~2)'))
 
         self.assertRaises(ValueError, lambda: sym_item(''))
         self.assertRaises(ValueError, lambda: sym_item('()'))

@@ -1,7 +1,6 @@
 from typing import Any
 
 from schema_mechanism.core import GlobalStats
-from schema_mechanism.core import StateElement
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
@@ -31,7 +30,7 @@ class MockObservable(Observable):
 
 class MockSymbolicItem(SymbolicItem):
     def __init__(self,
-                 source: StateElement,
+                 source: str,
                  primitive_value: float,
                  avg_accessible_value: float):
         super().__init__(source, primitive_value)

@@ -6,7 +6,7 @@ from unittest import TestCase
 import numpy as np
 
 import test_share
-from schema_mechanism.core import ConjunctiveItem
+from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import DelegatedValueHelper
 from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import GlobalStats
@@ -126,7 +126,7 @@ class TestDelegatedValueHelper(TestCase):
         GlobalStats(baseline_value=2.0)
 
         # explicitly set max trace length to facilitate testing (e.g., guarantee trace termination)
-        DelegatedValueHelper.DV_TRACE_MAX_LEN = 3
+        GlobalParams().dv_trace_max_len = 3
 
         self.states = [
             # trace 1 states (len = 3 [MAX])
@@ -200,7 +200,7 @@ class TestDelegatedValueHelper(TestCase):
 
                 updates_remaining = (
                     0 if early_term else
-                    DelegatedValueHelper.DV_TRACE_MAX_LEN - 1 if self.dvh.item.is_on(ss) else
+                    GlobalParams().dv_trace_max_len - 1 if self.dvh.item.is_on(ss) else
                     max(0, updates_remaining - 1)
                 )
 
@@ -302,7 +302,7 @@ class TestConjunctiveItem(unittest.TestCase):
         _ = self.pool.get('4', primitive_value=-3.0)
 
         self.sa = sym_state_assert('1,2,~3,4')
-        self.item = ConjunctiveItem(source=self.sa)
+        self.item = CompositeItem(source=self.sa)
 
     def test_init(self):
         # test: the source should be set properly
@@ -335,7 +335,7 @@ class TestConjunctiveItem(unittest.TestCase):
 
     def test_equal(self):
         copy = self.item.copy()
-        other = ConjunctiveItem(sym_state_assert('~7,8,9'))
+        other = CompositeItem(sym_state_assert('~7,8,9'))
 
         self.assertEqual(self.item, self.item)
         self.assertEqual(self.item, copy)
@@ -356,16 +356,16 @@ class TestConjunctiveItem(unittest.TestCase):
         sa1 = sym_state_assert('2,~3,~4')
 
         len_before = len(self.pool)
-        item1 = self.pool.get(source=sa1, item_type=ConjunctiveItem)
+        item1 = self.pool.get(source=sa1, item_type=CompositeItem)
 
-        self.assertIsInstance(item1, ConjunctiveItem)
+        self.assertIsInstance(item1, CompositeItem)
         self.assertEqual(sa1, item1.source)
         self.assertEqual(sa1.primitive_value, item1.primitive_value)
         self.assertEqual(len_before + 1, len(self.pool))
         self.assertIn(sa1, self.pool)
 
         len_before = len(self.pool)
-        item2 = self.pool.get(source=sa1, item_type=ConjunctiveItem)
+        item2 = self.pool.get(source=sa1, item_type=CompositeItem)
 
         self.assertIs(item1, item2)
         self.assertEqual(len_before, len(self.pool))
@@ -373,7 +373,7 @@ class TestConjunctiveItem(unittest.TestCase):
         sa2 = sym_state_assert('2,3,4')
 
         len_before = len(self.pool)
-        item3 = self.pool.get(source=sa2, item_type=ConjunctiveItem)
+        item3 = self.pool.get(source=sa2, item_type=CompositeItem)
 
         self.assertNotEqual(item2, item3)
         self.assertEqual(sa2, item3.source)

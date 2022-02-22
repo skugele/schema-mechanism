@@ -4,7 +4,7 @@ from time import time
 from unittest import TestCase
 
 import test_share
-from schema_mechanism.core import ConjunctiveItem
+from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import ReadOnlyItemPool
 from schema_mechanism.core import SymbolicItem
@@ -86,7 +86,7 @@ class TestSharedItemPool(TestCase):
             sym_state_assert('~2,4'),
         ))
         for sa in state_assertions:
-            _ = pool.get(sa, item_type=ConjunctiveItem)
+            _ = pool.get(sa, item_type=CompositeItem)
 
         encountered = defaultdict(lambda: 0)
         for item in pool:

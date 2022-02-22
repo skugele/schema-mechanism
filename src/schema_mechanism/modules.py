@@ -12,7 +12,7 @@ import numpy as np
 from schema_mechanism.core import Action
 from schema_mechanism.core import Assertion
 from schema_mechanism.core import CompositeAction
-from schema_mechanism.core import ConjunctiveItem
+from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import GlobalOption
 from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import GlobalStats
@@ -514,7 +514,7 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
         # add conjunctive contexts to ItemPool to support learning of conjunctive results
         if not GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS):
             if len(new_context) > 1:
-                _ = ItemPool().get(new_context, item_type=ConjunctiveItem)
+                _ = ItemPool().get(new_context, item_type=CompositeItem)
 
         return Schema(action=schema.action, context=new_context, result=schema.result)
 
