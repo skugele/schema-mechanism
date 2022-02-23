@@ -1,6 +1,8 @@
 from typing import Any
 
+from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
@@ -34,6 +36,27 @@ class MockSymbolicItem(SymbolicItem):
                  primitive_value: float,
                  avg_accessible_value: float):
         super().__init__(source, primitive_value)
+
+        self._avg_accessible_value = avg_accessible_value
+
+    @property
+    def avg_accessible_value(self) -> float:
+        return self._avg_accessible_value
+
+    @avg_accessible_value.setter
+    def avg_accessible_value(self, value: float) -> None:
+        self._avg_accessible_value = value
+
+    @property
+    def delegated_value(self) -> float:
+        return self._avg_accessible_value - GlobalStats().baseline_value
+
+
+class MockCompositeItem(CompositeItem):
+    def __init__(self,
+                 source: StateAssertion,
+                 avg_accessible_value: float):
+        super().__init__(source)
 
         self._avg_accessible_value = avg_accessible_value
 

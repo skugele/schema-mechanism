@@ -25,6 +25,7 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
+from schema_mechanism.core import debug
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
@@ -189,6 +190,11 @@ class AbsoluteDiffMatchStrategy:
         return values >= (ref - self.max_diff)
 
 
+class RandomizeSelectionStrategy:
+    def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> Schema:
+        return np.random.choice(schemas, size=1)[0]
+
+
 class RandomizeBestSelectionStrategy:
     def __init__(self, match: MatchStrategy):
         self.eq = match or EqualityMatchStrategy()
@@ -255,13 +261,40 @@ class GoalPursuitEvaluationStrategy:
         pass
 
     def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
-        # pv = primitive_values(schemas)
-        # dv = delegated_values(schemas)
-        # iv = instrumental_values(schemas)
-        #
-        # return pv + dv + iv
-        # FIXME: remove this once I've figured out the context spin-off issue
-        return np.zeros_like(schemas)
+        pv = primitive_values(schemas)
+        dv = delegated_values(schemas)
+        iv = instrumental_values(schemas)
+
+        return pv + dv + iv
+
+
+class EpsilonGreedyExploratoryStrategy:
+    def __init__(self, epsilon: float = None):
+        self._epsilon = epsilon
+
+    @property
+    def epsilon(self) -> float:
+        return self._epsilon
+
+    @epsilon.setter
+    def epsilon(self, value: float) -> None:
+        if value < 0.0 or value > 1.0:
+            raise ValueError('Epsilon value must be between zero and one (inclusive).')
+        self._epsilon = value
+
+    def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
+        if not schemas:
+            return np.array([])
+
+        values = np.zeros_like(schemas)
+
+        # determine if taking exploratory or goal-directed action
+        is_exploratory = np.random.rand() < self._epsilon
+
+        # randomly select winning schema if exploratory action and set value to np.inf
+        if is_exploratory:
+            values[np.random.choice(len(schemas))] = np.inf
+        return values
 
 
 # TODO: implement this
@@ -299,7 +332,7 @@ class ExploratoryEvaluationStrategy:
         # structures is of one greater level than the maximum of those structures' levels." (See Drescher, 1991, p. 67)
 
         # FIXME
-        return np.zeros_like(schemas)
+        return np.random.random_integers(0, 100, len(schemas))
 
 
 class SchemaSelection:
@@ -344,7 +377,9 @@ class SchemaSelection:
 
     DEFAULT_GOAL_PURSUIT_STRATEGY = GoalPursuitEvaluationStrategy()
     DEFAULT_EXPLORATORY_STRATEGY = ExploratoryEvaluationStrategy()
-    DEFAULT_SELECTION_STRATEGY = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1))
+    DEFAULT_SELECTION_STRATEGY = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(5.0))
+
+    # DEFAULT_SELECTION_STRATEGY = RandomizeSelectionStrategy()
 
     def __init__(self,
                  goal_pursuit: SchemaEvaluationStrategy = None,
@@ -385,6 +420,9 @@ class SchemaSelection:
         # TODO: Only reliable schemas should be used for goal pursuit. How do we do this??? Perhaps a large penalty
         # TODO: for unreliable schemas???
         selection_values = self.goal_weight * goal_values + self._explore_weight * explore_values
+
+        for s, v in zip(schemas, selection_values):
+            debug(f'{s}:{float(v):.2f}')
 
         # TODO: Need to increase the selection value for pending composite actions
         # “The mechanism grants a pending schema enhanced importance for selection, so that the schema will likely
@@ -489,7 +527,7 @@ class SchemaMechanism:
         return self._selection_details.selected
 
 
-def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion: Assertion) -> Schema:
+def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion: ItemAssertion) -> Schema:
     """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
 
     :param schema: the schema from which the new spin-off schema will be based

@@ -185,6 +185,15 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertIn(sym_assert('4'), schema.result)
         self.assertNotIn(sym_assert('5'), schema.result)
 
+        # schema with composite item in result
+        schema = sym_schema('/A1/(~3,4),5')
+        self.assertIsInstance(schema, Schema)
+        self.assertIs(NULL_STATE_ASSERT, schema.context)
+        self.assertIsNot(NULL_STATE_ASSERT, schema.result)
+        self.assertEqual(Action('A1'), schema.action)
+        self.assertIn(sym_assert('(~3,4)'), schema.result)
+        self.assertIn(sym_assert('5'), schema.result)
+
     def test_sym_composite_item(self):
         self.assertIsInstance(sym_item('(1,2)'), CompositeItem)
 

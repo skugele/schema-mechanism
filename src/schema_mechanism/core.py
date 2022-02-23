@@ -48,6 +48,7 @@ class Activatable(ABC):
         return not self.is_on(state, *args, **kwargs)
 
 
+# TODO: Better name?
 class ValueBearer(ABC):
     @property
     @abstractmethod
@@ -398,11 +399,11 @@ class ItemPool(metaclass=Singleton):
 
     def get(self, source: Any, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
         read_only = kwargs.get('read_only', False)
-        item_type = item_type or GlobalParams().DEFAULT_ITEM_TYPE
+        item_type = item_type or GlobalParams().item_type
 
         type_dict = (
             ItemPool._composite_items
-            if item_type is GlobalParams().DEFAULT_COMPOSITE_ITEM_TYPE
+            if item_type is GlobalParams().composite_item_type
             else ItemPool._items
         )
 
@@ -475,7 +476,10 @@ class SymbolicItem(Item):
         return str(self.source)
 
     def __repr__(self) -> str:
-        return repr_str(self, {'source': str(self.source)})
+        return repr_str(self, {'source': str(self.source),
+                               'pv': self.primitive_value,
+                               'dv': self.delegated_value,
+                               'aav': self.avg_accessible_value, })
 
 
 # TODO: There may be a subtle bug here when the StateAssertion is negated and the CompositeItem containing
@@ -498,19 +502,6 @@ class CompositeItem(Item, ValueBearer):
 
     def is_on(self, state: State, *args, **kwargs) -> bool:
         return self.source.is_satisfied(state)
-
-    @property
-    def avg_accessible_value(self) -> float:
-        return self.source.avg_accessible_value
-
-    @property
-    def delegated_value(self) -> float:
-        return self.source.delegated_value
-
-    # TODO: is this correct? where is this update occurring?
-    def update_delegated_value(self, *args, **kwargs) -> None:
-        # do nothing. updates to delegated value handled elsewhere.
-        pass
 
     def copy(self) -> Item:
         return CompositeItem(self.source.copy())
@@ -618,6 +609,8 @@ class GlobalParams(metaclass=Singleton):
         self._pos_corr_threshold: float = float()
         self._neg_corr_threshold: float = float()
         self._reliability: float = float()
+        self._item_type: Type[Item] = Item
+        self._composite_item_type: Type[CompositeItem] = CompositeItem
         self._dv_trace_max_len: int = int()
         self._options: Optional[MutableSet[GlobalOption]] = set()
 
@@ -729,6 +722,40 @@ class GlobalParams(metaclass=Singleton):
         self._output_format = value
 
     @property
+    def item_type(self) -> Type[Item]:
+        """ Gets 5he Item type used for non-composite Item creation.
+
+        :return: an Item type
+        """
+        return self._item_type
+
+    @item_type.setter
+    def item_type(self, value: Type[Item]) -> None:
+        """ Sets the Item type used for non-composite Item creation.
+
+        :param value: an Item type
+        :return: None
+        """
+        self._item_type = value
+
+    @property
+    def composite_item_type(self) -> Type[CompositeItem]:
+        """ Gets 5he Item type used for non-composite Item creation.
+
+        :return: an Item type
+        """
+        return self._composite_item_type
+
+    @composite_item_type.setter
+    def composite_item_type(self, value: Type[CompositeItem]) -> None:
+        """ Sets the Item type used for non-composite Item creation.
+
+        :param value: an Item type
+        :return: None
+        """
+        self._composite_item_type = value
+
+    @property
     def options(self) -> MutableSet[GlobalOption]:
         return self._options
 
@@ -779,6 +806,8 @@ class GlobalParams(metaclass=Singleton):
         self.neg_corr_threshold = GlobalParams.DEFAULT_NEG_CORR_THRESHOLD
         self.reliability_threshold = GlobalParams.DEFAULT_RELIABILITY_THRESHOLD
         self.dv_trace_max_len = GlobalParams.DEFAULT_DV_TRACE_MAX_LEN
+        self.item_type = GlobalParams.DEFAULT_ITEM_TYPE
+        self.composite_item_type = GlobalParams.DEFAULT_COMPOSITE_ITEM_TYPE
         self.options = GlobalParams.DEFAULT_OPTIONS
 
 
@@ -1383,31 +1412,31 @@ class StateAssertion(Assertion, ValueBearer):
     def __init__(self, asserts: Optional[Collection[ItemAssertion, ...]] = None, negated: bool = False):
         super().__init__(negated)
 
-        self._pos_asserts = frozenset(filter(lambda ia: not ia.is_negated, asserts)) if asserts else frozenset()
+        self._asserts = frozenset(filter(lambda ia: not ia.is_negated, asserts)) if asserts else frozenset()
         self._neg_asserts = frozenset(filter(lambda ia: ia.is_negated, asserts)) if asserts else frozenset()
 
         self._items = frozenset(itertools.chain.from_iterable(a.items for a in asserts)) if asserts else frozenset()
 
     def __iter__(self) -> Iterator[ItemAssertion]:
-        yield from self._pos_asserts
+        yield from self._asserts
         yield from self._neg_asserts
 
     def __len__(self) -> int:
-        return len(self._pos_asserts) + len(self._neg_asserts)
+        return len(self._asserts) + len(self._neg_asserts)
 
     def __contains__(self, item_assert: ItemAssertion) -> bool:
         return (item_assert in self._neg_asserts if item_assert.is_negated
-                else item_assert in self._pos_asserts)
+                else item_assert in self._asserts)
 
     def __eq__(self, other) -> bool:
         if isinstance(other, StateAssertion):
-            return (self._pos_asserts == other._pos_asserts
+            return (self._asserts == other._asserts
                     and self._neg_asserts == other._neg_asserts)
 
         return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
-        return hash((self._pos_asserts, self._neg_asserts))
+        return hash((self._asserts, self._neg_asserts))
 
     def __str__(self) -> str:
         return ','.join(map(str, self))
@@ -1426,7 +1455,7 @@ class StateAssertion(Assertion, ValueBearer):
         """
         new = super().__new__(StateAssertion)
 
-        new._pos_asserts = self._pos_asserts
+        new._asserts = self._asserts
         new._neg_asserts = self._neg_asserts
 
         return new
@@ -1446,15 +1475,15 @@ class StateAssertion(Assertion, ValueBearer):
     # TODO: to exclude negated asserts from these calculations.
     @property
     def primitive_value(self):
-        return sum(ia.item.primitive_value for ia in self._pos_asserts)
+        return sum(ia.item.primitive_value for ia in self._asserts)
 
     @property
     def delegated_value(self):
-        return sum(ia.item.delegated_value for ia in self._pos_asserts)
+        return sum(ia.item.delegated_value for ia in self._asserts)
 
     @property
     def avg_accessible_value(self) -> float:
-        return sum(ia.item.avg_accessible_value for ia in self._pos_asserts)
+        return sum(ia.item.avg_accessible_value for ia in self._asserts)
 
 
 NULL_STATE_ASSERT = StateAssertion()

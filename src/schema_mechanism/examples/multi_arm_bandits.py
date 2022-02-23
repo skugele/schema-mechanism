@@ -6,6 +6,8 @@ from typing import Optional
 from schema_mechanism.core import Action
 from schema_mechanism.core import GlobalOption
 from schema_mechanism.core import GlobalParams
+from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import ItemPool
 from schema_mechanism.core import State
 from schema_mechanism.core import StateElement
 from schema_mechanism.core import Verbosity
@@ -51,17 +53,17 @@ class BanditEnvironment(Observable):
         self._machines = machines
 
         self._actions = [Action(a_str) for a_str in ['deposit', 'stand', 'play']]
-        self._sit_actions = [Action(f'sit({m})') for m in self._machines]
+        self._sit_actions = [Action(f'sit({m_})') for m_ in self._machines]
         self._actions.extend(self._sit_actions)
 
-        self._state_elements = ['W', 'L', 'S', 'P'] + [str(m) for m in self._machines]
+        self._state_elements = ['W', 'L', 'S', 'P'] + [str(m_) for m_ in self._machines]
         self._states = [sym_state('W'), sym_state('L'), sym_state('S'), sym_state('P')]
 
         # add machine related states
-        self._machine_base_states = [sym_state(str(m)) for m in self._machines]
-        self._machine_play_states = [sym_state(f'{m},P') for m in self._machines]
-        self._machine_win_states = [sym_state(f'{m},W') for m in self._machines]
-        self._machine_lose_states = [sym_state(f'{m},L') for m in self._machines]
+        self._machine_base_states = [sym_state(str(m_)) for m_ in self._machines]
+        self._machine_play_states = [sym_state(f'{m_},P') for m_ in self._machines]
+        self._machine_win_states = [sym_state(f'{m_},W') for m_ in self._machines]
+        self._machine_lose_states = [sym_state(f'{m_},L') for m_ in self._machines]
 
         self._states.extend([
             *self._machine_base_states,
@@ -168,16 +170,22 @@ def parse_args():
 
 
 def display_known_schemas(sm_: SchemaMechanism) -> None:
-    debug(f'*********************************')
-    debug(f'known schemas ({len(sm.known_schemas)})')
+    debug(f'n schemas ({len(sm.known_schemas)})')
     for s in sm_.known_schemas:
         debug(s)
-    debug(f'*********************************')
+
+
+def display_item_values() -> None:
+    debug(f'n items: ({len(ItemPool())})')
+    for i in ItemPool():
+        debug(repr(i))
 
 
 if __name__ == '__main__':
+    GlobalParams().learn_rate = 0.05
+    GlobalParams().dv_trace_max_len = 5
     N_MACHINES = 2
-    N_STEPS = 1000
+    N_STEPS = 10000
 
     random.seed(8675309)
 
@@ -190,24 +198,21 @@ if __name__ == '__main__':
     GlobalParams().options.add(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY)
     GlobalParams().options.add(GlobalOption.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
 
-    # GlobalParams().options.add(GlobalOption.ER_INCREMENTAL_RESULTS)
-
     args = parse_args()
 
     machines = [Machine(str(id_), p_win=random.uniform(0, 1)) for id_ in range(args.n_machines)]
     env = BanditEnvironment(machines)
 
     # primitive items
-    i_win = sym_item('W', primitive_value=10.0)
-    i_lose = sym_item('L', primitive_value=-2.0)
-    i_pay = sym_item('P', primitive_value=-1.0)
+    i_win = sym_item('W', primitive_value=100.0)
+    i_lose = sym_item('L', primitive_value=-20.0)
+    i_pay = sym_item('P', primitive_value=-5.0)
 
     sm = SchemaMechanism(primitive_actions=env.actions,
                          primitive_items=[i_win, i_lose, i_pay])
 
     for n in range(args.steps):
-        display_known_schemas(sm)
-
+        # display_item_values()
         state = env.current_state
         info(f'State[{n}]: {env.current_state}')
         schema = sm.select(env.current_state)
@@ -219,3 +224,7 @@ if __name__ == '__main__':
 
     for m in machines:
         info(repr(m))
+
+    debug(f'baseline: {GlobalStats().baseline_value}')
+    display_item_values()
+    display_known_schemas(sm)
