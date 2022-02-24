@@ -376,8 +376,8 @@ class SchemaSelection:
     """
 
     DEFAULT_GOAL_PURSUIT_STRATEGY = GoalPursuitEvaluationStrategy()
-    DEFAULT_EXPLORATORY_STRATEGY = ExploratoryEvaluationStrategy()
-    DEFAULT_SELECTION_STRATEGY = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(5.0))
+    DEFAULT_EXPLORATORY_STRATEGY = EpsilonGreedyExploratoryStrategy(0.9)
+    DEFAULT_SELECTION_STRATEGY = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0))
 
     # DEFAULT_SELECTION_STRATEGY = RandomizeSelectionStrategy()
 
@@ -392,8 +392,8 @@ class SchemaSelection:
 
         # TODO: Set parameters.
 
-        self._goal_weight: float = 1.0
-        self._explore_weight: float = 1.0 - self.goal_weight
+        self._goal_weight = 0.6
+        self._explore_weight = 1.0 - self._goal_weight
 
     @property
     def goal_weight(self) -> float:
@@ -419,8 +419,9 @@ class SchemaSelection:
 
         # TODO: Only reliable schemas should be used for goal pursuit. How do we do this??? Perhaps a large penalty
         # TODO: for unreliable schemas???
-        selection_values = self.goal_weight * goal_values + self._explore_weight * explore_values
+        selection_values = self.goal_weight * goal_values + self.explore_weight * explore_values
 
+        debug('selection values: ')
         for s, v in zip(schemas, selection_values):
             debug(f'{s}:{float(v):.2f}')
 

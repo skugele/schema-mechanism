@@ -366,6 +366,15 @@ class Item(Activatable, ValueBearer):
     def __hash__(self) -> int:
         pass
 
+    def __str__(self) -> str:
+        return str(self.source)
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'source': str(self.source),
+                               'pv': self.primitive_value,
+                               'dv': self.delegated_value,
+                               'aav': self.avg_accessible_value, })
+
 
 # TODO: rename to ItemFactory???
 class ItemPool(metaclass=Singleton):
@@ -428,23 +437,6 @@ class ReadOnlyItemPool(ItemPool):
         raise NotImplementedError('ReadOnlyItemPool does not support clear operation.')
 
 
-# class ItemPoolStateView:
-#     def __init__(self, state: Optional[State]):
-#         # The state to which this view corresponds
-#         self._state = state
-#         self._on_items = set([item for item in ReadOnlyItemPool() if item.is_on(state)]) if state else set()
-#
-#     @property
-#     def state(self):
-#         return self._state
-#
-#     def is_on(self, item: Item) -> bool:
-#         return item in self._on_items
-#
-#     def is_off(self, item: Item) -> bool:
-#         return item not in self._on_items
-
-
 class SymbolicItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
@@ -471,15 +463,6 @@ class SymbolicItem(Item):
 
     def __hash__(self) -> int:
         return hash(self.source)
-
-    def __str__(self) -> str:
-        return str(self.source)
-
-    def __repr__(self) -> str:
-        return repr_str(self, {'source': str(self.source),
-                               'pv': self.primitive_value,
-                               'dv': self.delegated_value,
-                               'aav': self.avg_accessible_value, })
 
 
 # TODO: There may be a subtle bug here when the StateAssertion is negated and the CompositeItem containing
@@ -520,10 +503,7 @@ class CompositeItem(Item, ValueBearer):
         return hash(self.source)
 
     def __str__(self) -> str:
-        return f'{"~" if self.source.is_negated else ""}({",".join(str(ia) for ia in self.source)})'
-
-    def __repr__(self) -> str:
-        return repr_str(self, {'assertion': self.source, 'negated': self.source.is_negated})
+        return f'({str(self.source)})'
 
 
 def non_composite_items(items: Collection[Item]) -> Collection[Item]:
@@ -584,8 +564,8 @@ class GlobalParams(metaclass=Singleton):
     DEFAULT_LEARN_RATE = 0.01
 
     # thresholds for determining the relevance of items (1.0 -> correlation always occurs)
-    DEFAULT_POS_CORR_THRESHOLD = 0.75
-    DEFAULT_NEG_CORR_THRESHOLD = 0.75
+    DEFAULT_POS_CORR_THRESHOLD = 0.55
+    DEFAULT_NEG_CORR_THRESHOLD = 0.55
 
     # success threshold used for determining that a schema is reliable (1.0 -> schema always succeeds)
     DEFAULT_RELIABILITY_THRESHOLD = 0.95
@@ -1566,30 +1546,6 @@ class ExtendedItemCollection(Observable):
         self._new_relevant_items = frozenset(value)
 
 
-class AssertionRegistry(metaclass=Singleton):
-    """ Stores learned assertion.
-
-    Note: this class is primarily used by extended results to store learned contexts. It supports the creation of
-    "composite" result spin-off schemas. (See Drescher 1991, Sec. 4.1.4 for details on result conjunctions.)
-
-    """
-
-    def __init__(self) -> None:
-        self._assertions: MutableSet[Assertion] = set()
-
-    def __len__(self) -> int:
-        return len(self._assertions)
-
-    def __iter__(self) -> Iterator[Assertion]:
-        yield from self._assertions
-
-    def __contains__(self, assertion: Assertion) -> bool:
-        return assertion in self._assertions
-
-    def add(self, assertion: Assertion) -> None:
-        self._assertions.add(assertion)
-
-
 class ExtendedResult(ExtendedItemCollection):
     """
         a schema’s extended result is used to identify the consequences of an agent's actions. Each extended result
@@ -1830,10 +1786,11 @@ class Schema(Observer, Observable, UniqueIdMixin):
         self._is_primitive = not (context or result)
 
         self._extended_context: ExtendedContext = (
-            ExtendedContext(self._context)
-            if not self._is_primitive else
             None
+            if self._is_primitive else
+            ExtendedContext(self._context)
         )
+
         self._extended_result: ExtendedResult = (
             ExtendedResult(self._result)
             if self._is_primitive or GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS) else
