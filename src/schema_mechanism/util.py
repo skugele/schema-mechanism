@@ -91,11 +91,14 @@ def cosine_sims(v: np.ndarray, state: Iterable[np.ndarray]) -> np.ndarray:
     return sk_metrics.pairwise.cosine_similarity(v.reshape(1, -1), state)
 
 
-def get_orthogonal_vector(v: np.ndarray):
-    """ Applies Gram-Schmidt to make a new vector that is orthogonal to v """
-    v_orth = np.random.rand(*v.shape)
-    v_orth -= v_orth.dot(v) / np.linalg.norm(v) ** 2
-    return v_orth
+_rng = None
+
+
+def get_rand_gen(seed):
+    global _rng
+    if not _rng:
+        _rng = np.random.default_rng(seed)
+    return _rng
 
 
 def repr_str(obj: Any, attr_values: dict[str, Any]) -> str:

@@ -25,14 +25,13 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
-from schema_mechanism.core import debug
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
 from schema_mechanism.util import Observer
+from schema_mechanism.util import get_rand_gen
 
 
-# TODO: Move into SchemaMemory as an inner class?
 class SchemaMemoryStats:
     def __init__(self):
         self.n_updates = 0
@@ -62,7 +61,7 @@ class SchemaMemory(Observer):
         return str(self._schema_tree)
 
     @property
-    def schemas(self) -> Collection[Schema]:
+    def schemas(self) -> list[Schema]:
         return list(itertools.chain.from_iterable([n.schemas for n in self._schema_tree]))
 
     @staticmethod
@@ -126,7 +125,7 @@ class SchemaMemory(Observer):
         # all activated schemas must be updated BEFORE non-activated. this supports ER_SUPPRESS_UPDATE_ON_EXPLAINED.
         for s in activated_schemas:
             if s.action == schema.action:
-                explained |= True if is_reliable(schema) else False
+                explained |= True if is_reliable(schema) and schema.predicts_state(result_state) else False
 
                 s.update(activated=True,
                          s_prev=selection_state,
@@ -191,20 +190,25 @@ class AbsoluteDiffMatchStrategy:
 
 
 class RandomizeSelectionStrategy:
+    def __init__(self):
+        self._rng = get_rand_gen(GlobalParams().rng_seed)
+
     def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> Schema:
-        return np.random.choice(schemas, size=1)[0]
+        return self._rng.choice(schemas, size=1)[0]
 
 
 class RandomizeBestSelectionStrategy:
     def __init__(self, match: MatchStrategy):
         self.eq = match or EqualityMatchStrategy()
 
+        self._rng = get_rand_gen(GlobalParams().rng_seed)
+
     def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> Schema:
         max_value = np.max(values)
 
         # randomize selection if several schemas have values within sameness threshold
         best_schemas = np.argwhere(self.eq(values, max_value)).flatten()
-        selection_index = np.random.choice(best_schemas, size=1)[0]
+        selection_index = self._rng.choice(best_schemas, size=1)[0]
 
         return schemas[selection_index]
 
@@ -272,6 +276,8 @@ class EpsilonGreedyExploratoryStrategy:
     def __init__(self, epsilon: float = None):
         self._epsilon = epsilon
 
+        self._rng = get_rand_gen(GlobalParams().rng_seed)
+
     @property
     def epsilon(self) -> float:
         return self._epsilon
@@ -289,11 +295,11 @@ class EpsilonGreedyExploratoryStrategy:
         values = np.zeros_like(schemas)
 
         # determine if taking exploratory or goal-directed action
-        is_exploratory = np.random.rand() < self._epsilon
+        is_exploratory = self._rng.uniform(0.0, 1.0) < self._epsilon
 
         # randomly select winning schema if exploratory action and set value to np.inf
         if is_exploratory:
-            values[np.random.choice(len(schemas))] = np.inf
+            values[self._rng.choice(len(schemas))] = np.inf
         return values
 
 
@@ -303,7 +309,7 @@ class ExploratoryEvaluationStrategy:
         # TODO: There are MANY factors that influence value, and it is not clear what their relative weights should be.
         # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
         # TODO: balance between them.
-        pass
+        self._rng = get_rand_gen(GlobalParams().rng_seed)
 
     def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
         # TODO: Add a mechanism for tracking recently activated schemas.
@@ -332,7 +338,7 @@ class ExploratoryEvaluationStrategy:
         # structures is of one greater level than the maximum of those structures' levels." (See Drescher, 1991, p. 67)
 
         # FIXME
-        return np.random.random_integers(0, 100, len(schemas))
+        return self._rng.integers(0, 100, len(schemas))
 
 
 class SchemaSelection:
@@ -375,20 +381,14 @@ class SchemaSelection:
         See Drescher, 1991, section 3.4
     """
 
-    DEFAULT_GOAL_PURSUIT_STRATEGY = GoalPursuitEvaluationStrategy()
-    DEFAULT_EXPLORATORY_STRATEGY = EpsilonGreedyExploratoryStrategy(0.9)
-    DEFAULT_SELECTION_STRATEGY = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0))
-
-    # DEFAULT_SELECTION_STRATEGY = RandomizeSelectionStrategy()
-
     def __init__(self,
                  goal_pursuit: SchemaEvaluationStrategy = None,
                  explore: SchemaEvaluationStrategy = None,
                  select: SelectionStrategy = None):
 
-        self._goal_pursuit = goal_pursuit or SchemaSelection.DEFAULT_GOAL_PURSUIT_STRATEGY
-        self._explore = explore or SchemaSelection.DEFAULT_EXPLORATORY_STRATEGY
-        self._select = select or SchemaSelection.DEFAULT_SELECTION_STRATEGY
+        self._goal_pursuit = goal_pursuit or GoalPursuitEvaluationStrategy()
+        self._explore = explore or EpsilonGreedyExploratoryStrategy(0.9)
+        self._select = select or RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0))
 
         # TODO: Set parameters.
 
@@ -421,9 +421,9 @@ class SchemaSelection:
         # TODO: for unreliable schemas???
         selection_values = self.goal_weight * goal_values + self.explore_weight * explore_values
 
-        debug('selection values: ')
-        for s, v in zip(schemas, selection_values):
-            debug(f'{s}:{float(v):.2f}')
+        # debug('selection values: ')
+        # for s, v in zip(schemas, selection_values):
+        #     debug(f'{s}:{float(v):.2f}')
 
         # TODO: Need to increase the selection value for pending composite actions
         # “The mechanism grants a pending schema enhanced importance for selection, so that the schema will likely
@@ -494,6 +494,14 @@ class SchemaMechanism:
 
         self._selection_state: Optional[State] = None
         self._selection_details: Optional[SchemaSelection.SelectionDetails] = None
+
+    @property
+    def schema_memory(self) -> SchemaMemory:
+        return self._schema_memory
+
+    @property
+    def schema_selection(self) -> SchemaSelection:
+        return self._schema_selection
 
     @property
     def known_schemas(self) -> Collection[Schema]:

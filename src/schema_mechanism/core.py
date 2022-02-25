@@ -14,6 +14,7 @@ from enum import Enum
 from enum import IntEnum
 from enum import auto
 from enum import unique
+from time import time
 from typing import Any
 from typing import Optional
 from typing import TextIO
@@ -560,6 +561,9 @@ class GlobalParams(metaclass=Singleton):
     # format string used by output functions (debug, info, warn, error, fatal)
     DEFAULT_OUTPUT_FORMAT = '{timestamp} [{severity}] - "{message}"'
 
+    # default seed for the random number generator
+    DEFAULT_RNG_SEED = int(time())
+
     # determines step size for incremental updates (e.g., this is used for delegated value updates)
     DEFAULT_LEARN_RATE = 0.01
 
@@ -585,6 +589,7 @@ class GlobalParams(metaclass=Singleton):
     def __init__(self) -> None:
         self._verbosity: Verbosity = Verbosity.NONE
         self._output_format: str = str()
+        self._rng_seed: int = int()
         self._learn_rate: float = float()
         self._pos_corr_threshold: float = float()
         self._neg_corr_threshold: float = float()
@@ -595,6 +600,14 @@ class GlobalParams(metaclass=Singleton):
         self._options: Optional[MutableSet[GlobalOption]] = set()
 
         self._set_default_values()
+
+    @property
+    def rng_seed(self) -> int:
+        return self._rng_seed
+
+    @rng_seed.setter
+    def rng_seed(self, value: int) -> None:
+        self._rng_seed = value
 
     @property
     def learn_rate(self) -> float:
@@ -781,6 +794,7 @@ class GlobalParams(metaclass=Singleton):
     def _set_default_values(self) -> None:
         self.verbosity = GlobalParams.DEFAULT_VERBOSITY
         self.output_format = GlobalParams.DEFAULT_OUTPUT_FORMAT
+        self.rng_seed = GlobalParams.DEFAULT_RNG_SEED
         self.learn_rate = GlobalParams.DEFAULT_LEARN_RATE
         self.pos_corr_threshold = GlobalParams.DEFAULT_POS_CORR_THRESHOLD
         self.neg_corr_threshold = GlobalParams.DEFAULT_NEG_CORR_THRESHOLD
@@ -1428,6 +1442,14 @@ class StateAssertion(Assertion, ValueBearer):
     def items(self) -> frozenset[Item]:
         return self._items
 
+    @property
+    def asserts(self) -> frozenset[ItemAssertion]:
+        return self._asserts
+
+    @property
+    def negated_asserts(self) -> frozenset[ItemAssertion]:
+        return self._neg_asserts
+
     def copy(self) -> StateAssertion:
         """ Returns a shallow copy of this object.
 
@@ -1522,10 +1544,15 @@ class ExtendedItemCollection(Observable):
     def relevant_items(self) -> frozenset[Assertion]:
         return frozenset(self._relevant_items)
 
-    def update_relevant_items(self, assertion: Assertion):
+    def update_relevant_items(self, assertion: Assertion, suppressed: bool = False):
         if assertion not in self._relevant_items:
             self._relevant_items.add(assertion)
-            self._new_relevant_items.add(assertion)
+
+            # if suppressed then no spin-offs will be created for this item
+            if suppressed:
+                debug(f'suppressing relevant item assertion {assertion}')
+            else:
+                self._new_relevant_items.add(assertion)
 
     def notify_all(self, *args, **kwargs) -> None:
         if 'source' not in kwargs:
@@ -1617,15 +1644,9 @@ class ExtendedResult(ExtendedItemCollection):
         elif item_stats.negative_transition_corr > GlobalParams().neg_corr_threshold:
             item_assert = ItemAssertion(item, negated=True)
             if item_assert not in self.relevant_items:
-                self.update_relevant_items(item_assert)
-
-    def update_relevant_items(self, assertion: Assertion):
-        # TODO: need to guarantee that only item assertions are being added here....
-        if GlobalParams().is_enabled(GlobalOption.ER_POSITIVE_ASSERTIONS_ONLY) and assertion.is_negated:
-            # TODO: need to verify that this is a SINGLE item or composite item!
-            self.update_suppressed_items(assertion.items)
-        else:
-            super().update_relevant_items(assertion)
+                self.update_relevant_items(
+                    item_assert,
+                    suppressed=GlobalParams().is_enabled(GlobalOption.ER_POSITIVE_ASSERTIONS_ONLY))
 
 
 class ExtendedContext(ExtendedItemCollection):
@@ -1710,21 +1731,15 @@ class ExtendedContext(ExtendedItemCollection):
     # TODO: Rename this method. It is not a check, but more of a flush of the pending items to the super class.
     def check_pending_relevant_items(self) -> None:
         for ia in self._pending_relevant_items:
-            self.update_relevant_items(ia)
+            self.update_relevant_items(
+                assertion=ia,
+                suppressed=GlobalParams().is_enabled(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY) and ia.is_negated)
 
         self.clear_pending_relevant_items()
 
     def clear_pending_relevant_items(self) -> None:
         self._pending_relevant_items.clear()
         self._pending_max_specificity = -np.inf
-
-    def update_relevant_items(self, assertion: Assertion):
-        # TODO: need to guarantee that only item assertions are being added here....
-        if GlobalParams().is_enabled(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY) and assertion.is_negated:
-            # TODO: need to verify that this is a SINGLE item or composite item!
-            self.update_suppressed_items(assertion.items)
-        else:
-            super().update_relevant_items(assertion)
 
     def _check_for_relevance(self, item: Item, item_stats: ECItemStats) -> None:
         # if item is relevant, a new item assertion is created
@@ -1923,6 +1938,28 @@ class Schema(Observer, Observable, UniqueIdMixin):
         """
         return self._is_primitive
 
+    def predicts_state(self, state: State) -> bool:
+        if not self.result:
+            return False
+
+        # all (negated and non-negated) assertions in schema's result must be satisfied
+        is_satisfied = self.result.is_satisfied(state)
+
+        # all state elements must be accounted for by POSITIVE assertions
+        state_items = set(ItemPool().get(se) for se in state)
+
+        # only include non-negated assertions
+        result_items = set()
+        for ia in self.result.asserts:
+            item = ia.item
+            if isinstance(item, CompositeItem):
+                for nested_ia in item.source.asserts:
+                    result_items.add(nested_ia.item)
+            else:
+                result_items.add(item)
+
+        return is_satisfied and state_items == result_items
+
     def update(self,
                activated: bool,
                s_prev: Optional[State],
@@ -1955,7 +1992,9 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         # update extended result stats
         if self._extended_result:
-            if not GlobalParams().is_enabled(GlobalOption.ER_SUPPRESS_UPDATE_ON_EXPLAINED) or not explained:
+            if GlobalParams().is_enabled(GlobalOption.ER_SUPPRESS_UPDATE_ON_EXPLAINED) and explained:
+                debug(f'update suppressed for schema {self} because its result was explained by a reliable schema')
+            else:
                 self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
 
         # update extended context stats
@@ -1977,6 +2016,8 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         if not spin_off_type:
             raise ValueError(f'Unrecognized source in receive: {type(ext_source)}')
+
+        debug(f'Schema "{self}" signaling {spin_off_type.name} spin-offs for relevant items: {relevant_items}')
 
         self.notify_all(source=self, spin_off_type=spin_off_type, relevant_items=relevant_items)
 
@@ -2127,6 +2168,7 @@ class SchemaTree:
         :param primitives: a collection of primitive schemas
         :return: None
         """
+        debug(f'Adding primitive schemas: {primitives}')
         self.add(self.root, frozenset(primitives))
 
     def add_context_spin_offs(self, source: Schema, spin_offs: Collection[Schema]) -> None:
@@ -2136,6 +2178,7 @@ class SchemaTree:
         :param spin_offs: the spin-off schemas.
         :return: None
         """
+        debug(f'Adding context spin-offs to schema tree: {spin_offs}')
         self.add(source, frozenset(spin_offs), Schema.SpinOffType.CONTEXT)
 
     def add_result_spin_offs(self, source: Schema, spin_offs: Collection[Schema]):
@@ -2145,6 +2188,7 @@ class SchemaTree:
         :param spin_offs: the spin-off schemas.
         :return: None
         """
+        debug(f'Adding result spin-offs to schema tree: {spin_offs}')
         self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
 
     def find_all_satisfied(self, state: State, *args, **kwargs) -> Collection[SchemaTreeNode]:
@@ -2258,18 +2302,23 @@ class SchemaTree:
                 for s in schemas:
                     key = (s.context, s.action)
 
+                    match = self._nodes.get(key)
+
                     # node already exists in tree (generated from different source)
-                    if key in self._nodes:
-                        continue
+                    if match:
+                        if s not in match.schemas:
+                            match.schemas.add(s)
+                            self._n_schemas += 1
 
-                    new_node = SchemaTreeNode(s.context, s.action)
-                    new_node.schemas.add(s)
+                    else:
+                        new_node = SchemaTreeNode(s.context, s.action)
+                        new_node.schemas.add(s)
 
-                    node.children += (new_node,)
+                        node.children += (new_node,)
 
-                    self._nodes[key] = new_node
+                        self._nodes[key] = new_node
 
-                    self._n_schemas += len(new_node.schemas)
+                        self._n_schemas += len(new_node.schemas)
             return node
         except KeyError:
             raise ValueError('Source schema does not have a corresponding tree node.')
@@ -2286,7 +2335,7 @@ def _timestamp() -> str:
 def _display_message(message: str, level: Verbosity) -> None:
     if level >= GlobalParams().verbosity:
         out = GlobalParams().output_format.format(timestamp=_timestamp(), severity=level.name, message=message)
-        print(out, file=_output_fd(level))
+        print(out, file=_output_fd(level), flush=True)
 
 
 def debug(message):

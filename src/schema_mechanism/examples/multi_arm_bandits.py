@@ -1,5 +1,4 @@
 import argparse
-import random
 from collections.abc import Sequence
 from typing import Optional
 
@@ -8,18 +7,21 @@ from schema_mechanism.core import GlobalOption
 from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
+from schema_mechanism.core import Schema
 from schema_mechanism.core import State
 from schema_mechanism.core import StateElement
 from schema_mechanism.core import Verbosity
 from schema_mechanism.core import debug
 from schema_mechanism.core import info
+from schema_mechanism.examples import RANDOM_SEED
 from schema_mechanism.func_api import sym_item
+from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.util import Observable
+from schema_mechanism.util import get_rand_gen
 
 
-# state elements
 class Machine:
     def __init__(self, id_: str, p_win: float) -> None:
         self._id = id_
@@ -27,8 +29,10 @@ class Machine:
         self._outcomes = ['L', 'W']
         self._weights = [1.0 - p_win, p_win]
 
+        self._rng = get_rand_gen(GlobalParams().rng_seed)
+
     def play(self, count: int = 1) -> Sequence[str]:
-        return random.choices(self._outcomes, self._weights, k=count)
+        return self._rng.choice(self._outcomes, size=count, p=self._weights)
 
     @property
     def id(self) -> str:
@@ -169,38 +173,64 @@ def parse_args():
     return parser.parse_args()
 
 
-def display_known_schemas(sm_: SchemaMechanism) -> None:
-    debug(f'n schemas ({len(sm.known_schemas)})')
-    for s in sm_.known_schemas:
-        debug(s)
+def display_known_schemas(sm: SchemaMechanism) -> None:
+    info(f'n schemas ({len(sm.known_schemas)})')
+    for s in sm.known_schemas:
+        info(s)
 
 
 def display_item_values() -> None:
-    debug(f'n items: ({len(ItemPool())})')
-    for i in ItemPool():
-        debug(repr(i))
+    info(f'n items: ({len(ItemPool())})')
+    for i in sorted(ItemPool(), key=lambda i: -i.delegated_value):
+        info(repr(i))
 
 
-if __name__ == '__main__':
-    GlobalParams().learn_rate = 0.05
-    GlobalParams().dv_trace_max_len = 5
-    N_MACHINES = 2
-    N_STEPS = 10000
+def display_schema_info(schema: Schema, sm: SchemaMechanism) -> None:
+    schemas = sm.schema_memory.schemas
+    try:
+        ndx = schemas.index(schema)
+        s = schemas[ndx]
 
-    random.seed(8675309)
+        info(f'schema: {schema}')
+        if s.extended_context:
+            info('EXTENDED_CONTEXT')
+            info(f'relevant items: {s.extended_context.relevant_items}')
+            for k, v in s.extended_context.stats.items():
+                info(f'item: {k} -> {repr(v)}')
+
+        if s.extended_result:
+            info('EXTENDED_RESULT')
+            info(f'relevant items: {s.extended_result.relevant_items}')
+            for k, v in s.extended_result.stats.items():
+                info(f'item: {k} -> {repr(v)}')
+    except ValueError:
+        return
+
+
+# global constants
+N_MACHINES = 3
+N_STEPS = 10_000
+
+
+def run():
+    GlobalParams().learn_rate = 0.1
+    GlobalParams().dv_trace_max_len = 3
 
     GlobalParams().verbosity = Verbosity.DEBUG
     GlobalParams().output_format = '{message}'
+    GlobalParams().rng_seed = RANDOM_SEED
 
-    GlobalParams().options.add(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE)
-    GlobalParams().options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+    # GlobalParams().options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+    # GlobalParams().options.add(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE)
     GlobalParams().options.add(GlobalOption.ER_POSITIVE_ASSERTIONS_ONLY)
     GlobalParams().options.add(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY)
     GlobalParams().options.add(GlobalOption.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
+    # GlobalParams().options.add(GlobalOption.ER_INCREMENTAL_RESULTS)
 
     args = parse_args()
+    rng = get_rand_gen(GlobalParams().rng_seed)
 
-    machines = [Machine(str(id_), p_win=random.uniform(0, 1)) for id_ in range(args.n_machines)]
+    machines = [Machine(str(id_), p_win=rng.uniform(0, 1)) for id_ in range(args.n_machines)]
     env = BanditEnvironment(machines)
 
     # primitive items
@@ -213,12 +243,16 @@ if __name__ == '__main__':
 
     for n in range(args.steps):
         # display_item_values()
-        state = env.current_state
-        info(f'State[{n}]: {env.current_state}')
-        schema = sm.select(env.current_state)
+        curr_state = env.current_state
+        info(f'State[{n}]: {curr_state}')
+        schema = sm.select(curr_state)
         info(f'Selected Schema[{n}]: {schema}')
-        result = env.step(schema.action)
-        info(f'Result[{n}]: {env.current_state}')
+        result_state = env.step(schema.action)
+        info(f'Result[{n}]: {result_state}')
+        # display_schema_info(sym_schema('/play/'), sm)
+        display_schema_info(sym_schema('/play/L,'), sm)
+        # display_schema_info(sym_schema('/play/W,'), sm)
+        _ = ''
 
     info(f'n_schema: {len(sm.known_schemas)}')
 
@@ -228,3 +262,7 @@ if __name__ == '__main__':
     debug(f'baseline: {GlobalStats().baseline_value}')
     display_item_values()
     display_known_schemas(sm)
+
+
+if __name__ == '__main__':
+    run()

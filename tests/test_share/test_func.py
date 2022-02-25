@@ -4,11 +4,15 @@ from typing import Any
 from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
+from schema_mechanism.core import Verbosity
 
 
 def common_test_setup():
     ItemPool().clear()
+
     GlobalParams().reset()
+    GlobalParams().verbosity = Verbosity.WARN
+
     GlobalStats().reset()
 
 

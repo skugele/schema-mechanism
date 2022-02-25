@@ -133,7 +133,7 @@ class TestSchemaTree(TestCase):
             self.assertIn(p, self.tree)
             self.assertIn(p, self.tree.get(p).schemas)
 
-    def test_add_result_spinoffs(self):
+    def test_add_result_spin_offs(self):
         # ValueError raised if list of result spin_offs is empty
         self.assertRaises(ValueError, lambda: self.tree.add_result_spin_offs(self.s1, spin_offs=[]))
 
@@ -162,6 +162,56 @@ class TestSchemaTree(TestCase):
         for p in spin_offs:
             self.assertIn(p, self.tree)
             self.assertIn(p, self.tree.get(p).schemas)
+
+    def test_add_spin_offs(self):
+        # more realistic example that interleaves result and context spin-offs
+        # ---> in actual operation, result spin-offs always precede context spin-offs
+
+        # primitive schemas
+        s1 = sym_schema('/A1/')
+        s2 = sym_schema('/A2/')
+        s3 = sym_schema('/A3/')
+
+        tree = SchemaTree(primitives=(s1, s2, s3))
+
+        # test: adding result spin-offs to primitives [ROUND 1]
+        s1_r1 = sym_schema('/A1/101,')
+        s1_r2 = sym_schema('/A1/102,')
+        s2_r1 = sym_schema('/A2/101,')
+
+        n_schemas_before_add = tree.n_schemas
+        tree.add_result_spin_offs(s1, [s1_r1, s1_r2])
+        tree.add_result_spin_offs(s2, [s2_r1])
+        n_schemas_after_add = tree.n_schemas
+
+        self.assertEqual(n_schemas_before_add + 3, n_schemas_after_add)
+
+        # test: adding context spin-offs to first round of result spin-offs [ROUND 2]
+        s1_r1_c1 = sym_schema('1,/A1/101,')
+        s1_r1_c2 = sym_schema('2,/A1/101,')
+        s1_r2_c1 = sym_schema('1,/A1/102,')
+        s2_r1_c1 = sym_schema('1,/A2/101,')
+        s2_r1_c2 = sym_schema('2,/A2/101,')
+
+        n_schemas_before_add = tree.n_schemas
+        tree.add_context_spin_offs(s1_r1, [s1_r1_c1, s1_r1_c2])
+        tree.add_context_spin_offs(s1_r2, [s1_r2_c1])
+        tree.add_context_spin_offs(s2_r1, [s2_r1_c1, s2_r1_c2])
+        n_schemas_after_add = tree.n_schemas
+
+        self.assertEqual(n_schemas_before_add + 5, n_schemas_after_add)
+
+        # test: adding context spin-offs to 2nd round of context spin-offs [ROUND 3]
+        s1_r1_c1_2 = sym_schema('1,2/A1/101,')
+        s1_r2_c1_3 = sym_schema('1,3/A1/102,')
+        s2_r1_c1_2 = sym_schema('1,2/A2/101,')
+
+        n_schemas_before_add = tree.n_schemas
+        tree.add_context_spin_offs(s1_r1_c1, [s1_r1_c1_2, s1_r2_c1_3])
+        tree.add_context_spin_offs(s2_r1_c1, [s2_r1_c1_2])
+        n_schemas_after_add = tree.n_schemas
+
+        self.assertEqual(n_schemas_before_add + 3, n_schemas_after_add)
 
     def test_is_valid_node_1(self):
         # all nodes in this tree should be valid
