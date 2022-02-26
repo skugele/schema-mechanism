@@ -27,6 +27,7 @@ from anytree import LevelOrderIter
 from anytree import NodeMixin
 from anytree import RenderTree
 
+from schema_mechanism.util import BoundedSet
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
@@ -568,8 +569,8 @@ class GlobalParams(metaclass=Singleton):
     DEFAULT_LEARN_RATE = 0.01
 
     # thresholds for determining the relevance of items (1.0 -> correlation always occurs)
-    DEFAULT_POS_CORR_THRESHOLD = 0.55
-    DEFAULT_NEG_CORR_THRESHOLD = 0.55
+    DEFAULT_POS_CORR_THRESHOLD = 0.51
+    DEFAULT_NEG_CORR_THRESHOLD = 0.51
 
     # success threshold used for determining that a schema is reliable (1.0 -> schema always succeeds)
     DEFAULT_RELIABILITY_THRESHOLD = 0.95
@@ -593,11 +594,11 @@ class GlobalParams(metaclass=Singleton):
         self._learn_rate: float = float()
         self._pos_corr_threshold: float = float()
         self._neg_corr_threshold: float = float()
-        self._reliability: float = float()
+        self._reliability_threshold: float = float()
         self._item_type: Type[Item] = Item
         self._composite_item_type: Type[CompositeItem] = CompositeItem
         self._dv_trace_max_len: int = int()
-        self._options: Optional[MutableSet[GlobalOption]] = set()
+        self._options: Optional[BoundedSet] = BoundedSet(accepted_values=[v for v in GlobalOption])
 
         self._set_default_values()
 
@@ -606,8 +607,10 @@ class GlobalParams(metaclass=Singleton):
         return self._rng_seed
 
     @rng_seed.setter
-    def rng_seed(self, value: int) -> None:
-        self._rng_seed = value
+    def rng_seed(self, value: Optional[int]) -> None:
+        if value and not isinstance(value, int):
+            raise ValueError('if a seed value is given it must be an integer')
+        self._rng_seed = value or int(time())
 
     @property
     def learn_rate(self) -> float:
@@ -644,7 +647,7 @@ class GlobalParams(metaclass=Singleton):
 
         :return: a float between 0.0 and 1.0 (inclusive)
         """
-        return self._pos_corr_threshold
+        return self._neg_corr_threshold
 
     @neg_corr_threshold.setter
     def neg_corr_threshold(self, value: float) -> None:
@@ -655,7 +658,7 @@ class GlobalParams(metaclass=Singleton):
         """
         if value < 0.0 or value > 1.0:
             raise ValueError('negative correlation threshold must be between zero and one (inclusive).')
-        self._pos_corr_threshold = value
+        self._neg_corr_threshold = value
 
     @property
     def reliability_threshold(self) -> float:
@@ -663,7 +666,7 @@ class GlobalParams(metaclass=Singleton):
 
         :return: a float between 0.0 and 1.0 (inclusive)
         """
-        return self._reliability
+        return self._reliability_threshold
 
     @reliability_threshold.setter
     def reliability_threshold(self, value: float) -> None:
@@ -674,7 +677,7 @@ class GlobalParams(metaclass=Singleton):
         """
         if value < 0.0 or value > 1.0:
             raise ValueError('schema reliability threshold must be between zero and one (inclusive).')
-        self._pos_corr_threshold = value
+        self._reliability_threshold = value
 
     @property
     def verbosity(self) -> Verbosity:
@@ -691,7 +694,7 @@ class GlobalParams(metaclass=Singleton):
         :param value: the new output verbosity
         :return: None
         """
-        if value not in Verbosity:
+        if not isinstance(value, Verbosity):
             raise ValueError(f'Invalid verbosity. Supported values include: {[v for v in Verbosity]}')
         self._verbosity = value
 
@@ -704,7 +707,7 @@ class GlobalParams(metaclass=Singleton):
         return self._output_format
 
     @output_format.setter
-    def output_format(self, value: Verbosity) -> None:
+    def output_format(self, value: Optional[str]) -> None:
         """ Sets the format string used for diagnostic and informational messages.
 
         Supported variables in format include: {message}, {timestamp}, and {severity}.
@@ -712,6 +715,8 @@ class GlobalParams(metaclass=Singleton):
         :param value: the new format string
         :return: None
         """
+        if value is not None and not isinstance(value, str):
+            raise ValueError('Invalid output format')
         self._output_format = value
 
     @property
@@ -729,6 +734,8 @@ class GlobalParams(metaclass=Singleton):
         :param value: an Item type
         :return: None
         """
+        if not issubclass(value, Item):
+            raise ValueError('item type must be of type Item or derived from Item.')
         self._item_type = value
 
     @property
@@ -746,6 +753,8 @@ class GlobalParams(metaclass=Singleton):
         :param value: an Item type
         :return: None
         """
+        if not issubclass(value, CompositeItem):
+            raise ValueError('item type must be of type CompositeItem or derived from CompositeItem.')
         self._composite_item_type = value
 
     @property
@@ -771,12 +780,16 @@ class GlobalParams(metaclass=Singleton):
         :param value: a positive int
         :return: None
         """
-        if value <= 0:
-            raise ValueError('the max delegated value trace length must be positive')
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError('the max delegated value trace length must be a positive integer')
         self._dv_trace_max_len = value
 
     def _set_options(self, enhancements: Optional[Collection[GlobalOption]]) -> MutableSet[GlobalOption]:
         options = set(enhancements)
+        for value in options:
+            if not isinstance(value, GlobalOption):
+                raise ValueError(f'Unsupported option: {value}')
+
         if GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE in enhancements:
             if GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA not in enhancements:
                 warn('Option EC_MOST_SPECIFIC_ON_MULTIPLE requires EC_DEFER_TO_MORE_SPECIFIC!')
@@ -802,7 +815,9 @@ class GlobalParams(metaclass=Singleton):
         self.dv_trace_max_len = GlobalParams.DEFAULT_DV_TRACE_MAX_LEN
         self.item_type = GlobalParams.DEFAULT_ITEM_TYPE
         self.composite_item_type = GlobalParams.DEFAULT_COMPOSITE_ITEM_TYPE
-        self.options = GlobalParams.DEFAULT_OPTIONS
+
+        self._options.clear()
+        self._options.update(self.DEFAULT_OPTIONS)
 
 
 class GlobalStats(metaclass=Singleton):
@@ -1433,7 +1448,7 @@ class StateAssertion(Assertion, ValueBearer):
         return hash((self._asserts, self._neg_asserts))
 
     def __str__(self) -> str:
-        return ','.join(map(str, self))
+        return ','.join(sorted(map(str, self)))
 
     def __repr__(self) -> str:
         return repr_str(self, {'asserts': str(self)})
@@ -2332,27 +2347,27 @@ def _timestamp() -> str:
     return datetime.now().isoformat()
 
 
-def _display_message(message: str, level: Verbosity) -> None:
+def display_message(message: str, level: Verbosity) -> None:
     if level >= GlobalParams().verbosity:
         out = GlobalParams().output_format.format(timestamp=_timestamp(), severity=level.name, message=message)
         print(out, file=_output_fd(level), flush=True)
 
 
 def debug(message):
-    _display_message(message=message, level=Verbosity.DEBUG)
+    display_message(message=message, level=Verbosity.DEBUG)
 
 
 def info(message):
-    _display_message(message=message, level=Verbosity.INFO)
+    display_message(message=message, level=Verbosity.INFO)
 
 
 def warn(message):
-    _display_message(message=message, level=Verbosity.WARN)
+    display_message(message=message, level=Verbosity.WARN)
 
 
 def error(message):
-    _display_message(message=message, level=Verbosity.ERROR)
+    display_message(message=message, level=Verbosity.ERROR)
 
 
 def fatal(message):
-    _display_message(message=message, level=Verbosity.FATAL)
+    display_message(message=message, level=Verbosity.FATAL)

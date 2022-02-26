@@ -392,7 +392,7 @@ class SchemaSelection:
 
         # TODO: Set parameters.
 
-        self._goal_weight = 0.6
+        self._goal_weight = 0.1
         self._explore_weight = 1.0 - self._goal_weight
 
     @property

@@ -11,7 +11,7 @@ def common_test_setup():
     ItemPool().clear()
 
     GlobalParams().reset()
-    GlobalParams().verbosity = Verbosity.WARN
+    GlobalParams().verbosity = Verbosity.ERROR
 
     GlobalStats().reset()
 

@@ -1,7 +1,10 @@
+import itertools
 from abc import ABCMeta
+from collections import Collection
 from collections.abc import Iterable
 from itertools import tee
 from typing import Any
+from typing import Optional
 
 import numpy as np
 import sklearn.metrics as sk_metrics
@@ -84,6 +87,31 @@ class Singleton(type, metaclass=ABCMeta):
         if cls not in cls._instances:
             cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
+
+
+class BoundedSet(set):
+    def __init__(self, values: Optional[Iterable[Any]] = None, accepted_values: Optional[Collection[Any]] = None):
+        self._accepted_values = frozenset(accepted_values) if accepted_values else frozenset()
+
+        values = values or []
+        self.check_values(values)
+        super().__init__(values)
+
+    def update(self, *s: Iterable[Any]) -> None:
+        self.check_values(itertools.chain.from_iterable(s))
+        super().update(*s)
+
+    def add(self, element: Any) -> None:
+        self.check_values([element])
+        super().add(element)
+
+    def is_legal_value(self, value: Any) -> bool:
+        return value in self._accepted_values
+
+    def check_values(self, values: Iterable[Any]) -> None:
+        illegal_values = [v for v in values if not self.is_legal_value(v)]
+        if illegal_values:
+            raise ValueError(f'illegal values: {illegal_values}')
 
 
 def cosine_sims(v: np.ndarray, state: Iterable[np.ndarray]) -> np.ndarray:
