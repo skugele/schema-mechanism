@@ -140,20 +140,28 @@ class TestExtendedContext(TestCase):
         # GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA enabled
         GlobalParams().options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
 
-        update_state_1 = sym_state('1,3,4')
+        update_state_1 = sym_state('4,6,8')
         update_state_2 = sym_state('1,6')
         defer_state_1 = sym_state('1,5')
         defer_state_2 = sym_state('1,7,8')
+        defer_state_3 = sym_state('1,3,4')
 
         with patch(target='schema_mechanism.core.ExtendedContext.relevant_items',
                    new_callable=PropertyMock) as mock_relevant_items:
             mock_relevant_items.return_value = set(sym_asserts('5,~6,7'))
             ec = ExtendedContext(context=sym_state_assert('1,~2'))
 
+            # test: update should NOT be deferred if relevant items do not match state
             self.assertFalse(ec.defer_update_to_spin_offs(update_state_1))
             self.assertFalse(ec.defer_update_to_spin_offs(update_state_2))
+
+            # test: non-negated relevant items should defer updates when satisfied
             self.assertTrue(ec.defer_update_to_spin_offs(defer_state_1))
             self.assertTrue(ec.defer_update_to_spin_offs(defer_state_2))
+
+            # test: negated relevant items should defer updates when satisfied (unless EC_POSITIVE_ASSERTIONS_ONLY)
+            if not GlobalParams().is_enabled(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY):
+                self.assertTrue(ec.defer_update_to_spin_offs(defer_state_3))
 
     def test_register_and_unregister(self):
         observer = MockObserver()

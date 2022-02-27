@@ -17,7 +17,7 @@ class TestExtendedItemCollection(TestCase):
         self.eic.register(self.obs)
 
     def test_suppress_list(self):
-        self.assertListEqual(list(self.eic.suppressed_items), list(sym_items('1,2,3')))
+        self.assertSetEqual(self.eic.suppressed_items, set(sym_items('1,2,3')))
 
     def test_relevant_items(self):
         self.assertEqual(0, len(self.eic.relevant_items))

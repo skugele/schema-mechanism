@@ -25,9 +25,11 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
+from schema_mechanism.core import debug
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
+from schema_mechanism.core import trace
 from schema_mechanism.util import Observer
 from schema_mechanism.util import get_rand_gen
 
@@ -160,6 +162,8 @@ class SchemaMemory(Observer):
         # register listeners for spin-offs
         for s in spin_offs:
             s.register(self)
+
+        debug(f'creating spin-offs for schema {str(schema)}: {",".join([str(s) for s in spin_offs])}')
 
         self._schema_tree.add(schema, spin_offs, spin_off_type)
 
@@ -417,9 +421,15 @@ class SchemaSelection:
         goal_values = self._goal_pursuit(schemas)
         explore_values = self._explore(schemas)
 
+        trace(f'selection applicable schemas: {", ".join([str(s) for s in schemas])}')
+        trace(f'selection goal-pursuit values: {goal_values}')
+        trace(f'selection exploratory values: {explore_values}')
+
         # TODO: Only reliable schemas should be used for goal pursuit. How do we do this??? Perhaps a large penalty
         # TODO: for unreliable schemas???
         selection_values = self.goal_weight * goal_values + self.explore_weight * explore_values
+
+        trace(f'weighted selection values: {selection_values}')
 
         # debug('selection values: ')
         # for s, v in zip(schemas, selection_values):
@@ -434,6 +444,8 @@ class SchemaSelection:
         # "A new activation selection occurs at each time unit. Even if a chain of schemas leading to some goal is
         #  still in progress, each next link in the chain must compete for activation." (Drescher, 1991, p. 61)
         selected_schema = self._select(schemas, selection_values)
+
+        debug(f'selected schema: {selected_schema}')
 
         # TODO: if the selected schema contains a composite action, we must do some additional work here
         if isinstance(selected_schema.action, CompositeAction):

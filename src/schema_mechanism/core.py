@@ -517,17 +517,18 @@ def composite_items(items: Collection[Item]) -> Collection[Item]:
 
 
 class Verbosity(IntEnum):
-    DEBUG = 0
-    INFO = 1
-    WARN = 2
-    ERROR = 3
-    FATAL = 4
-    NONE = 5
+    TRACE = auto()
+    DEBUG = auto()
+    INFO = auto()
+    WARN = auto()
+    ERROR = auto()
+    FATAL = auto()
+    NONE = auto()
 
 
 class GlobalOption(Enum):
     # "There is an embellishment of the marginal attribution algorithm--deferring to a more specific applicable schema--
-    #  that often enables the discovery of an item who relevance has been obscured." (see Drescher,1991, pp. 75-76)
+    #  that often enables the discovery of an item whose relevance has been obscured." (see Drescher,1991, pp. 75-76)
     EC_DEFER_TO_MORE_SPECIFIC_SCHEMA = auto()
 
     # "[another] embellishment also reduces redundancy: when a schema's extended context simultaneously detects the
@@ -837,7 +838,7 @@ class GlobalStats(metaclass=Singleton):
         self._baseline = value
 
     def update_baseline(self, state: State) -> None:
-        """ Updates an unconditional running average of the primitive values of states.
+        """ Updates an unconditional running average of the primitive values of states encountered.
 
         :param state: a state
         :return: None
@@ -1246,7 +1247,6 @@ NULL_ER_ITEM_STATS = ReadOnlyERItemStats()
 
 
 class Action(UniqueIdMixin):
-    _last_uid: int = 0
 
     def __init__(self, label: Optional[str] = None):
         super().__init__()
@@ -1512,8 +1512,7 @@ class ExtendedItemCollection(Observable):
 
         self._null_member = null_member
 
-        # TODO: why is this not a set like the relevant item containers???
-        self._suppressed_items: list[Item] = list(suppressed_items) or list()
+        self._suppressed_items: frozenset[Item] = frozenset(suppressed_items) or frozenset()
 
         # TODO: these names are confusing... they are not items!
         self._relevant_items: MutableSet[Assertion] = set()
@@ -1547,12 +1546,8 @@ class ExtendedItemCollection(Observable):
         return self._stats
 
     @property
-    def suppressed_items(self) -> Collection[Item]:
+    def suppressed_items(self) -> frozenset[Item]:
         return self._suppressed_items
-
-    def update_suppressed_items(self, item) -> None:
-        if item not in self._suppressed_items:
-            self._suppressed_items.append(item)
 
     # TODO: "relevant items" is confusing. these are item assertion. this terminology is a carry-over from Drescher.
     @property
@@ -1565,7 +1560,7 @@ class ExtendedItemCollection(Observable):
 
             # if suppressed then no spin-offs will be created for this item
             if suppressed:
-                debug(f'suppressing relevant item assertion {assertion}')
+                debug(f'suppressing spin-off for item assertion {assertion}')
             else:
                 self._new_relevant_items.add(assertion)
 
@@ -1730,7 +1725,13 @@ class ExtendedContext(ExtendedItemCollection):
         :return: True if should defer stats updates for this state to this schema's spin-offs.
         """
         for ia in self.relevant_items:
-            if not ia.is_negated and ia.is_satisfied(state):
+            deferring = (
+                not ia.is_negated and ia.is_satisfied(state)
+                if GlobalParams().is_enabled(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY) else
+                ia.is_satisfied(state)
+            )
+
+            if deferring:
                 debug(f'deferring update to spin_off for state {state} due to relevant assertion {ia}')
                 return True
         return False
@@ -2032,8 +2033,6 @@ class Schema(Observer, Observable, UniqueIdMixin):
         if not spin_off_type:
             raise ValueError(f'Unrecognized source in receive: {type(ext_source)}')
 
-        debug(f'Schema "{self}" signaling {spin_off_type.name} spin-offs for relevant items: {relevant_items}')
-
         self.notify_all(source=self, spin_off_type=spin_off_type, relevant_items=relevant_items)
 
     def copy(self) -> Schema:
@@ -2183,7 +2182,6 @@ class SchemaTree:
         :param primitives: a collection of primitive schemas
         :return: None
         """
-        debug(f'Adding primitive schemas: {primitives}')
         self.add(self.root, frozenset(primitives))
 
     def add_context_spin_offs(self, source: Schema, spin_offs: Collection[Schema]) -> None:
@@ -2193,7 +2191,6 @@ class SchemaTree:
         :param spin_offs: the spin-off schemas.
         :return: None
         """
-        debug(f'Adding context spin-offs to schema tree: {spin_offs}')
         self.add(source, frozenset(spin_offs), Schema.SpinOffType.CONTEXT)
 
     def add_result_spin_offs(self, source: Schema, spin_offs: Collection[Schema]):
@@ -2203,7 +2200,6 @@ class SchemaTree:
         :param spin_offs: the spin-off schemas.
         :return: None
         """
-        debug(f'Adding result spin-offs to schema tree: {spin_offs}')
         self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
 
     def find_all_satisfied(self, state: State, *args, **kwargs) -> Collection[SchemaTreeNode]:
@@ -2302,6 +2298,7 @@ class SchemaTree:
 
         :return: the parent node for which the add operation occurred
         """
+        trace(f'adding schemas! [parent: {source}, spin-offs: {[str(s) for s in schemas]}]')
         if not schemas:
             raise ValueError('Schemas to add cannot be empty or None')
 
@@ -2351,6 +2348,10 @@ def display_message(message: str, level: Verbosity) -> None:
     if level >= GlobalParams().verbosity:
         out = GlobalParams().output_format.format(timestamp=_timestamp(), severity=level.name, message=message)
         print(out, file=_output_fd(level), flush=True)
+
+
+def trace(message):
+    display_message(message=message, level=Verbosity.TRACE)
 
 
 def debug(message):
