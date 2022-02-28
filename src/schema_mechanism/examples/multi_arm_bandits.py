@@ -176,7 +176,8 @@ def parse_args():
 def display_known_schemas(sm: SchemaMechanism) -> None:
     info(f'n schemas ({len(sm.known_schemas)})')
     for s in sm.known_schemas:
-        info(s)
+        info(f'\t{str(s)}')
+        # display_schema_info(s, sm)
 
 
 def display_item_values() -> None:
@@ -208,20 +209,20 @@ def display_schema_info(schema: Schema, sm: SchemaMechanism) -> None:
 
 
 # global constants
-N_MACHINES = 3
-N_STEPS = 10_000
+N_MACHINES = 2
+N_STEPS = 10000
 
 
 def run():
-    GlobalParams().learn_rate = 0.1
-    GlobalParams().dv_trace_max_len = 3
+    GlobalParams().learn_rate = 0.05
+    GlobalParams().dv_trace_max_len = 2
 
     GlobalParams().verbosity = Verbosity.DEBUG
     GlobalParams().output_format = '{message}'
     GlobalParams().rng_seed = RANDOM_SEED
 
-    # GlobalParams().options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
-    # GlobalParams().options.add(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE)
+    GlobalParams().options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+    GlobalParams().options.add(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE)
     GlobalParams().options.add(GlobalOption.ER_POSITIVE_ASSERTIONS_ONLY)
     GlobalParams().options.add(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY)
     GlobalParams().options.add(GlobalOption.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
@@ -246,22 +247,25 @@ def run():
         curr_state = env.current_state
         info(f'State[{n}]: {curr_state}')
         schema = sm.select(curr_state)
-        info(f'Selected Schema[{n}]: {schema}')
+        # info(f'Selected Schema[{n}]: {schema}')
         result_state = env.step(schema.action)
-        info(f'Result[{n}]: {result_state}')
-        # display_schema_info(sym_schema('/play/'), sm)
-        display_schema_info(sym_schema('/play/L,'), sm)
+        # info(f'Result[{n}]: {result_state}')
         # display_schema_info(sym_schema('/play/W,'), sm)
-        _ = ''
+        display_schema_info(sym_schema('P,/play/W,'), sm)
+        # display_schema_info(sym_schema('M0,/play/W,'), sm)
+        # display_schema_info(sym_schema('P,/play/L,'), sm)
+        # display_schema_info(sym_schema('P,/play/L,'), sm)
+        # display_schema_info(sym_schema('M0,P/play/W,'), sm)
+        # display_schema_info(sym_schema('P,/play/W,'), sm)
 
-    info(f'n_schema: {len(sm.known_schemas)}')
+        # info(f'n_schema: {len(sm.known_schemas)}')
+        display_known_schemas(sm)
 
     for m in machines:
         info(repr(m))
 
     debug(f'baseline: {GlobalStats().baseline_value}')
     display_item_values()
-    display_known_schemas(sm)
 
 
 if __name__ == '__main__':
