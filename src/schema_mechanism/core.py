@@ -4,6 +4,7 @@ import itertools
 import sys
 from abc import ABC
 from abc import abstractmethod
+from collections import Iterable
 from collections import defaultdict
 from collections.abc import Collection
 from collections.abc import Hashable
@@ -22,6 +23,7 @@ from typing import Type
 from typing import Union
 
 import numpy as np
+import scipy.stats as stats
 from anytree import AsciiStyle
 from anytree import LevelOrderIter
 from anytree import NodeMixin
@@ -924,6 +926,113 @@ class SchemaStats:
         }
 
         return repr_str(self, attr_values)
+
+
+class ItemCorrelationTest(ABC):
+
+    def positive_corr(self, table: Iterable) -> bool:
+        """
+
+        :param table:
+        :return:
+        """
+        return self.positive_corr_statistic(table) >= GlobalParams().pos_corr_threshold
+
+    def negative_corr(self, table: Iterable) -> bool:
+        """
+
+        :param table:
+        :return:
+        """
+        return self.negative_corr_statistic(table) >= GlobalParams().neg_corr_threshold
+
+    @abstractmethod
+    def positive_corr_statistic(self, table: Iterable) -> float:
+        pass
+
+    @abstractmethod
+    def negative_corr_statistic(self, table: Iterable) -> float:
+        pass
+
+    def validate_data(self, data: Iterable) -> None:
+        """ Raises a ValueError if data cannot be interpreted as a 2x2 array of integers.
+
+        :param data: the iterable to validate
+        :return: True if valid table; False otherwise.
+        """
+        table = np.array(data)
+        if not (table.shape == (2, 2) and np.issubdtype(table.dtype, int)):
+            raise ValueError('invalid data: must be interpretable as a 2x2 array of integers')
+
+
+class DrescherCorrelationTest(ItemCorrelationTest):
+
+    def positive_corr_statistic(self, table: Iterable) -> float:
+        """ Returns the part-to-part ratio Pr(A | X) : Pr(A | not X)
+
+        Input data should be a 2x2 table of the form: [[N(A,X), N(not A,X)], [N(A,not X), N(not A,not X)]],
+        where N(A,X) is the number of events that are both A AND X
+
+        :return: the ratio as a float, or numpy.NAN if division by zero
+        """
+        # raises ValueError
+        self.validate_data(table)
+
+        # adds 1 to all cells to avoid division by zero and other computational issues
+        table = np.array(table) + 1
+
+        # calculate conditional probabilities
+        pr_a_given_x = table[0, 0] / np.sum(table[:, 0])
+        pr_a_given_y = table[0, 1] / np.sum(table[:, 1])
+
+        # the part-to-part ratio Pr(A | X) : Pr(A | Y)
+        return pr_a_given_x / (pr_a_given_x + pr_a_given_y)
+
+    def negative_corr_statistic(self, table: Iterable) -> bool:
+        """ Returns the part-to-part ratio Pr(not A | X) : Pr(not A | not X)
+
+        Input data should be a 2x2 table of the form: [[N(A,X), N(not A,X)], [N(A,not X), N(not A,not X)]],
+        where N(A,X) is the number of events that are both A AND X
+
+        :return: the ratio as a float, or numpy.NAN if division by zero
+        """
+        # raises ValueError
+        self.validate_data(table)
+
+        # adds 1 to all cells to avoid division by zero and other computational issues
+        table = np.array(table) + 1
+
+        # calculate conditional probabilities
+        pr_not_a_given_x = table[0, 1] / np.sum(table[0, :])
+        pr_not_a_given_not_x = table[1, 1] / np.sum(table[1, :])
+
+        # the part-to-part ratio between Pr(not A | X) : Pr(not A | not X)
+        return pr_not_a_given_x / (pr_not_a_given_x + pr_not_a_given_not_x)
+
+
+class BarnardExactCorrelationTest(ItemCorrelationTest):
+
+    def positive_corr_statistic(self, table: Iterable) -> float:
+        """
+
+        :param table:
+        :return:
+        """
+        # raises ValueError
+        self.validate_data(table)
+
+        return 1.0 - stats.barnard_exact(np.array(table), alternative='greater').pvalue
+
+    def negative_corr_statistic(self, table: Iterable) -> bool:
+        """
+
+        :param table:
+        :return:
+        """
+        # raises ValueError
+        self.validate_data(table)
+
+        return 1.0 - stats.barnard_exact(np.array(table), alternative='less').pvalue
 
 
 class ItemStats:
