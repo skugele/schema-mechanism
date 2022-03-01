@@ -3,13 +3,13 @@ from collections.abc import Sequence
 from typing import Optional
 
 from schema_mechanism.core import Action
-from schema_mechanism.core import GlobalOption
 from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import Schema
 from schema_mechanism.core import State
 from schema_mechanism.core import StateElement
+from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import Verbosity
 from schema_mechanism.core import debug
 from schema_mechanism.core import info
@@ -19,7 +19,7 @@ from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.util import Observable
-from schema_mechanism.util import get_rand_gen
+from schema_mechanism.util import rng
 
 
 class Machine:
@@ -29,7 +29,8 @@ class Machine:
         self._outcomes = ['L', 'W']
         self._weights = [1.0 - p_win, p_win]
 
-        self._rng = get_rand_gen(GlobalParams().rng_seed)
+        seed = GlobalParams().get('rng_seed')
+        self._rng = rng(seed)
 
     def play(self, count: int = 1) -> Sequence[str]:
         return self._rng.choice(self._outcomes, size=count, p=self._weights)
@@ -214,24 +215,25 @@ N_STEPS = 10000
 
 
 def run():
-    GlobalParams().learn_rate = 0.05
-    GlobalParams().dv_trace_max_len = 2
-
-    GlobalParams().verbosity = Verbosity.DEBUG
-    GlobalParams().output_format = '{message}'
-    GlobalParams().rng_seed = RANDOM_SEED
-
-    GlobalParams().options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
-    GlobalParams().options.add(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE)
-    GlobalParams().options.add(GlobalOption.ER_POSITIVE_ASSERTIONS_ONLY)
-    GlobalParams().options.add(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY)
-    GlobalParams().options.add(GlobalOption.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
-    # GlobalParams().options.add(GlobalOption.ER_INCREMENTAL_RESULTS)
+    params = GlobalParams()
+    params.set('learning_rate', 0.05)
+    params.set('dv_trace_max_len', 2)
+    params.set('verbosity', Verbosity.DEBUG)
+    params.set('output_format', '{message}')
+    params.set('rng_seed', RANDOM_SEED)
+    params.set('features', [
+        SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA,
+        SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE,
+        SupportedFeature.ER_POSITIVE_ASSERTIONS_ONLY,
+        SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY,
+        SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED
+    ])
 
     args = parse_args()
-    rng = get_rand_gen(GlobalParams().rng_seed)
+    seed = GlobalParams().get('rng_seed')
+    rand = rng(seed)
 
-    machines = [Machine(str(id_), p_win=rng.uniform(0, 1)) for id_ in range(args.n_machines)]
+    machines = [Machine(str(id_), p_win=rand.uniform(0, 1)) for id_ in range(args.n_machines)]
     env = BanditEnvironment(machines)
 
     # primitive items

@@ -105,7 +105,7 @@ class TestSymbolicItem(TestCase):
 class TestDelegatedValueHelperForNonCompositeItems(TestCase):
     def setUp(self) -> None:
 
-        GlobalParams().item_type = MockSymbolicItem
+        GlobalParams().set('item_type', MockSymbolicItem)
 
         self.items = {
 
@@ -130,7 +130,7 @@ class TestDelegatedValueHelperForNonCompositeItems(TestCase):
         GlobalStats(baseline_value=2.0)
 
         # explicitly set max trace length to facilitate testing (e.g., guarantee trace termination)
-        GlobalParams().dv_trace_max_len = 3
+        GlobalParams().set('dv_trace_max_len', 3)
 
         self.states = [
             # trace 1 states (len = 3 [MAX])
@@ -202,9 +202,10 @@ class TestDelegatedValueHelperForNonCompositeItems(TestCase):
                 # test: dvh SHOULD initialize a NEW trace if item is On in selection state
                 item_status_counts['on' if self.dvh.item.is_on(ss) else 'off'] += 1
 
+                dv_trace_max_len = GlobalParams().get('dv_trace_max_len')
                 updates_remaining = (
                     0 if early_term else
-                    GlobalParams().dv_trace_max_len - 1 if self.dvh.item.is_on(ss) else
+                    dv_trace_max_len - 1 if self.dvh.item.is_on(ss) else
                     max(0, updates_remaining - 1)
                 )
 
@@ -219,7 +220,7 @@ class TestDelegatedValueHelperForNonCompositeItems(TestCase):
         ###################################################################
 
         # simplify the tests by setting learning rate to 1.0
-        GlobalParams().learn_rate = 1.0
+        GlobalParams().set('learning_rate', 1.0)
 
         for ts in self.trace_states:
             old_trace_value = self.dvh.trace_value
@@ -280,7 +281,7 @@ class TestDelegatedValueHelperForNonCompositeItems(TestCase):
     def test_update_3(self):
         # test dv for full, multi-trace trajectory with learning rate < 1.0
         ###################################################################
-        GlobalParams().learn_rate = 0.5
+        GlobalParams().set('learning_rate', 0.5)
 
         # select and result states from full trajectory
         s_select = self.states[0:-1]
@@ -296,7 +297,7 @@ class TestDelegatedValueHelperForNonCompositeItems(TestCase):
 class TestDelegatedValueHelperForCompositeItems(TestCase):
     def setUp(self) -> None:
 
-        GlobalParams().item_type = MockSymbolicItem
+        GlobalParams().set('item_type', MockSymbolicItem)
 
         self.items = {
 
@@ -323,7 +324,7 @@ class TestDelegatedValueHelperForCompositeItems(TestCase):
         GlobalStats(baseline_value=2.0)
 
         # explicitly set max trace length to facilitate testing (e.g., guarantee trace termination)
-        GlobalParams().dv_trace_max_len = 3
+        GlobalParams().set('dv_trace_max_len', 3)
 
         self.states = [
             # trace 1 states (len = 3 [MAX])
@@ -395,9 +396,10 @@ class TestDelegatedValueHelperForCompositeItems(TestCase):
                 # test: dvh SHOULD initialize a NEW trace if item is On in selection state
                 item_status_counts['on' if self.dvh.item.is_on(ss) else 'off'] += 1
 
+                dv_trace_max_len = GlobalParams().get('dv_trace_max_len')
                 updates_remaining = (
                     0 if early_term else
-                    GlobalParams().dv_trace_max_len - 1 if self.dvh.item.is_on(ss) else
+                    dv_trace_max_len - 1 if self.dvh.item.is_on(ss) else
                     max(0, updates_remaining - 1)
                 )
 
@@ -412,7 +414,7 @@ class TestDelegatedValueHelperForCompositeItems(TestCase):
         ###################################################################
 
         # simplify the tests by setting learning rate to 1.0
-        GlobalParams().learn_rate = 1.0
+        GlobalParams().set('learning_rate', 1.0)
 
         for ts in self.trace_states:
             old_trace_value = self.dvh.trace_value
@@ -473,7 +475,7 @@ class TestDelegatedValueHelperForCompositeItems(TestCase):
     def test_update_3(self):
         # test dv for full, multi-trace trajectory with learning rate < 1.0
         ###################################################################
-        GlobalParams().learn_rate = 0.5
+        GlobalParams().set('learning_rate', 0.5)
 
         # select and result states from full trajectory
         s_select = self.states[0:-1]

@@ -2,15 +2,17 @@ import unittest
 
 import numpy as np
 
+from schema_mechanism.validate import BlackListValidator
 from schema_mechanism.validate import MultiValidator
 from schema_mechanism.validate import RangeValidator
 from schema_mechanism.validate import TypeValidator
 from schema_mechanism.validate import WhiteListValidator
+from test_share.test_func import common_test_setup
 
 
 class TestRangeValidator(unittest.TestCase):
     def setUp(self) -> None:
-        # common_test_setup()
+        common_test_setup()
 
         self.low = -10.0
         self.high = 10.0
@@ -69,7 +71,7 @@ class TestRangeValidator(unittest.TestCase):
 
 class TestTypeValidator(unittest.TestCase):
     def setUp(self) -> None:
-        # common_test_setup()
+        common_test_setup()
 
         self.accept_set = [int, float]
         self.validator = TypeValidator(self.accept_set)
@@ -107,7 +109,7 @@ class TestTypeValidator(unittest.TestCase):
 
 class TestWhiteListValidator(unittest.TestCase):
     def setUp(self) -> None:
-        # common_test_setup()
+        common_test_setup()
 
         self.accept_set = list(range(10))
         self.validator = WhiteListValidator(self.accept_set)
@@ -134,9 +136,37 @@ class TestWhiteListValidator(unittest.TestCase):
         self.assertRaises(ValueError, lambda: self.validator(None))
 
 
+class TestBlackListValidator(unittest.TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+        self.reject_set = [8, 9]
+        self.validator = BlackListValidator(self.reject_set)
+
+    def test_init(self):
+        # test: attributes should have been set during initialization
+        self.assertListEqual(self.reject_set, self.validator.reject_set)
+
+        # test: if accept_set is empty it should generate a ValueError
+        self.assertRaises(ValueError, lambda: BlackListValidator(reject_set=[]))
+
+    def test_call(self):
+        # test: all values not in reject_set should be allowed
+        try:
+            for value in [None, 'accept', 7, 10, 0.0, list()]:
+                self.validator(value)
+
+        except ValueError as e:
+            self.fail(f'Unexpected ValueError: {str(e)}')
+
+        # test: all values in reject_set should raise a ValueError
+        for illegal_value in self.validator.reject_set:
+            self.assertRaises(ValueError, lambda: self.validator(illegal_value))
+
+
 class TestMultiValidator(unittest.TestCase):
     def setUp(self) -> None:
-        # common_test_setup()
+        common_test_setup()
 
         self.validator_list = [
             TypeValidator(accept_set=[int]),

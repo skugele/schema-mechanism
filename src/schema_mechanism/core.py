@@ -35,9 +35,15 @@ from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import repr_str
-
 # Type Aliases
 ##############
+from schema_mechanism.validate import CustomValidator
+from schema_mechanism.validate import MultiValidator
+from schema_mechanism.validate import NULL_VALIDATOR
+from schema_mechanism.validate import RangeValidator
+from schema_mechanism.validate import SubClassValidator
+from schema_mechanism.validate import TypeValidator
+from schema_mechanism.validate import Validator
 
 StateElement = Hashable
 
@@ -265,7 +271,7 @@ class DelegatedValueHelper:
         """
         # start trace if item is On in selection state
         if self._item.is_on(state=selection_state, *args, **kwargs):
-            self._dv_trace_updates_remaining = GlobalParams().dv_trace_max_len
+            self._dv_trace_updates_remaining = GlobalParams().get('dv_trace_max_len')
 
         # update trace value if updates remain
         if self._dv_trace_updates_remaining > 0:
@@ -292,7 +298,8 @@ class DelegatedValueHelper:
             raise ValueError('invalid trace value: -np.inf.')
 
         err = self._dv_trace_value - self._dv_avg_accessible_value
-        self._dv_avg_accessible_value += GlobalParams().learn_rate * err
+        learning_rate = GlobalParams().get('learning_rate')
+        self._dv_avg_accessible_value += learning_rate * err
 
         # clear trace value
         self._dv_trace_value = -np.inf
@@ -412,11 +419,11 @@ class ItemPool(metaclass=Singleton):
 
     def get(self, source: Any, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
         read_only = kwargs.get('read_only', False)
-        item_type = item_type or GlobalParams().item_type
+        item_type = item_type or GlobalParams().get('item_type')
 
         type_dict = (
             ItemPool._composite_items
-            if item_type is GlobalParams().composite_item_type
+            if item_type is GlobalParams().get('composite_item_type')
             else ItemPool._items
         )
 
@@ -528,7 +535,7 @@ class Verbosity(IntEnum):
     NONE = auto()
 
 
-class GlobalOption(Enum):
+class SupportedFeature(Enum):
     # "There is an embellishment of the marginal attribution algorithm--deferring to a more specific applicable schema--
     #  that often enables the discovery of an item whose relevance has been obscured." (see Drescher,1991, pp. 75-76)
     EC_DEFER_TO_MORE_SPECIFIC_SCHEMA = auto()
@@ -559,268 +566,95 @@ class GlobalOption(Enum):
 
 
 class GlobalParams(metaclass=Singleton):
-    # verbosity used to determine the active print/warn statements
-    DEFAULT_VERBOSITY = Verbosity.WARN
-
-    # format string used by output functions (debug, info, warn, error, fatal)
-    DEFAULT_OUTPUT_FORMAT = '{timestamp} [{severity}] - "{message}"'
-
-    # default seed for the random number generator
-    DEFAULT_RNG_SEED = int(time())
-
-    # determines step size for incremental updates (e.g., this is used for delegated value updates)
-    DEFAULT_LEARN_RATE = 0.01
-
-    # thresholds for determining the relevance of items (1.0 -> correlation always occurs)
-    DEFAULT_POS_CORR_THRESHOLD = 0.51
-    DEFAULT_NEG_CORR_THRESHOLD = 0.51
-
-    # success threshold used for determining that a schema is reliable (1.0 -> schema always succeeds)
-    DEFAULT_RELIABILITY_THRESHOLD = 0.95
-
-    # TODO: What default options make sense?
-    DEFAULT_OPTIONS = frozenset((
-
-    ))
-
-    # used by ItemFactory
-    DEFAULT_ITEM_TYPE = SymbolicItem
-    DEFAULT_COMPOSITE_ITEM_TYPE = CompositeItem
-
-    # used by delegated value helper
-    DEFAULT_DV_TRACE_MAX_LEN = 5
 
     def __init__(self) -> None:
-        self._verbosity: Verbosity = Verbosity.NONE
-        self._output_format: str = str()
-        self._rng_seed: int = int()
-        self._learn_rate: float = float()
-        self._pos_corr_threshold: float = float()
-        self._neg_corr_threshold: float = float()
-        self._reliability_threshold: float = float()
-        self._item_type: Type[Item] = Item
-        self._composite_item_type: Type[CompositeItem] = CompositeItem
-        self._dv_trace_max_len: int = int()
-        self._options: Optional[BoundedSet] = BoundedSet(accepted_values=[v for v in GlobalOption])
 
-        self._set_default_values()
+        self._defaults: dict[str, Any] = dict()
+        self._validators: dict[str, Validator] = defaultdict(lambda: NULL_VALIDATOR)
+
+        self._set_validators()
+        self._set_defaults()
+
+        self._params: dict[str, Any] = dict(self._defaults)
 
     @property
-    def rng_seed(self) -> int:
-        return self._rng_seed
+    def defaults(self) -> dict[str, Any]:
+        return self._defaults
 
-    @rng_seed.setter
-    def rng_seed(self, value: Optional[int]) -> None:
-        if value and not isinstance(value, int):
-            raise ValueError('if a seed value is given it must be an integer')
-        self._rng_seed = value or int(time())
+    def set(self, name: str, value: Any) -> None:
+        if name not in self._params:
+            warn(f'Parameter "{name}" does not exist. Creating new parameter.')
 
-    @property
-    def learn_rate(self) -> float:
-        return self._learn_rate
+        # raises ValueError if new value is invalid
+        self._validators[name](value)
 
-    @learn_rate.setter
-    def learn_rate(self, value: float) -> None:
-        if value < 0.0 or value > 1.0:
-            raise ValueError('Learning rate must be >= zero and <= to one.')
-        self._learn_rate = value
+        self._params[name] = value
 
-    @property
-    def pos_corr_threshold(self) -> float:
-        """ Gets the positive correlation threshold for relevance.
+    def get(self, name: str) -> Any:
+        return self._params.get(name)
 
-        :return: a float between 0.0 and 1.0 (inclusive)
-        """
-        return self._pos_corr_threshold
-
-    @pos_corr_threshold.setter
-    def pos_corr_threshold(self, value: float) -> None:
-        """ Sets the positive correlation threshold for relevance.
-
-        :param value: the new positive correlation threshold--a float between 0.0 and 1.0 (inclusive)
-        :return: None
-        """
-        if value < 0.0 or value > 1.0:
-            raise ValueError('positive correlation threshold must be between zero and one (inclusive).')
-        self._pos_corr_threshold = value
-
-    @property
-    def neg_corr_threshold(self) -> float:
-        """ Gets the negative correlation threshold for relevance.
-
-        :return: a float between 0.0 and 1.0 (inclusive)
-        """
-        return self._neg_corr_threshold
-
-    @neg_corr_threshold.setter
-    def neg_corr_threshold(self, value: float) -> None:
-        """ Sets the negative correlation threshold for relevance.
-
-        :param value: the new negative correlation threshold--a float between 0.0 and 1.0 (inclusive)
-        :return: None
-        """
-        if value < 0.0 or value > 1.0:
-            raise ValueError('negative correlation threshold must be between zero and one (inclusive).')
-        self._neg_corr_threshold = value
-
-    @property
-    def reliability_threshold(self) -> float:
-        """ Gets the threshold for schema reliability.
-
-        :return: a float between 0.0 and 1.0 (inclusive)
-        """
-        return self._reliability_threshold
-
-    @reliability_threshold.setter
-    def reliability_threshold(self, value: float) -> None:
-        """ Sets the threshold for schema reliability.
-
-        :param value: the new schema reliability threshold--a float between 0.0 and 1.0 (inclusive)
-        :return: None
-        """
-        if value < 0.0 or value > 1.0:
-            raise ValueError('schema reliability threshold must be between zero and one (inclusive).')
-        self._reliability_threshold = value
-
-    @property
-    def verbosity(self) -> Verbosity:
-        """ Gets the current output verbosity.
-
-        :return: a Verbosity value
-        """
-        return self._verbosity
-
-    @verbosity.setter
-    def verbosity(self, value: Verbosity) -> None:
-        """ Sets the output verbosity.
-
-        :param value: the new output verbosity
-        :return: None
-        """
-        if not isinstance(value, Verbosity):
-            raise ValueError(f'Invalid verbosity. Supported values include: {[v for v in Verbosity]}')
-        self._verbosity = value
-
-    @property
-    def output_format(self) -> str:
-        """ Gets the format string used for diagnostic and informational messages.
-
-        :return: a Verbosity value
-        """
-        return self._output_format
-
-    @output_format.setter
-    def output_format(self, value: Optional[str]) -> None:
-        """ Sets the format string used for diagnostic and informational messages.
-
-        Supported variables in format include: {message}, {timestamp}, and {severity}.
-
-        :param value: the new format string
-        :return: None
-        """
-        if value is not None and not isinstance(value, str):
-            raise ValueError('Invalid output format')
-        self._output_format = value
-
-    @property
-    def item_type(self) -> Type[Item]:
-        """ Gets 5he Item type used for non-composite Item creation.
-
-        :return: an Item type
-        """
-        return self._item_type
-
-    @item_type.setter
-    def item_type(self, value: Type[Item]) -> None:
-        """ Sets the Item type used for non-composite Item creation.
-
-        :param value: an Item type
-        :return: None
-        """
-        if not issubclass(value, Item):
-            raise ValueError('item type must be of type Item or derived from Item.')
-        self._item_type = value
-
-    @property
-    def composite_item_type(self) -> Type[CompositeItem]:
-        """ Gets 5he Item type used for non-composite Item creation.
-
-        :return: an Item type
-        """
-        return self._composite_item_type
-
-    @composite_item_type.setter
-    def composite_item_type(self, value: Type[CompositeItem]) -> None:
-        """ Sets the Item type used for non-composite Item creation.
-
-        :param value: an Item type
-        :return: None
-        """
-        if not issubclass(value, CompositeItem):
-            raise ValueError('item type must be of type CompositeItem or derived from CompositeItem.')
-        self._composite_item_type = value
-
-    @property
-    def options(self) -> MutableSet[GlobalOption]:
-        return self._options
-
-    @options.setter
-    def options(self, value: Optional[Collection[GlobalOption]]) -> None:
-        self._options = self._set_options(value)
-
-    @property
-    def dv_trace_max_len(self) -> int:
-        """ Gets the maximum trace length for delegated value calculations
-
-        :return: a positive int
-        """
-        return self._dv_trace_max_len
-
-    @dv_trace_max_len.setter
-    def dv_trace_max_len(self, value: int) -> None:
-        """ Sets the maximum trace length for delegated value calculations
-
-        :param value: a positive int
-        :return: None
-        """
-        if not isinstance(value, int) or value <= 0:
-            raise ValueError('the max delegated value trace length must be a positive integer')
-        self._dv_trace_max_len = value
-
-    def _set_options(self, enhancements: Optional[Collection[GlobalOption]]) -> MutableSet[GlobalOption]:
-        options = set(enhancements)
-        for value in options:
-            if not isinstance(value, GlobalOption):
-                raise ValueError(f'Unsupported option: {value}')
-
-        if GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE in enhancements:
-            if GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA not in enhancements:
-                warn('Option EC_MOST_SPECIFIC_ON_MULTIPLE requires EC_DEFER_TO_MORE_SPECIFIC!')
-                warn('Option EC_DEFER_TO_MORE_SPECIFIC_SCHEMA was added automatically.')
-                options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
-
-        return options
-
-    def is_enabled(self, option: GlobalOption) -> bool:
-        return option in self._options
+    def is_enabled(self, feature: SupportedFeature) -> bool:
+        return feature in self.get('features')
 
     def reset(self):
-        self._set_default_values()
+        self._params = dict(self._defaults)
 
-    def _set_default_values(self) -> None:
-        self.verbosity = GlobalParams.DEFAULT_VERBOSITY
-        self.output_format = GlobalParams.DEFAULT_OUTPUT_FORMAT
-        self.rng_seed = GlobalParams.DEFAULT_RNG_SEED
-        self.learn_rate = GlobalParams.DEFAULT_LEARN_RATE
-        self.pos_corr_threshold = GlobalParams.DEFAULT_POS_CORR_THRESHOLD
-        self.neg_corr_threshold = GlobalParams.DEFAULT_NEG_CORR_THRESHOLD
-        self.reliability_threshold = GlobalParams.DEFAULT_RELIABILITY_THRESHOLD
-        self.dv_trace_max_len = GlobalParams.DEFAULT_DV_TRACE_MAX_LEN
-        self.item_type = GlobalParams.DEFAULT_ITEM_TYPE
-        self.composite_item_type = GlobalParams.DEFAULT_COMPOSITE_ITEM_TYPE
+    def _validate_features(self, features: Optional[Collection[SupportedFeature]]) -> None:
+        features = set(features)
+        for value in features:
+            if not isinstance(value, SupportedFeature):
+                raise ValueError(f'Unsupported feature: {value}')
 
-        self._options.clear()
-        self._options.update(self.DEFAULT_OPTIONS)
+        if (SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE in features and
+                SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA not in features):
+            raise ValueError(f'The feature EC_MOST_SPECIFIC_ON_MULTIPLE requires EC_DEFER_TO_MORE_SPECIFIC_SCHEMA')
+
+    def _set_defaults(self):
+        # verbosity used to determine the active print/warn statements
+        self._defaults['verbosity'] = Verbosity.WARN
+
+        # format string used by output functions (debug, info, warn, error, fatal)
+        self._defaults['output_format'] = '{timestamp} [{severity}] - "{message}"'
+
+        # default seed for the random number generator
+        self._defaults['rng_seed'] = int(time())
+
+        # determines step size for incremental updates (e.g., this is used for delegated value updates)
+        self._defaults['learning_rate'] = 0.01
+
+        # method for determining statistical correlation
+        self._defaults['correlation_method'] = BarnardExactCorrelationTest()
+
+        # thresholds for determining the relevance of items (1.0 -> correlation always occurs)
+        self._defaults['positive_correlation_threshold'] = 0.95
+        self._defaults['negative_correlation_threshold'] = 0.95
+
+        # success threshold used for determining that a schema is reliable (1.0 -> schema always succeeds)
+        self._defaults['reliability_threshold'] = 0.95
+
+        # TODO: What default features make sense?
+        # default features
+        self._defaults['features'] = BoundedSet(accepted_values=[v for v in SupportedFeature])
+
+        # used by ItemFactory
+        self._defaults['item_type'] = SymbolicItem
+        self._defaults['composite_item_type'] = CompositeItem
+
+        # used by delegated value helper
+        self._defaults['dv_trace_max_len'] = 5
+
+    def _set_validators(self):
+        self._validators['features'] = CustomValidator(self._validate_features)
+        self._validators['rng_seed'] = TypeValidator([int])
+        self._validators['learning_rate'] = RangeValidator(0.0, 1.0)
+        self._validators['positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
+        self._validators['negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
+        self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
+        self._validators['verbosity'] = TypeValidator([Verbosity])
+        self._validators['output_format'] = TypeValidator([str])
+        self._validators['item_type'] = SubClassValidator([Item])
+        self._validators['composite_item_type'] = SubClassValidator([CompositeItem])
+        self._validators['dv_trace_max_len'] = MultiValidator([TypeValidator([int]), RangeValidator(low=0.0)])
 
 
 class GlobalStats(metaclass=Singleton):
@@ -845,7 +679,8 @@ class GlobalStats(metaclass=Singleton):
         :param state: a state
         :return: None
         """
-        self._baseline += GlobalParams().learn_rate * (state.primitive_value - self._baseline)
+        learning_rate = GlobalParams().get('learning_rate')
+        self._baseline += learning_rate * (state.primitive_value - self._baseline)
 
     def reset(self):
         self._baseline = 0.0
@@ -936,7 +771,7 @@ class ItemCorrelationTest(ABC):
         :param table:
         :return:
         """
-        return self.positive_corr_statistic(table) >= GlobalParams().pos_corr_threshold
+        return self.positive_corr_statistic(table) >= GlobalParams().get('positive_correlation_threshold')
 
     def negative_corr(self, table: Iterable) -> bool:
         """
@@ -944,7 +779,7 @@ class ItemCorrelationTest(ABC):
         :param table:
         :return:
         """
-        return self.negative_corr_statistic(table) >= GlobalParams().neg_corr_threshold
+        return self.negative_corr_statistic(table) >= GlobalParams().get('negative_correlation_threshold')
 
     @abstractmethod
     def positive_corr_statistic(self, table: Iterable) -> float:
@@ -1682,6 +1517,14 @@ class ExtendedItemCollection(Observable):
         # clears the set
         self._new_relevant_items = set()
 
+    @property
+    def positive_correlation_threshold(self) -> float:
+        return GlobalParams().get('positive_correlation_threshold')
+
+    @property
+    def negative_correlation_threshold(self) -> float:
+        return GlobalParams().get('negative_correlation_threshold')
+
     # TODO: this is an ugly design! there must be a better way....
     @property
     def new_relevant_items(self) -> frozenset[Assertion]:
@@ -1755,17 +1598,17 @@ class ExtendedResult(ExtendedItemCollection):
             self.notify_all(source=self)
 
     def _check_for_relevance(self, item: Item, item_stats: ERItemStats) -> None:
-        if item_stats.positive_transition_corr > GlobalParams().pos_corr_threshold:
+        if item_stats.positive_transition_corr > self.positive_correlation_threshold:
             item_assert = ItemAssertion(item)
             if item_assert not in self.relevant_items:
                 self.update_relevant_items(item_assert)
 
-        elif item_stats.negative_transition_corr > GlobalParams().neg_corr_threshold:
+        elif item_stats.negative_transition_corr > self.negative_correlation_threshold:
             item_assert = ItemAssertion(item, negated=True)
             if item_assert not in self.relevant_items:
                 self.update_relevant_items(
                     item_assert,
-                    suppressed=GlobalParams().is_enabled(GlobalOption.ER_POSITIVE_ASSERTIONS_ONLY))
+                    suppressed=GlobalParams().is_enabled(SupportedFeature.ER_POSITIVE_ASSERTIONS_ONLY))
 
 
 class ExtendedContext(ExtendedItemCollection):
@@ -1808,7 +1651,7 @@ class ExtendedContext(ExtendedItemCollection):
     # TODO: statistics.
     def update_all(self, state: State, success: bool, count: int = 1) -> None:
         # bypass updates when a more specific spinoff schema exists
-        if (GlobalParams().is_enabled(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+        if (GlobalParams().is_enabled(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
                 and self.defer_update_to_spin_offs(state)):
             return
 
@@ -1822,13 +1665,13 @@ class ExtendedContext(ExtendedItemCollection):
 
             # after spinoff, all stats are reset to remove the influence of relevant items in stats; tracking the
             # correlations for these items is deferred to the schema's context spin-offs
-            if GlobalParams().is_enabled(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA):
+            if GlobalParams().is_enabled(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA):
                 self.stats.clear()
 
     def defer_update_to_spin_offs(self, state: State) -> bool:
         """ Checks if this state activates previously recognized non-negated relevant items. If so, defer to spin-offs.
 
-        Note: This method supports the optional enhancement GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA
+        Note: This method supports the optional enhancement SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA
 
         :param state: a State
         :return: True if should defer stats updates for this state to this schema's spin-offs.
@@ -1836,7 +1679,7 @@ class ExtendedContext(ExtendedItemCollection):
         for ia in self.relevant_items:
             deferring = (
                 not ia.is_negated and ia.is_satisfied(state)
-                if GlobalParams().is_enabled(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY) else
+                if GlobalParams().is_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY) else
                 ia.is_satisfied(state)
             )
 
@@ -1858,7 +1701,7 @@ class ExtendedContext(ExtendedItemCollection):
         for ia in self._pending_relevant_items:
             self.update_relevant_items(
                 assertion=ia,
-                suppressed=GlobalParams().is_enabled(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY) and ia.is_negated)
+                suppressed=GlobalParams().is_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY) and ia.is_negated)
 
         self.clear_pending_relevant_items()
 
@@ -1867,10 +1710,12 @@ class ExtendedContext(ExtendedItemCollection):
         self._pending_max_specificity = -np.inf
 
     def _check_for_relevance(self, item: Item, item_stats: ECItemStats) -> None:
+
+        # TODO: The check against thresholds should be done in the correlation test classes
         # if item is relevant, a new item assertion is created
         item_assert = (
-            ItemAssertion(item) if item_stats.success_corr > GlobalParams().pos_corr_threshold else
-            ItemAssertion(item, negated=True) if item_stats.failure_corr > GlobalParams().neg_corr_threshold else
+            ItemAssertion(item) if item_stats.success_corr > self.positive_correlation_threshold else
+            ItemAssertion(item, negated=True) if item_stats.failure_corr > self.negative_correlation_threshold else
             None
         )
 
@@ -1878,7 +1723,7 @@ class ExtendedContext(ExtendedItemCollection):
             specificity = self.stats[item].specificity
 
             # if enabled, this enhancement allows only a single relevant item per update (the most "specific").
-            if GlobalParams().is_enabled(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE):
+            if GlobalParams().is_enabled(SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE):
                 # item is less specific than earlier item; suppress it on this update.
                 if specificity < self._pending_max_specificity:
                     return
@@ -1933,7 +1778,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         self._extended_result: ExtendedResult = (
             ExtendedResult(self._result)
-            if self._is_primitive or GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS) else
+            if self._is_primitive or GlobalParams().is_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) else
             None
         )
 
@@ -1945,7 +1790,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         if not self._is_primitive:
             self._extended_context.register(self)
 
-        if self._is_primitive or GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS):
+        if self._is_primitive or GlobalParams().is_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
             self._extended_result.register(self)
 
         # TODO: Is duration or cost needed?
@@ -2117,7 +1962,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         # update extended result stats
         if self._extended_result:
-            if GlobalParams().is_enabled(GlobalOption.ER_SUPPRESS_UPDATE_ON_EXPLAINED) and explained:
+            if GlobalParams().is_enabled(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED) and explained:
                 debug(f'update suppressed for schema {self} because its result was explained by a reliable schema')
             else:
                 self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
@@ -2162,7 +2007,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
 
 def is_reliable(schema: Schema, threshold: Optional[float] = None) -> bool:
-    threshold = threshold or GlobalParams().reliability_threshold
+    threshold = threshold or GlobalParams().get('reliability_threshold')
     return schema.reliability != np.NAN and schema.reliability >= threshold
 
 
@@ -2454,8 +2299,11 @@ def _timestamp() -> str:
 
 
 def display_message(message: str, level: Verbosity) -> None:
-    if level >= GlobalParams().verbosity:
-        out = GlobalParams().output_format.format(timestamp=_timestamp(), severity=level.name, message=message)
+    verbosity = GlobalParams().get('verbosity')
+    output_format = GlobalParams().get('output_format')
+
+    if level >= verbosity:
+        out = output_format.format(timestamp=_timestamp(), severity=level.name, message=message)
         print(out, file=_output_fd(level), flush=True)
 
 

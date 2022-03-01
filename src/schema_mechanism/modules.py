@@ -13,7 +13,6 @@ from schema_mechanism.core import Action
 from schema_mechanism.core import Assertion
 from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import CompositeItem
-from schema_mechanism.core import GlobalOption
 from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Item
@@ -25,13 +24,14 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
+from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import debug
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
 from schema_mechanism.core import trace
 from schema_mechanism.util import Observer
-from schema_mechanism.util import get_rand_gen
+from schema_mechanism.util import rng
 
 
 class SchemaMemoryStats:
@@ -115,7 +115,7 @@ class SchemaMemory(Observer):
         # update global statistics
         self._stats.n_updates += len(applicable)
 
-        # state transition explained by activated reliable schema (see GlobalOption.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
+        # state transition explained by activated reliable schema (see SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
         explained = False
 
         # I'm assuming that only APPLICABLE schemas should be updated. This is based on the belief that all
@@ -195,7 +195,7 @@ class AbsoluteDiffMatchStrategy:
 
 class RandomizeSelectionStrategy:
     def __init__(self):
-        self._rng = get_rand_gen(GlobalParams().rng_seed)
+        self._rng = rng(GlobalParams().get('rng_seed'))
 
     def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> Schema:
         return self._rng.choice(schemas, size=1)[0]
@@ -205,7 +205,7 @@ class RandomizeBestSelectionStrategy:
     def __init__(self, match: MatchStrategy):
         self.eq = match or EqualityMatchStrategy()
 
-        self._rng = get_rand_gen(GlobalParams().rng_seed)
+        self._rng = rng(GlobalParams().get('rng_seed'))
 
     def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> Schema:
         max_value = np.max(values)
@@ -280,7 +280,7 @@ class EpsilonGreedyExploratoryStrategy:
     def __init__(self, epsilon: float = None):
         self._epsilon = epsilon
 
-        self._rng = get_rand_gen(GlobalParams().rng_seed)
+        self._rng = rng(GlobalParams().get('rng_seed'))
 
     @property
     def epsilon(self) -> float:
@@ -289,7 +289,7 @@ class EpsilonGreedyExploratoryStrategy:
     @epsilon.setter
     def epsilon(self, value: float) -> None:
         if value < 0.0 or value > 1.0:
-            raise ValueError('Epsilon value must be between zero and one (inclusive).')
+            raise ValueError('Epsilon value must be between zero and one (exclusive).')
         self._epsilon = value
 
     def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
@@ -313,7 +313,7 @@ class ExploratoryEvaluationStrategy:
         # TODO: There are MANY factors that influence value, and it is not clear what their relative weights should be.
         # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
         # TODO: balance between them.
-        self._rng = get_rand_gen(GlobalParams().rng_seed)
+        self._rng = rng(GlobalParams().get('rng_seed'))
 
     def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
         # TODO: Add a mechanism for tracking recently activated schemas.
@@ -571,14 +571,14 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
         )
 
         # add composite contexts to ItemPool to support learning of composite results
-        if not GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS):
+        if not GlobalParams().is_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
             if len(new_context) > 1:
                 _ = ItemPool().get(new_context, item_type=CompositeItem)
 
         return Schema(action=schema.action, context=new_context, result=schema.result)
 
     elif Schema.SpinOffType.RESULT == spin_off_type:
-        if not GlobalParams().is_enabled(GlobalOption.ER_INCREMENTAL_RESULTS) and not schema.is_primitive():
+        if not GlobalParams().is_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) and not schema.is_primitive():
             raise ValueError('Result spin-off for primitive schemas only (unless ER_INCREMENTAL_RESULTS enabled)')
 
         new_result = (

@@ -122,7 +122,7 @@ def cosine_sims(v: np.ndarray, state: Iterable[np.ndarray]) -> np.ndarray:
 _rng = None
 
 
-def get_rand_gen(seed):
+def rng(seed):
     global _rng
     if not _rng:
         _rng = np.random.default_rng(seed)

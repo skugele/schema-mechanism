@@ -18,8 +18,8 @@ class TestExtendedResult(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        GlobalParams().pos_corr_threshold = 0.65
-        GlobalParams().neg_corr_threshold = 0.65
+        GlobalParams().set('positive_correlation_threshold', 0.65)
+        GlobalParams().set('negative_correlation_threshold', 0.65)
 
         # populate item pool
         self._item_pool = ItemPool()
@@ -96,8 +96,8 @@ class TestExtendedResult(TestCase):
         self.assertEqual(1, len(self.er.new_relevant_items))
 
         i1_stats = self.er.stats[i1]
-        self.assertTrue(i1_stats.positive_transition_corr > GlobalParams().pos_corr_threshold)
-        self.assertTrue(i1_stats.negative_transition_corr <= GlobalParams().neg_corr_threshold)
+        self.assertTrue(i1_stats.positive_transition_corr > GlobalParams().get('positive_correlation_threshold'))
+        self.assertTrue(i1_stats.negative_transition_corr <= GlobalParams().get('negative_correlation_threshold'))
 
         # verify only one relevant item
         self.assertEqual(1, len(self.er.relevant_items))
@@ -126,8 +126,8 @@ class TestExtendedResult(TestCase):
         self.er.update(i1, on=False, activated=False, count=10)
 
         i1_stats = self.er.stats[i1]
-        self.assertTrue(i1_stats.positive_transition_corr > GlobalParams().pos_corr_threshold)
-        self.assertTrue(i1_stats.negative_transition_corr <= GlobalParams().neg_corr_threshold)
+        self.assertTrue(i1_stats.positive_transition_corr > GlobalParams().get('positive_correlation_threshold'))
+        self.assertTrue(i1_stats.negative_transition_corr <= GlobalParams().get('negative_correlation_threshold'))
 
         # verify suppressed item NOT in relevant items list
         self.assertEqual(0, len(self.er.relevant_items))

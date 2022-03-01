@@ -4,12 +4,12 @@ from unittest.mock import PropertyMock
 from unittest.mock import patch
 
 from schema_mechanism.core import ExtendedContext
-from schema_mechanism.core import GlobalOption
 from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_EC_ITEM_STATS
 from schema_mechanism.core import State
+from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.func_api import sym_asserts
 from schema_mechanism.func_api import sym_item
@@ -25,8 +25,8 @@ class TestExtendedContext(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        GlobalParams().pos_corr_threshold = 0.65
-        GlobalParams().neg_corr_threshold = 0.65
+        GlobalParams().set('positive_correlation_threshold', 0.65)
+        GlobalParams().set('negative_correlation_threshold', 0.65)
 
         pool = ItemPool()
 
@@ -102,9 +102,11 @@ class TestExtendedContext(TestCase):
                 self.assertEqual(0, item_stats.n_fail_and_off)
 
     def test_update_all_2(self):
-        # test update_all without GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE enabled
-        if GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE in GlobalParams().options:
-            GlobalParams().options.remove(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE)
+        features = GlobalParams().get('features')
+
+        # test update_all without SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE enabled
+        if SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE in features:
+            features.remove(SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE)
 
         self.ec.update_all(sym_state('3'), success=False)
         self.ec.update_all(sym_state('2'), success=False, count=5)
@@ -120,8 +122,10 @@ class TestExtendedContext(TestCase):
         self.assertSetEqual(set(sym_asserts('1,2,~3')), self.ec.relevant_items)
 
     def test_update_all_3(self):
-        # test update_all with GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE enabled
-        GlobalParams().options.add(GlobalOption.EC_MOST_SPECIFIC_ON_MULTIPLE)
+        features = GlobalParams().get('features')
+
+        # test update_all with SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE enabled
+        features.add(SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE)
 
         self.ec.update_all(sym_state('3'), success=False)
         self.ec.update_all(sym_state('2'), success=False, count=5)
@@ -137,8 +141,8 @@ class TestExtendedContext(TestCase):
         self.assertSetEqual(set(sym_asserts('~3')), self.ec.relevant_items)
 
     def test_defer_update_to_spin_offs(self):
-        # GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA enabled
-        GlobalParams().options.add(GlobalOption.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+        # SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA enabled
+        GlobalParams().get('features').add(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
 
         update_state_1 = sym_state('4,6,8')
         update_state_2 = sym_state('1,6')
@@ -160,7 +164,7 @@ class TestExtendedContext(TestCase):
             self.assertTrue(ec.defer_update_to_spin_offs(defer_state_2))
 
             # test: negated relevant items should defer updates when satisfied (unless EC_POSITIVE_ASSERTIONS_ONLY)
-            if not GlobalParams().is_enabled(GlobalOption.EC_POSITIVE_ASSERTIONS_ONLY):
+            if not GlobalParams().is_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY):
                 self.assertTrue(ec.defer_update_to_spin_offs(defer_state_3))
 
     def test_register_and_unregister(self):
@@ -193,8 +197,8 @@ class TestExtendedContext(TestCase):
         self.ec.update(i1, on=True, success=True)
 
         i1_stats = self.ec.stats[i1]
-        self.assertTrue(i1_stats.success_corr > GlobalParams().pos_corr_threshold)
-        self.assertTrue(i1_stats.failure_corr <= GlobalParams().neg_corr_threshold)
+        self.assertTrue(i1_stats.success_corr > GlobalParams().get('positive_correlation_threshold'))
+        self.assertTrue(i1_stats.failure_corr <= GlobalParams().get('negative_correlation_threshold'))
 
         self.assertEqual(1, len(self.ec.pending_relevant_items))
         self.ec.check_pending_relevant_items()
@@ -231,8 +235,8 @@ class TestExtendedContext(TestCase):
         self.ec.update(i1, on=False, success=False, count=10)
 
         i1_stats = self.ec.stats[i1]
-        self.assertTrue(i1_stats.success_corr > GlobalParams().pos_corr_threshold)
-        self.assertTrue(i1_stats.failure_corr <= GlobalParams().neg_corr_threshold)
+        self.assertTrue(i1_stats.success_corr > GlobalParams().get('positive_correlation_threshold'))
+        self.assertTrue(i1_stats.failure_corr <= GlobalParams().get('negative_correlation_threshold'))
 
         # verify suppressed item NOT in relevant items list
         self.assertEqual(0, len(self.ec.pending_relevant_items))
