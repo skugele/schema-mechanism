@@ -35,9 +35,6 @@ from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import repr_str
-# Type Aliases
-##############
-from schema_mechanism.validate import CustomValidator
 from schema_mechanism.validate import MultiValidator
 from schema_mechanism.validate import NULL_VALIDATOR
 from schema_mechanism.validate import RangeValidator
@@ -45,6 +42,8 @@ from schema_mechanism.validate import SubClassValidator
 from schema_mechanism.validate import TypeValidator
 from schema_mechanism.validate import Validator
 
+# Type Aliases
+##############
 StateElement = Hashable
 
 
@@ -565,10 +564,25 @@ class SupportedFeature(Enum):
     ER_POSITIVE_ASSERTIONS_ONLY = auto()
 
 
+class SupportedFeatureValidator(Validator):
+    def __call__(self, features: Optional[Collection[SupportedFeature]]) -> None:
+        features = set(features)
+        for value in features:
+            if not isinstance(value, SupportedFeature):
+                raise ValueError(f'Unsupported feature: {value}')
+
+        if (SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE in features and
+                SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA not in features):
+            raise ValueError(f'The feature EC_MOST_SPECIFIC_ON_MULTIPLE requires EC_DEFER_TO_MORE_SPECIFIC_SCHEMA')
+
+
+def is_feature_enabled(feature: SupportedFeature) -> bool:
+    return feature in GlobalParams().get('features')
+
+
 class GlobalParams(metaclass=Singleton):
 
     def __init__(self) -> None:
-
         self._defaults: dict[str, Any] = dict()
         self._validators: dict[str, Validator] = defaultdict(lambda: NULL_VALIDATOR)
 
@@ -593,21 +607,8 @@ class GlobalParams(metaclass=Singleton):
     def get(self, name: str) -> Any:
         return self._params.get(name)
 
-    def is_enabled(self, feature: SupportedFeature) -> bool:
-        return feature in self.get('features')
-
     def reset(self):
         self._params = dict(self._defaults)
-
-    def _validate_features(self, features: Optional[Collection[SupportedFeature]]) -> None:
-        features = set(features)
-        for value in features:
-            if not isinstance(value, SupportedFeature):
-                raise ValueError(f'Unsupported feature: {value}')
-
-        if (SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE in features and
-                SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA not in features):
-            raise ValueError(f'The feature EC_MOST_SPECIFIC_ON_MULTIPLE requires EC_DEFER_TO_MORE_SPECIFIC_SCHEMA')
 
     def _set_defaults(self):
         # verbosity used to determine the active print/warn statements
@@ -644,9 +645,10 @@ class GlobalParams(metaclass=Singleton):
         self._defaults['dv_trace_max_len'] = 5
 
     def _set_validators(self):
-        self._validators['features'] = CustomValidator(self._validate_features)
+        self._validators['features'] = SupportedFeatureValidator()
         self._validators['rng_seed'] = TypeValidator([int])
         self._validators['learning_rate'] = RangeValidator(0.0, 1.0)
+        self._validators['correlation_method'] = TypeValidator([ItemCorrelationTest])
         self._validators['positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
@@ -1468,9 +1470,9 @@ class ExtendedItemCollection(Observable):
 
     def __str__(self) -> str:
         name = self.__class__.__name__
-        stats = '; '.join([f'{k} -> {v}' for k, v in self._stats.items()])
+        values = '; '.join([f'{k} -> {v}' for k, v in self._stats.items()])
 
-        return f'{name}[{stats}]'
+        return f'{name}[{values}]'
 
     def __repr__(self) -> str:
         item_stats = ', '.join(['{} -> {}'.format(k, v) for k, v in self.stats.items()])
@@ -1558,7 +1560,7 @@ class ExtendedResult(ExtendedItemCollection):
         Supports the discovery of:
 
             reliable schemas
-            choins of schemas
+            chains of schemas
     """
 
     def __init__(self, result: StateAssertion) -> None:
@@ -1608,7 +1610,7 @@ class ExtendedResult(ExtendedItemCollection):
             if item_assert not in self.relevant_items:
                 self.update_relevant_items(
                     item_assert,
-                    suppressed=GlobalParams().is_enabled(SupportedFeature.ER_POSITIVE_ASSERTIONS_ONLY))
+                    suppressed=is_feature_enabled(SupportedFeature.ER_POSITIVE_ASSERTIONS_ONLY))
 
 
 class ExtendedContext(ExtendedItemCollection):
@@ -1651,8 +1653,8 @@ class ExtendedContext(ExtendedItemCollection):
     # TODO: statistics.
     def update_all(self, state: State, success: bool, count: int = 1) -> None:
         # bypass updates when a more specific spinoff schema exists
-        if (GlobalParams().is_enabled(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
-                and self.defer_update_to_spin_offs(state)):
+        if is_feature_enabled(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA) and self.defer_update_to_spin_offs(
+                state):
             return
 
         for item in self._item_pool.items:
@@ -1665,7 +1667,7 @@ class ExtendedContext(ExtendedItemCollection):
 
             # after spinoff, all stats are reset to remove the influence of relevant items in stats; tracking the
             # correlations for these items is deferred to the schema's context spin-offs
-            if GlobalParams().is_enabled(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA):
+            if is_feature_enabled(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA):
                 self.stats.clear()
 
     def defer_update_to_spin_offs(self, state: State) -> bool:
@@ -1679,7 +1681,7 @@ class ExtendedContext(ExtendedItemCollection):
         for ia in self.relevant_items:
             deferring = (
                 not ia.is_negated and ia.is_satisfied(state)
-                if GlobalParams().is_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY) else
+                if is_feature_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY) else
                 ia.is_satisfied(state)
             )
 
@@ -1701,7 +1703,7 @@ class ExtendedContext(ExtendedItemCollection):
         for ia in self._pending_relevant_items:
             self.update_relevant_items(
                 assertion=ia,
-                suppressed=GlobalParams().is_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY) and ia.is_negated)
+                suppressed=is_feature_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY) and ia.is_negated)
 
         self.clear_pending_relevant_items()
 
@@ -1723,7 +1725,7 @@ class ExtendedContext(ExtendedItemCollection):
             specificity = self.stats[item].specificity
 
             # if enabled, this enhancement allows only a single relevant item per update (the most "specific").
-            if GlobalParams().is_enabled(SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE):
+            if is_feature_enabled(SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE):
                 # item is less specific than earlier item; suppress it on this update.
                 if specificity < self._pending_max_specificity:
                     return
@@ -1778,7 +1780,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         self._extended_result: ExtendedResult = (
             ExtendedResult(self._result)
-            if self._is_primitive or GlobalParams().is_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) else
+            if self._is_primitive or is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) else
             None
         )
 
@@ -1790,7 +1792,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         if not self._is_primitive:
             self._extended_context.register(self)
 
-        if self._is_primitive or GlobalParams().is_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
+        if self._is_primitive or is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
             self._extended_result.register(self)
 
         # TODO: Is duration or cost needed?
@@ -1962,7 +1964,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         # update extended result stats
         if self._extended_result:
-            if GlobalParams().is_enabled(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED) and explained:
+            if is_feature_enabled(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED) and explained:
                 debug(f'update suppressed for schema {self} because its result was explained by a reliable schema')
             else:
                 self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)

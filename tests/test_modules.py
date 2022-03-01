@@ -5,6 +5,7 @@ from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SupportedFeature
+from schema_mechanism.core import is_feature_enabled
 from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state_assert
@@ -116,7 +117,7 @@ class TestModuleFunctions(TestCase):
 
     def test_spinoff_schema_2(self):
         # test spinoff behavior when ER_INCREMENTAL_RESULTS is disabled
-        if GlobalParams().is_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
+        if is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
             GlobalParams().get('features').remove(SupportedFeature.ER_INCREMENTAL_RESULTS)
 
         # test bare schema spin-off

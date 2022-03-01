@@ -11,6 +11,7 @@ from schema_mechanism.core import NULL_EC_ITEM_STATS
 from schema_mechanism.core import State
 from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import SymbolicItem
+from schema_mechanism.core import is_feature_enabled
 from schema_mechanism.func_api import sym_asserts
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
@@ -164,7 +165,7 @@ class TestExtendedContext(TestCase):
             self.assertTrue(ec.defer_update_to_spin_offs(defer_state_2))
 
             # test: negated relevant items should defer updates when satisfied (unless EC_POSITIVE_ASSERTIONS_ONLY)
-            if not GlobalParams().is_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY):
+            if not is_feature_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY):
                 self.assertTrue(ec.defer_update_to_spin_offs(defer_state_3))
 
     def test_register_and_unregister(self):

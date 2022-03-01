@@ -26,6 +26,7 @@ from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import debug
+from schema_mechanism.core import is_feature_enabled
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
@@ -571,14 +572,14 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
         )
 
         # add composite contexts to ItemPool to support learning of composite results
-        if not GlobalParams().is_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
+        if not is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
             if len(new_context) > 1:
                 _ = ItemPool().get(new_context, item_type=CompositeItem)
 
         return Schema(action=schema.action, context=new_context, result=schema.result)
 
     elif Schema.SpinOffType.RESULT == spin_off_type:
-        if not GlobalParams().is_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) and not schema.is_primitive():
+        if not is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) and not schema.is_primitive():
             raise ValueError('Result spin-off for primitive schemas only (unless ER_INCREMENTAL_RESULTS enabled)')
 
         new_result = (

@@ -6,6 +6,7 @@ from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.core import Verbosity
 from schema_mechanism.core import display_message
+from schema_mechanism.core import is_feature_enabled
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
@@ -284,6 +285,6 @@ class TestGlobalParams(unittest.TestCase):
 
         for feature in SupportedFeature:
             if feature in features:
-                self.assertTrue(self.gp.is_enabled(feature))
+                self.assertTrue(is_feature_enabled(feature))
             else:
-                self.assertFalse(self.gp.is_enabled(feature))
+                self.assertFalse(is_feature_enabled(feature))
