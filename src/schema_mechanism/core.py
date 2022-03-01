@@ -42,13 +42,9 @@ from schema_mechanism.validate import SubClassValidator
 from schema_mechanism.validate import TypeValidator
 from schema_mechanism.validate import Validator
 
-# Type Aliases
-##############
 StateElement = Hashable
 
 
-# Classes
-#########
 class Activatable(ABC):
     @abstractmethod
     def is_on(self, state: State, *args, **kwargs) -> bool: ...
@@ -819,8 +815,8 @@ class DrescherCorrelationTest(ItemCorrelationTest):
         table = np.array(table) + 1
 
         # calculate conditional probabilities
-        pr_a_given_x = table[0, 0] / np.sum(table[:, 0])
-        pr_a_given_y = table[0, 1] / np.sum(table[:, 1])
+        pr_a_given_x = table[0, 0] / np.sum(table[0, :])
+        pr_a_given_y = table[1, 0] / np.sum(table[1, :])
 
         # the part-to-part ratio Pr(A | X) : Pr(A | Y)
         return pr_a_given_x / (pr_a_given_x + pr_a_given_y)
@@ -860,7 +856,7 @@ class BarnardExactCorrelationTest(ItemCorrelationTest):
 
         return 1.0 - stats.barnard_exact(np.array(table), alternative='greater').pvalue
 
-    def negative_corr_statistic(self, table: Iterable) -> bool:
+    def negative_corr_statistic(self, table: Iterable) -> float:
         """
 
         :param table:
@@ -872,8 +868,41 @@ class BarnardExactCorrelationTest(ItemCorrelationTest):
         return 1.0 - stats.barnard_exact(np.array(table), alternative='less').pvalue
 
 
-class ItemStats:
-    pass
+class FisherExactCorrelationTest(ItemCorrelationTest):
+
+    def positive_corr_statistic(self, table: Iterable) -> float:
+        """
+
+        :param table:
+        :return:
+        """
+        # raises ValueError
+        self.validate_data(table)
+
+        _, p_value = stats.fisher_exact(np.array(table), alternative='greater')
+        return 1.0 - p_value
+
+    def negative_corr_statistic(self, table: Iterable) -> float:
+        """
+
+        :param table:
+        :return:
+        """
+        # raises ValueError
+        self.validate_data(table)
+
+        _, p_value = stats.fisher_exact(np.array(table), alternative='less')
+        return 1.0 - p_value
+
+
+class ItemStats(ABC):
+    @abstractmethod
+    def as_array(self) -> np.ndarray:
+        pass
+
+    @abstractmethod
+    def update(self, *args, **kwargs) -> None:
+        pass
 
 
 class ECItemStats(ItemStats):
@@ -910,12 +939,16 @@ class ECItemStats(ItemStats):
         :return: the ratio as a float, or numpy.NAN if division by zero
         """
         try:
-            # calculate conditional probabilities
-            p_success_given_on = self._n_success_and_on / self.n_on
-            p_success_given_off = self._n_success_and_off / self.n_off
+            # # calculate conditional probabilities
+            # p_success_given_on = self._n_success_and_on / self.n_on
+            # p_success_given_off = self._n_success_and_off / self.n_off
+            #
+            # # the part-to-part ratio between p(success | on) : p(success | off)
+            # return p_success_given_on / (p_success_given_on + p_success_given_off)
+            correlation_method: ItemCorrelationTest = GlobalParams().get('correlation_method')
 
-            # the part-to-part ratio between p(success | on) : p(success | off)
-            return p_success_given_on / (p_success_given_on + p_success_given_off)
+            success_corr = correlation_method.positive_corr_statistic(self.as_array())
+            return success_corr
         except ZeroDivisionError:
             return np.NAN
 
@@ -926,12 +959,16 @@ class ECItemStats(ItemStats):
         :return: the ratio as a float, or numpy.NAN if division by zero
         """
         try:
-            # calculate conditional probabilities
-            p_fail_given_on = self._n_fail_and_on / self.n_on
-            p_fail_given_off = self._n_fail_and_off / self.n_off
+            # # calculate conditional probabilities
+            # p_fail_given_on = self._n_fail_and_on / self.n_on
+            # p_fail_given_off = self._n_fail_and_off / self.n_off
+            #
+            # # the part-to-part ratio between p(failure | on) : p(failure | off)
+            # return p_fail_given_on / (p_fail_given_on + p_fail_given_off)
+            correlation_method: ItemCorrelationTest = GlobalParams().get('correlation_method')
 
-            # the part-to-part ratio between p(failure | on) : p(failure | off)
-            return p_fail_given_on / (p_fail_given_on + p_fail_given_off)
+            failure_corr = correlation_method.negative_corr_statistic(self.as_array())
+            return failure_corr
         except ZeroDivisionError:
             return np.NAN
 
@@ -975,6 +1012,12 @@ class ECItemStats(ItemStats):
     @property
     def n_fail_and_off(self) -> int:
         return self._n_fail_and_off
+
+    def as_array(self) -> np.ndarray:
+        return np.array([
+            [self.n_success_and_on, self.n_fail_and_on],
+            [self.n_success_and_off, self.n_fail_and_off],
+        ])
 
     def copy(self) -> ECItemStats:
         new = ECItemStats()
@@ -1035,19 +1078,6 @@ class ERItemStats(ItemStats):
         self._n_off_and_activated = 0
         self._n_off_and_not_activated = 0
 
-    def update(self, on: bool, activated: bool, count: int = 1) -> None:
-        if on and activated:
-            self._n_on_and_activated += count
-
-        elif on and not activated:
-            self._n_on_and_not_activated += count
-
-        elif not on and activated:
-            self._n_off_and_activated += count
-
-        elif not on and not activated:
-            self._n_off_and_not_activated += count
-
     @property
     def positive_transition_corr(self) -> float:
         """ Returns the positive-transition correlation for this item.
@@ -1059,13 +1089,8 @@ class ERItemStats(ItemStats):
         :return: the positive-transition correlation
         """
         try:
-            # calculate conditional probabilities
-            p_on_given_activated = self.n_on_and_activated / self.n_activated
-            p_on_given_not_activated = self.n_on_and_not_activated / self.n_not_activated
-
-            # the part-to-part ratio between p(on AND activated) : p(on AND NOT activated)
-            positive_trans_corr = p_on_given_activated / (p_on_given_activated + p_on_given_not_activated)
-            return positive_trans_corr
+            correlation_method: ItemCorrelationTest = GlobalParams().get('correlation_method')
+            return correlation_method.positive_corr_statistic(self.as_array())
         except ZeroDivisionError:
             return np.NAN
 
@@ -1080,12 +1105,8 @@ class ERItemStats(ItemStats):
         :return: the negative-transition correlation
         """
         try:
-            p_off_given_activated = self.n_off_and_activated / self.n_activated
-            p_off_given_not_activated = self.n_off_and_not_activated / self.n_not_activated
-
-            # the part-to-part ratio between p(off AND activated) : p(off AND NOT activated)
-            negative_trans_corr = p_off_given_activated / (p_off_given_activated + p_off_given_not_activated)
-            return negative_trans_corr
+            correlation_method: ItemCorrelationTest = GlobalParams().get('correlation_method')
+            return correlation_method.negative_corr_statistic(self.as_array())
         except ZeroDivisionError:
             return np.NAN
 
@@ -1120,6 +1141,25 @@ class ERItemStats(ItemStats):
     @property
     def n_off_and_not_activated(self) -> int:
         return self._n_off_and_not_activated
+
+    def update(self, on: bool, activated: bool, count: int = 1) -> None:
+        if on and activated:
+            self._n_on_and_activated += count
+
+        elif on and not activated:
+            self._n_on_and_not_activated += count
+
+        elif not on and activated:
+            self._n_off_and_activated += count
+
+        elif not on and not activated:
+            self._n_off_and_not_activated += count
+
+    def as_array(self) -> np.ndarray:
+        return np.array([
+            [self.n_on_and_activated, self.n_off_and_activated],
+            [self.n_on_and_not_activated, self.n_off_and_not_activated]
+        ])
 
     def copy(self) -> ERItemStats:
         new = ERItemStats()
@@ -1518,6 +1558,10 @@ class ExtendedItemCollection(Observable):
 
         # clears the set
         self._new_relevant_items = set()
+
+    @property
+    def correlation_method(self) -> ItemCorrelationTest:
+        return GlobalParams().get('correlation_method')
 
     @property
     def positive_correlation_threshold(self) -> float:

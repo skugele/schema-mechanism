@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from typing import Optional
 
 from schema_mechanism.core import Action
+from schema_mechanism.core import FisherExactCorrelationTest
 from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
@@ -15,7 +16,6 @@ from schema_mechanism.core import debug
 from schema_mechanism.core import info
 from schema_mechanism.examples import RANDOM_SEED
 from schema_mechanism.func_api import sym_item
-from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.util import Observable
@@ -210,15 +210,18 @@ def display_schema_info(schema: Schema, sm: SchemaMechanism) -> None:
 
 
 # global constants
-N_MACHINES = 2
-N_STEPS = 10000
+N_MACHINES = 10
+N_STEPS = 25000
 
 
 def run():
     params = GlobalParams()
+    # params.set('correlation_method', BarnardExactCorrelationTest())
+    # params.set('correlation_method', DrescherCorrelationTest())
+    params.set('correlation_method', FisherExactCorrelationTest())
     params.set('learning_rate', 0.05)
     params.set('dv_trace_max_len', 2)
-    params.set('verbosity', Verbosity.DEBUG)
+    params.set('verbosity', Verbosity.INFO)
     params.set('output_format', '{message}')
     params.set('rng_seed', RANDOM_SEED)
     params.set('features', [
@@ -247,13 +250,13 @@ def run():
     for n in range(args.steps):
         # display_item_values()
         curr_state = env.current_state
-        info(f'State[{n}]: {curr_state}')
+        # info(f'State[{n}]: {curr_state}')
         schema = sm.select(curr_state)
         # info(f'Selected Schema[{n}]: {schema}')
         result_state = env.step(schema.action)
         # info(f'Result[{n}]: {result_state}')
         # display_schema_info(sym_schema('/play/W,'), sm)
-        display_schema_info(sym_schema('P,/play/W,'), sm)
+        # display_schema_info(sym_schema('P,/play/W,'), sm)
         # display_schema_info(sym_schema('M0,/play/W,'), sm)
         # display_schema_info(sym_schema('P,/play/L,'), sm)
         # display_schema_info(sym_schema('P,/play/L,'), sm)
@@ -261,13 +264,14 @@ def run():
         # display_schema_info(sym_schema('P,/play/W,'), sm)
 
         # info(f'n_schema: {len(sm.known_schemas)}')
-        display_known_schemas(sm)
+        # display_known_schemas(sm)
 
     for m in machines:
         info(repr(m))
 
     debug(f'baseline: {GlobalStats().baseline_value}')
     display_item_values()
+    display_known_schemas(sm)
 
 
 if __name__ == '__main__':
