@@ -3,13 +3,13 @@ from time import time
 from typing import Iterable
 
 import numpy as np
-import scipy.stats as stats
 
+import test_share
 from schema_mechanism.core import BarnardExactCorrelationTest
 from schema_mechanism.core import DrescherCorrelationTest
+from schema_mechanism.core import FisherExactCorrelationTest
 from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import ItemCorrelationTest
-from test_share import performance_test
 from test_share.test_func import common_test_setup
 
 
@@ -82,18 +82,32 @@ class TestDrescherCorrTest(unittest.TestCase):
         self.dct = DrescherCorrelationTest()
 
     def test_positive_corr_statistic(self):
-        table = [[99, 0], [0, 19]]
-        self.assertAlmostEqual(0.9541, self.dct.positive_corr_statistic(table), delta=1e-4)
+        table = [[100, 1], [1, 20]]
+        self.assertAlmostEqual(0.9541, self.dct.positive_corr_statistic(table), delta=1e-3)
 
         table = [[0, 0], [0, 0]]
-        self.assertEqual(0.5, self.dct.positive_corr_statistic(table))
+        self.assertEqual(0.0, self.dct.positive_corr_statistic(table))
 
     def test_negative_corr_statistic(self):
-        table = [[0, 99], [19, 0]]
-        self.assertAlmostEqual(0.9541, self.dct.negative_corr_statistic(table), delta=1e-4)
+        table = [[1, 100], [20, 1]]
+        self.assertAlmostEqual(0.9541, self.dct.negative_corr_statistic(table), delta=1e-3)
 
         table = [[0, 0], [0, 0]]
-        self.assertEqual(0.5, self.dct.negative_corr_statistic(table))
+        self.assertEqual(0.0, self.dct.negative_corr_statistic(table))
+
+    @test_share.performance_test
+    def test_performance(self):
+        n_iter = 100
+        elapsed_time = 0.0
+        table = [[12, 7], [3, 8]]
+
+        for n in range(n_iter):
+            start = time()
+            self.dct.positive_corr_statistic(table)
+            end = time()
+            elapsed_time += end - start
+
+        print(f'Time for {n_iter} Drescher ratio correlation tests: {elapsed_time}s')
 
 
 class TestBarnardExactTest(unittest.TestCase):
@@ -116,9 +130,9 @@ class TestBarnardExactTest(unittest.TestCase):
         table = [[0, 0], [0, 0]]
         self.assertEqual(0.0, self.bet.negative_corr_statistic(table))
 
-    @performance_test
+    @test_share.performance_test
     def test_performance(self):
-        n_iter = 1000
+        n_iter = 100
         elapsed_time = 0.0
         table = [[12, 7], [3, 8]]
 
@@ -128,17 +142,39 @@ class TestBarnardExactTest(unittest.TestCase):
             end = time()
             elapsed_time += end - start
 
-        print(f'elapsed time to run {n_iter} Barnard correlation tests: {elapsed_time}s')
+        print(f'Time for {n_iter} Barnard exact correlation tests: {elapsed_time}s')
 
-    def test_performance_2(self):
-        n_iter = 1000
+
+class TestFisherExactTest(unittest.TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+        self.fet = FisherExactCorrelationTest()
+
+    def test_positive_corr_statistic(self):
+        table = [[12, 7], [3, 8]]
+        self.assertAlmostEqual(0.936, self.fet.positive_corr_statistic(table), delta=1e-3)
+
+        table = [[0, 0], [0, 0]]
+        self.assertEqual(0.0, self.fet.positive_corr_statistic(table))
+
+    def test_negative_corr_statistic(self):
+        table = [[7, 12], [8, 3]]
+        self.assertAlmostEqual(0.936, self.fet.negative_corr_statistic(table), delta=1e-3)
+
+        table = [[0, 0], [0, 0]]
+        self.assertEqual(0.0, self.fet.negative_corr_statistic(table))
+
+    @test_share.performance_test
+    def test_performance(self):
+        n_iter = 100
         elapsed_time = 0.0
         table = [[12, 7], [3, 8]]
 
         for n in range(n_iter):
             start = time()
-            stats.barnard_exact(table, alternative='less')
+            self.fet.positive_corr_statistic(table)
             end = time()
             elapsed_time += end - start
 
-        print(f'elapsed time to run {n_iter} Barnard correlation tests: {elapsed_time}s')
+        print(f'Time for {n_iter} Fisher exact correlation tests: {elapsed_time}s')

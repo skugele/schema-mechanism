@@ -30,9 +30,9 @@ from schema_mechanism.core import is_feature_enabled
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
+from schema_mechanism.core import rng
 from schema_mechanism.core import trace
 from schema_mechanism.util import Observer
-from schema_mechanism.util import rng
 
 
 class SchemaMemoryStats:
@@ -172,7 +172,7 @@ class SchemaMemory(Observer):
 # Type aliases
 SchemaEvaluationStrategy = Callable[[Sequence[Schema]], np.ndarray]
 MatchStrategy = Callable[[np.ndarray, float], np.ndarray]
-SelectionStrategy = Callable[[Collection[Schema], np.ndarray], Schema]
+SelectionStrategy = Callable[[Sequence[Schema], np.ndarray], Schema]
 
 
 class NoOpEvaluationStrategy:
@@ -195,25 +195,20 @@ class AbsoluteDiffMatchStrategy:
 
 
 class RandomizeSelectionStrategy:
-    def __init__(self):
-        self._rng = rng(GlobalParams().get('rng_seed'))
-
     def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> Schema:
-        return self._rng.choice(schemas, size=1)[0]
+        return rng().choice(schemas, size=1)[0]
 
 
 class RandomizeBestSelectionStrategy:
     def __init__(self, match: MatchStrategy):
         self.eq = match or EqualityMatchStrategy()
 
-        self._rng = rng(GlobalParams().get('rng_seed'))
-
     def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> Schema:
         max_value = np.max(values)
 
         # randomize selection if several schemas have values within sameness threshold
         best_schemas = np.argwhere(self.eq(values, max_value)).flatten()
-        selection_index = self._rng.choice(best_schemas, size=1)[0]
+        selection_index = rng().choice(best_schemas, size=1)[0]
 
         return schemas[selection_index]
 
@@ -281,8 +276,6 @@ class EpsilonGreedyExploratoryStrategy:
     def __init__(self, epsilon: float = None):
         self._epsilon = epsilon
 
-        self._rng = rng(GlobalParams().get('rng_seed'))
-
     @property
     def epsilon(self) -> float:
         return self._epsilon
@@ -300,11 +293,11 @@ class EpsilonGreedyExploratoryStrategy:
         values = np.zeros_like(schemas)
 
         # determine if taking exploratory or goal-directed action
-        is_exploratory = self._rng.uniform(0.0, 1.0) < self._epsilon
+        is_exploratory = rng().uniform(0.0, 1.0) < self._epsilon
 
         # randomly select winning schema if exploratory action and set value to np.inf
         if is_exploratory:
-            values[self._rng.choice(len(schemas))] = np.inf
+            values[rng().choice(len(schemas))] = np.inf
         return values
 
 
@@ -314,7 +307,7 @@ class ExploratoryEvaluationStrategy:
         # TODO: There are MANY factors that influence value, and it is not clear what their relative weights should be.
         # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
         # TODO: balance between them.
-        self._rng = rng(GlobalParams().get('rng_seed'))
+        pass
 
     def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
         # TODO: Add a mechanism for tracking recently activated schemas.
@@ -343,7 +336,7 @@ class ExploratoryEvaluationStrategy:
         # structures is of one greater level than the maximum of those structures' levels." (See Drescher, 1991, p. 67)
 
         # FIXME
-        return self._rng.integers(0, 100, len(schemas))
+        return rng().integers(0, 100, len(schemas))
 
 
 class SchemaSelection:
@@ -389,16 +382,19 @@ class SchemaSelection:
     def __init__(self,
                  goal_pursuit: SchemaEvaluationStrategy = None,
                  explore: SchemaEvaluationStrategy = None,
-                 select: SelectionStrategy = None):
+                 select: SelectionStrategy = None,
+                 goal_weight: float = None,
+                 explore_weight: float = None):
 
         self._goal_pursuit = goal_pursuit or GoalPursuitEvaluationStrategy()
         self._explore = explore or EpsilonGreedyExploratoryStrategy(0.9)
         self._select = select or RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0))
 
-        # TODO: Set parameters.
+        self._goal_weight = goal_weight or GlobalParams().get('goal_weight')
+        self._explore_weight = explore_weight or GlobalParams().get('explore_weight')
 
-        self._goal_weight = 0.5
-        self._explore_weight = 1.0 - self._goal_weight
+        if self._goal_weight + self._explore_weight != 1.0:
+            raise ValueError('Goal-pursuit and exploratory weights must sum to 1.0.')
 
     @property
     def goal_weight(self) -> float:

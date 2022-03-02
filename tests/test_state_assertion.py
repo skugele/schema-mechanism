@@ -238,8 +238,8 @@ class TestStateAssertion(TestCase):
 
         pool = ItemPool()
 
-        for state_element in range(n_items):
-            pool.get(state_element)
+        for se in range(n_items):
+            pool.get(str(se))
 
         n_iters = 10_000
 

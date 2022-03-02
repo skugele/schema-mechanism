@@ -1,6 +1,7 @@
 from random import sample
 from unittest import TestCase
 
+from schema_mechanism.core import DrescherCorrelationTest
 from schema_mechanism.core import ExtendedResult
 from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import ItemAssertion
@@ -18,6 +19,7 @@ class TestExtendedResult(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
+        GlobalParams().set('correlation_method', DrescherCorrelationTest())
         GlobalParams().set('positive_correlation_threshold', 0.65)
         GlobalParams().set('negative_correlation_threshold', 0.65)
 

@@ -353,12 +353,12 @@ class TestSchemaTree(TestCase):
         elapsed_time = 0
         schema = sample(list(chain.from_iterable([c.schemas for c in tree.root.children])), k=1)[0]
         for state_element in range(n_iters):
-            spinoff = create_spin_off(schema, Schema.SpinOffType.CONTEXT, sym_item_assert(str(state_element)))
+            spinoff = create_context_spin_off(schema, sym_item_assert(str(state_element)))
 
             start = time()
             tree.add_context_spin_offs(schema, (spinoff,))
             end = time()
-            elapsed_time = end - start
+            elapsed_time += end - start
 
             schema = sample(list(chain.from_iterable([d.schemas for d in tree.root.descendants])), k=1)[0]
 
@@ -366,22 +366,23 @@ class TestSchemaTree(TestCase):
 
     @test_share.performance_test
     def test_performance_2(self):
-        n_iters = 1000
+        n_iters = 1_000
 
+        primitives = primitive_schemas(actions(100))
         tree = SchemaTree()
-        tree.add_primitives(primitive_schemas(actions(100)))
+        tree.add_primitives(primitives)
 
         elapsed_time = 0
-        schema = sample(list(chain.from_iterable([c.schemas for c in tree.root.children])), k=1)[0]
+        schema = sample(primitives, k=1)[0]
         for state_element in range(n_iters):
-            spinoff = create_spin_off(schema, Schema.SpinOffType.RESULT, sym_item_assert(str(state_element)))
+            spinoff = create_result_spin_off(schema, sym_item_assert(str(state_element)))
 
             start = time()
             tree.add_result_spin_offs(schema, (spinoff,))
             end = time()
-            elapsed_time = end - start
+            elapsed_time += end - start
 
-            schema = sample(list(chain.from_iterable([d.schemas for d in tree.root.descendants])), k=1)[0]
+            schema = sample(primitives, k=1)[0]
 
         print(f'Time calling SchemaTree.add_result_spinoffs {n_iters:,} times {elapsed_time}s')
 
@@ -392,7 +393,7 @@ class TestSchemaTree(TestCase):
 
         pool = ItemPool()
         for state_element in range(n_items):
-            pool.get(state_element)
+            pool.get(str(state_element))
 
         # create linear tree
         n_schemas = 100

@@ -29,7 +29,6 @@ from anytree import LevelOrderIter
 from anytree import NodeMixin
 from anytree import RenderTree
 
-from schema_mechanism.util import BoundedSet
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
@@ -601,6 +600,9 @@ class GlobalParams(metaclass=Singleton):
         self._params[name] = value
 
     def get(self, name: str) -> Any:
+        if name not in self._params:
+            warn(f'Parameter "{name}" does not exist.')
+
         return self._params.get(name)
 
     def reset(self):
@@ -611,7 +613,7 @@ class GlobalParams(metaclass=Singleton):
         self._defaults['verbosity'] = Verbosity.WARN
 
         # format string used by output functions (debug, info, warn, error, fatal)
-        self._defaults['output_format'] = '{timestamp} [{severity}] - "{message}"'
+        self._defaults['output_format'] = '{timestamp} [{severity}]\t{message}'
 
         # default seed for the random number generator
         self._defaults['rng_seed'] = int(time())
@@ -620,7 +622,7 @@ class GlobalParams(metaclass=Singleton):
         self._defaults['learning_rate'] = 0.01
 
         # method for determining statistical correlation
-        self._defaults['correlation_method'] = BarnardExactCorrelationTest()
+        self._defaults['correlation_method'] = FisherExactCorrelationTest()
 
         # thresholds for determining the relevance of items (1.0 -> correlation always occurs)
         self._defaults['positive_correlation_threshold'] = 0.95
@@ -629,9 +631,18 @@ class GlobalParams(metaclass=Singleton):
         # success threshold used for determining that a schema is reliable (1.0 -> schema always succeeds)
         self._defaults['reliability_threshold'] = 0.95
 
-        # TODO: What default features make sense?
+        # schema selection weighting
+        self._defaults['goal_weight'] = 0.6
+        self._defaults['explore_weight'] = 0.4
+
         # default features
-        self._defaults['features'] = BoundedSet(accepted_values=[v for v in SupportedFeature])
+        self._defaults['features'] = {
+            SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA,
+            SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE,
+            SupportedFeature.ER_POSITIVE_ASSERTIONS_ONLY,
+            SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY,
+            SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED,
+        }
 
         # used by ItemFactory
         self._defaults['item_type'] = SymbolicItem
@@ -648,6 +659,8 @@ class GlobalParams(metaclass=Singleton):
         self._validators['positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
+        self._validators['goal_weight'] = RangeValidator(0.0, 1.0)
+        self._validators['explore_weight'] = RangeValidator(0.0, 1.0)
         self._validators['verbosity'] = TypeValidator([Verbosity])
         self._validators['output_format'] = TypeValidator([str])
         self._validators['item_type'] = SubClassValidator([Item])
@@ -787,7 +800,7 @@ class ItemCorrelationTest(ABC):
     def negative_corr_statistic(self, table: Iterable) -> float:
         pass
 
-    def validate_data(self, data: Iterable) -> None:
+    def validate_data(self, data: Iterable) -> np.ndarray:
         """ Raises a ValueError if data cannot be interpreted as a 2x2 array of integers.
 
         :param data: the iterable to validate
@@ -796,6 +809,7 @@ class ItemCorrelationTest(ABC):
         table = np.array(data)
         if not (table.shape == (2, 2) and np.issubdtype(table.dtype, int)):
             raise ValueError('invalid data: must be interpretable as a 2x2 array of integers')
+        return table
 
 
 class DrescherCorrelationTest(ItemCorrelationTest):
@@ -809,19 +823,34 @@ class DrescherCorrelationTest(ItemCorrelationTest):
         :return: the ratio as a float, or numpy.NAN if division by zero
         """
         # raises ValueError
-        self.validate_data(table)
+        table = self.validate_data(table)
 
-        # adds 1 to all cells to avoid division by zero and other computational issues
-        table = np.array(table) + 1
+        try:
+            n_x = np.sum(table[0, :])
+            n_not_x = np.sum(table[1, :])
 
-        # calculate conditional probabilities
-        pr_a_given_x = table[0, 0] / np.sum(table[0, :])
-        pr_a_given_y = table[1, 0] / np.sum(table[1, :])
+            n_a_and_x = table[0, 0]
+            n_a_and_not_x = table[1, 0]
 
-        # the part-to-part ratio Pr(A | X) : Pr(A | Y)
-        return pr_a_given_x / (pr_a_given_x + pr_a_given_y)
+            if n_x == 0 or n_not_x == 0:
+                return 0.0
 
-    def negative_corr_statistic(self, table: Iterable) -> bool:
+            # calculate conditional probabilities
+            pr_a_given_x = n_a_and_x / n_x
+            pr_a_given_not_x = n_a_and_not_x / n_not_x
+
+            pr_a = pr_a_given_x + pr_a_given_not_x
+
+            if pr_a == 0:
+                return 0.0
+
+            # the part-to-part ratio Pr(A | X) : Pr(A | not X)
+            ratio = pr_a_given_x / pr_a
+            return ratio
+        except ZeroDivisionError:
+            return 0.0
+
+    def negative_corr_statistic(self, table: Iterable) -> float:
         """ Returns the part-to-part ratio Pr(not A | X) : Pr(not A | not X)
 
         Input data should be a 2x2 table of the form: [[N(A,X), N(not A,X)], [N(A,not X), N(not A,not X)]],
@@ -830,17 +859,32 @@ class DrescherCorrelationTest(ItemCorrelationTest):
         :return: the ratio as a float, or numpy.NAN if division by zero
         """
         # raises ValueError
-        self.validate_data(table)
+        table = self.validate_data(table)
 
-        # adds 1 to all cells to avoid division by zero and other computational issues
-        table = np.array(table) + 1
+        try:
+            n_x = np.sum(table[0, :])
+            n_not_x = np.sum(table[1, :])
 
-        # calculate conditional probabilities
-        pr_not_a_given_x = table[0, 1] / np.sum(table[0, :])
-        pr_not_a_given_not_x = table[1, 1] / np.sum(table[1, :])
+            n_not_a_and_x = table[0, 1]
+            n_not_a_and_not_x = table[1, 1]
 
-        # the part-to-part ratio between Pr(not A | X) : Pr(not A | not X)
-        return pr_not_a_given_x / (pr_not_a_given_x + pr_not_a_given_not_x)
+            if n_x == 0 or n_not_x == 0:
+                return 0.0
+
+            # calculate conditional probabilities
+            pr_not_a_given_x = n_not_a_and_x / n_x
+            pr_not_a_given_not_x = n_not_a_and_not_x / n_not_x
+
+            pr_not_a = pr_not_a_given_x + pr_not_a_given_not_x
+
+            if pr_not_a == 0:
+                return 0.0
+
+            # the part-to-part ratio between Pr(not A | X) : Pr(not A | not X)
+            ratio = pr_not_a_given_x / pr_not_a
+            return ratio
+        except ZeroDivisionError:
+            return 0.0
 
 
 class BarnardExactCorrelationTest(ItemCorrelationTest):
@@ -852,9 +896,9 @@ class BarnardExactCorrelationTest(ItemCorrelationTest):
         :return:
         """
         # raises ValueError
-        self.validate_data(table)
+        table = self.validate_data(table)
 
-        return 1.0 - stats.barnard_exact(np.array(table), alternative='greater').pvalue
+        return 1.0 - stats.barnard_exact(table, alternative='greater').pvalue
 
     def negative_corr_statistic(self, table: Iterable) -> float:
         """
@@ -863,9 +907,9 @@ class BarnardExactCorrelationTest(ItemCorrelationTest):
         :return:
         """
         # raises ValueError
-        self.validate_data(table)
+        table = self.validate_data(table)
 
-        return 1.0 - stats.barnard_exact(np.array(table), alternative='less').pvalue
+        return 1.0 - stats.barnard_exact(table, alternative='less').pvalue
 
 
 class FisherExactCorrelationTest(ItemCorrelationTest):
@@ -877,9 +921,9 @@ class FisherExactCorrelationTest(ItemCorrelationTest):
         :return:
         """
         # raises ValueError
-        self.validate_data(table)
+        table = self.validate_data(table)
 
-        _, p_value = stats.fisher_exact(np.array(table), alternative='greater')
+        _, p_value = stats.fisher_exact(table, alternative='greater')
         return 1.0 - p_value
 
     def negative_corr_statistic(self, table: Iterable) -> float:
@@ -889,9 +933,9 @@ class FisherExactCorrelationTest(ItemCorrelationTest):
         :return:
         """
         # raises ValueError
-        self.validate_data(table)
+        table = self.validate_data(table)
 
-        _, p_value = stats.fisher_exact(np.array(table), alternative='less')
+        _, p_value = stats.fisher_exact(table, alternative='less')
         return 1.0 - p_value
 
 
@@ -2375,3 +2419,23 @@ def error(message):
 
 def fatal(message):
     display_message(message=message, level=Verbosity.FATAL)
+
+
+_rng = None
+_seed = None
+
+
+def rng():
+    global _rng
+    global _seed
+
+    new_seed = GlobalParams().get('rng_seed')
+    if new_seed != _seed:
+        warn(f'(Re-)initializing random number generator using seed="{new_seed}".')
+        warn(f'For reproducibility, you should also set "PYTHONHASHSEED={new_seed}" in your environment variables.')
+
+        # setting globals
+        _rng = np.random.default_rng(new_seed)
+        _seed = new_seed
+
+    return _rng

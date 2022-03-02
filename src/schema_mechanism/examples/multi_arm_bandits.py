@@ -1,25 +1,18 @@
 import argparse
 from collections.abc import Sequence
+from time import time
 from typing import Optional
 
 from schema_mechanism.core import Action
-from schema_mechanism.core import FisherExactCorrelationTest
-from schema_mechanism.core import GlobalParams
-from schema_mechanism.core import GlobalStats
-from schema_mechanism.core import ItemPool
-from schema_mechanism.core import Schema
 from schema_mechanism.core import State
 from schema_mechanism.core import StateElement
-from schema_mechanism.core import SupportedFeature
-from schema_mechanism.core import Verbosity
-from schema_mechanism.core import debug
 from schema_mechanism.core import info
-from schema_mechanism.examples import RANDOM_SEED
+from schema_mechanism.core import rng
+from schema_mechanism.examples import display_summary
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.util import Observable
-from schema_mechanism.util import rng
 
 
 class Machine:
@@ -28,9 +21,7 @@ class Machine:
         self._p_win = p_win
         self._outcomes = ['L', 'W']
         self._weights = [1.0 - p_win, p_win]
-
-        seed = GlobalParams().get('rng_seed')
-        self._rng = rng(seed)
+        self._rng = rng()
 
     def play(self, count: int = 1) -> Sequence[str]:
         return self._rng.choice(self._outcomes, size=count, p=self._weights)
@@ -174,69 +165,15 @@ def parse_args():
     return parser.parse_args()
 
 
-def display_known_schemas(sm: SchemaMechanism) -> None:
-    info(f'n schemas ({len(sm.known_schemas)})')
-    for s in sm.known_schemas:
-        info(f'\t{str(s)}')
-        # display_schema_info(s, sm)
-
-
-def display_item_values() -> None:
-    info(f'n items: ({len(ItemPool())})')
-    for i in sorted(ItemPool(), key=lambda i: -i.delegated_value):
-        info(repr(i))
-
-
-def display_schema_info(schema: Schema, sm: SchemaMechanism) -> None:
-    schemas = sm.schema_memory.schemas
-    try:
-        ndx = schemas.index(schema)
-        s = schemas[ndx]
-
-        info(f'schema: {schema}')
-        if s.extended_context:
-            info('EXTENDED_CONTEXT')
-            info(f'relevant items: {s.extended_context.relevant_items}')
-            for k, v in s.extended_context.stats.items():
-                info(f'item: {k} -> {repr(v)}')
-
-        if s.extended_result:
-            info('EXTENDED_RESULT')
-            info(f'relevant items: {s.extended_result.relevant_items}')
-            for k, v in s.extended_result.stats.items():
-                info(f'item: {k} -> {repr(v)}')
-    except ValueError:
-        return
-
-
 # global constants
-N_MACHINES = 10
-N_STEPS = 25000
+N_MACHINES = 3
+N_STEPS = 500
 
 
 def run():
-    params = GlobalParams()
-    # params.set('correlation_method', BarnardExactCorrelationTest())
-    # params.set('correlation_method', DrescherCorrelationTest())
-    params.set('correlation_method', FisherExactCorrelationTest())
-    params.set('learning_rate', 0.05)
-    params.set('dv_trace_max_len', 2)
-    params.set('verbosity', Verbosity.INFO)
-    params.set('output_format', '{message}')
-    params.set('rng_seed', RANDOM_SEED)
-    params.set('features', [
-        SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA,
-        SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE,
-        SupportedFeature.ER_POSITIVE_ASSERTIONS_ONLY,
-        SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY,
-        SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED
-    ])
-
     args = parse_args()
-    seed = GlobalParams().get('rng_seed')
-    rand = rng(seed)
 
-    machines = [Machine(str(id_), p_win=rand.uniform(0, 1)) for id_ in range(args.n_machines)]
+    machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.n_machines)]
     env = BanditEnvironment(machines)
 
     # primitive items
@@ -247,31 +184,26 @@ def run():
     sm = SchemaMechanism(primitive_actions=env.actions,
                          primitive_items=[i_win, i_lose, i_pay])
 
+    start_time = time()
+
     for n in range(args.steps):
-        # display_item_values()
-        curr_state = env.current_state
-        # info(f'State[{n}]: {curr_state}')
-        schema = sm.select(curr_state)
-        # info(f'Selected Schema[{n}]: {schema}')
-        result_state = env.step(schema.action)
-        # info(f'Result[{n}]: {result_state}')
-        # display_schema_info(sym_schema('/play/W,'), sm)
-        # display_schema_info(sym_schema('P,/play/W,'), sm)
-        # display_schema_info(sym_schema('M0,/play/W,'), sm)
-        # display_schema_info(sym_schema('P,/play/L,'), sm)
-        # display_schema_info(sym_schema('P,/play/L,'), sm)
-        # display_schema_info(sym_schema('M0,P/play/W,'), sm)
-        # display_schema_info(sym_schema('P,/play/W,'), sm)
+        info(f'state[{n}]: {env.current_state}')
 
-        # info(f'n_schema: {len(sm.known_schemas)}')
-        # display_known_schemas(sm)
+        schema = sm.select(env.current_state)
+        info(f'selected schema[{n}]: {schema}')
 
+        _ = env.step(schema.action)
+
+    end_time = time()
+
+    info(f'elapsed time: {end_time - start_time}s')
+
+    # displays machine properties
+    info(f'machines ({len(machines)}):')
     for m in machines:
-        info(repr(m))
+        info(f'\t{repr(m)}')
 
-    debug(f'baseline: {GlobalStats().baseline_value}')
-    display_item_values()
-    display_known_schemas(sm)
+    display_summary(sm)
 
 
 if __name__ == '__main__':

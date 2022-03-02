@@ -7,6 +7,8 @@ import numpy as np
 
 import test_share
 from schema_mechanism.core import Action
+from schema_mechanism.core import DrescherCorrelationTest
+from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
@@ -399,6 +401,8 @@ class TestSchema(TestCase):
         self.assertEqual(1.0, self.schema.reliability)
 
     def test_notify_all(self):
+        GlobalParams().set('correlation_method', DrescherCorrelationTest())
+
         self.schema.notify_all = MagicMock()
 
         act_state = sym_state('0,1,8')
@@ -458,10 +462,10 @@ class TestSchema(TestCase):
         # populate item pool
         self._item_pool.clear()
         for i in range(n_items):
-            self._item_pool.get(i)
+            self._item_pool.get(str(i))
 
-        s_prev = State(sample(range(n_items), k=n_state_elements))
-        s_curr = State(sample(range(n_items), k=n_state_elements))
+        s_prev = State(list(map(str, sample(range(n_items), k=n_state_elements))))
+        s_curr = State(list(map(str, sample(range(n_items), k=n_state_elements))))
 
         new = new_state(s_prev, s_curr)
         lost = lost_state(s_prev, s_curr)
@@ -492,7 +496,7 @@ class TestSchema(TestCase):
         # populate item pool
         self._item_pool.clear()
         for i in range(n_items):
-            self._item_pool.get(i)
+            self._item_pool.get(str(i))
 
         schemas = [
             Schema(context=sym_state_assert(','.join(str(i) for i in sample(range(n_items), k=n_context_elements))),

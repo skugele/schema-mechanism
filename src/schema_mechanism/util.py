@@ -119,16 +119,6 @@ def cosine_sims(v: np.ndarray, state: Iterable[np.ndarray]) -> np.ndarray:
     return sk_metrics.pairwise.cosine_similarity(v.reshape(1, -1), state)
 
 
-_rng = None
-
-
-def rng(seed):
-    global _rng
-    if not _rng:
-        _rng = np.random.default_rng(seed)
-    return _rng
-
-
 def repr_str(obj: Any, attr_values: dict[str, Any]) -> str:
     type_name = type(obj).__name__
 

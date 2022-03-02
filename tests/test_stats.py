@@ -77,8 +77,8 @@ class TestECItemStatistics(TestCase):
         self.item_stats.update(on=False, success=False, count=8)
 
         # results include a +1 increment to each of the above statistics
-        self.assertAlmostEqual(0.668, self.item_stats.success_corr, delta=1e-4)
-        self.assertAlmostEqual(0.355, self.item_stats.failure_corr, delta=1e-4)
+        self.assertAlmostEqual(0.6984, self.item_stats.success_corr, delta=1e-3)
+        self.assertAlmostEqual(0.3362, self.item_stats.failure_corr, delta=1e-3)
 
     def test_barnard_correlation_1(self):
         GlobalParams().set('correlation_method', BarnardExactCorrelationTest())
@@ -243,9 +243,8 @@ class TestERItemStatistics(TestCase):
         self.item_stats.update(on=True, activated=False, count=3)
         self.item_stats.update(on=False, activated=False, count=8)
 
-        # results include a +1 increment to each of the above statistics
-        self.assertAlmostEqual(0.668, self.item_stats.positive_transition_corr, delta=1e-4)
-        self.assertAlmostEqual(0.355, self.item_stats.negative_transition_corr, delta=1e-4)
+        self.assertAlmostEqual(0.6984, self.item_stats.positive_transition_corr, delta=1e-3)
+        self.assertAlmostEqual(0.3362, self.item_stats.negative_transition_corr, delta=1e-3)
 
     def test_barnard_correlation_1(self):
         GlobalParams().set('correlation_method', BarnardExactCorrelationTest())
