@@ -244,15 +244,11 @@ class TestStateAssertion(TestCase):
         n_iters = 10_000
 
         elapsed_time = 0
-        elapsed_time_2 = 0
         for _ in range(n_iters):
-            start = time()
             state = State(sample(range(n_items), k=5))
             pos_asserts = [ItemAssertion(item=ItemPool().get(str(i))) for i in sample(range(0, 50), k=5)]
             neg_asserts = [ItemAssertion(item=ItemPool().get(str(i)), negated=True) for i in
                            sample(range(50, 100), k=3)]
-            stop = time()
-            elapsed_time_2 += stop - start
 
             sa = StateAssertion((*pos_asserts, *neg_asserts))
             start = time()
@@ -261,8 +257,6 @@ class TestStateAssertion(TestCase):
             elapsed_time += end - start
 
         print(f'Time to call StateAssertion.is_satisfied {n_iters:,} times: {elapsed_time}s')
-
-        print(f'other shit: {elapsed_time_2}')
 
     def test_replicate_with_2(self):
         # test: OLD state assertion with NEW non-composite item assertion

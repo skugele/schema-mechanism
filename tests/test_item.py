@@ -43,6 +43,9 @@ class TestSymbolicItem(TestCase):
         i = SymbolicItem(source='1234')
         self.assertEqual(0.0, i.primitive_value)
 
+    def test_state_elements(self):
+        self.assertSetEqual({'1234'}, self.item.state_elements)
+
     def test_primitive_value(self):
         # an item's primitive value should be settable
         self.item.primitive_value = -2.0
@@ -510,6 +513,13 @@ class TestCompositeItem(unittest.TestCase):
         # test: default primitive value should be 0.0
         i = SymbolicItem(source='UNK1')
         self.assertEqual(0.0, i.primitive_value)
+
+    def test_state_elements(self):
+        # test: all state elements from positive assertions should be returned
+        self.assertSetEqual({'1', '2'}, sym_item('(1,2)').state_elements)
+        self.assertSetEqual({'1', '2', '3'}, sym_item('(1,2,3)').state_elements)
+        self.assertSetEqual({'1', '2', '3'}, sym_item('(1,2,3,~4)').state_elements)
+        self.assertSetEqual(set(), sym_item('(~1,~2,~3,~4)').state_elements)
 
     def test_primitive_value(self):
         # test: a item's primitive value should equal the primitive value of its source assertion

@@ -1,7 +1,10 @@
 from typing import Any
+from typing import Optional
 
+from schema_mechanism.core import Action
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import Schema
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.util import Observable
@@ -71,3 +74,18 @@ class MockCompositeItem(CompositeItem):
     @property
     def delegated_value(self) -> float:
         return self._avg_accessible_value - GlobalStats().baseline_value
+
+
+class MockSchema(Schema):
+    def __init__(self,
+                 action: Action,
+                 context: Optional[StateAssertion] = None,
+                 result: Optional[StateAssertion] = None,
+                 reliability: float = None):
+        super().__init__(action=action, context=context, result=result)
+
+        self._reliability = reliability
+
+    @property
+    def reliability(self) -> float:
+        return super().reliability if self._reliability is None else self._reliability

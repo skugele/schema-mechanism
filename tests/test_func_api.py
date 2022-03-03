@@ -115,6 +115,11 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertIsInstance(sa, StateAssertion)
         self.assertEqual(1, len(sa))
 
+        # test: multiple item state assertion with optional trailing comma
+        sa = sym_assert('1,~2,~3,')
+        self.assertIsInstance(sa, StateAssertion)
+        self.assertEqual(3, len(sa))
+
     def test_sym_schema_tree_node(self):
         # blank node should be allowed
         stn = sym_schema_tree_node('//', label='blank')

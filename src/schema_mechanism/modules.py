@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+from collections import deque
 from collections.abc import Callable
 from collections.abc import Collection
 from collections.abc import Sequence
@@ -610,8 +611,26 @@ def create_result_spin_off(source: Schema, item_assert: ItemAssertion) -> Schema
     return create_spin_off(source, Schema.SpinOffType.RESULT, item_assert)
 
 
+class ChainNode:
+    def __init__(self, schema: Schema, proximity: int):
+        self._schema = schema
+        self._proximity = proximity
+
+    @property
+    def schema(self) -> Schema:
+        return self._schema
+
+    @property
+    def proximity(self) -> int:
+        return self._proximity
+
+
+class Chain(deque):
+    pass
+
+
 # TODO: Implement this
-def forward_chaining(schema: Schema, depth: int, accept: Callable[[Schema], bool]) -> Collection[Schema]:
+def forward_chains(schema: Schema, depth: int, accept: Callable[[Schema], bool]) -> Collection[Chain]:
     # used to determine which states are ACCESSIBLE from the current state
 
     # ACCESSIBILITY determination:
@@ -626,6 +645,40 @@ def forward_chaining(schema: Schema, depth: int, accept: Callable[[Schema], bool
 
 
 # TODO: Implement this
-def backward_chaining(schema: Schema, depth: int):
+def backward_chains(memory: SchemaMemory,
+                    chains: Collection[Chain],
+                    goal: StateAssertion,
+                    max_depth: int) -> Collection[Chain]:
     # used for propagating instrumental value and finding goal proximity (See Drescher 1991, p. 101)
     pass
+
+    # if max depth == 0
+    #     return empty collection
+
+    # retrieve all schemas with result that matches goal state
+
+    # if no matching schemas
+    #     return empty collection
+    # else
+    #     for each goal schema in goal match list
+    #         retrieve list of RELIABLE schemas with a result that satisfies the goal schema's context
+
+    # X -> M -> J
+    # X -> M -> K
+    # X -> M -> L
+    # ...
+    # X -> N -> ...
+    # X -> O -> ...
+    # ...
+    # Y -> ...
+    # Z -> ...
+
+    #    X (C1/A/G)       ...               Y (C2/A/G)       Z (C3/A/G)                [chain(goal=G, max_depth=N)]
+    #    M (C11/A/C1)     ...               N (C12/A/C1)     O (C13/A/C1)              [chain(goal=C1, max_depth=N-1)]
+    #    J (C111/A/C11)   ...               K (C112/A/C11)   L (C113/A/C11)            [chain(goal=C11, max_depth=N-2)]
+    #    ...
+    #    No Match For C111 or max_depth == 0                                           [chain(goal=C11...1, max_depth=0)]
+
+    # [[J],[K],[L]]                                                   *** result from chain(goal=C11)
+    # [[M,J],[M,K],[M,L]],... [[N,??],[N,??],[N,??]]                  *** result from chain(goal=C1)
+    # [[X,M,J],[X,M,K],[X,M,L]],... [[X,N,??],[X,N,??],[X,N,??]]      *** result from chain(goal=G)

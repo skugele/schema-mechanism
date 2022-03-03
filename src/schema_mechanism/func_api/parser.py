@@ -27,7 +27,7 @@ GRAMMAR = r"""
     action: STRING   
     item: STRING
     item_assertion : [negated] (item | composite_item)
-    state_assertion : item_assertion ("," | ("," item_assertion)+)
+    state_assertion : item_assertion ("," | ("," item_assertion)+ [","])
     composite_item : "(" state_assertion ")"
     schema : [state_assertion] "/" action "/" [state_assertion]
 
@@ -63,7 +63,8 @@ class ObjectTransformer(Transformer):
 
     def schema(self, tokens: list[Any]) -> Schema:
         (context, action, result) = tokens
-        return Schema(context=context, action=action, result=result)
+        schema_type = GlobalParams().get('schema_type')
+        return schema_type(context=context, action=action, result=result)
 
     def action(self, tokens: list[Any]) -> Action:
         (action,) = tokens

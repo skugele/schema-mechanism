@@ -10,6 +10,7 @@ from schema_mechanism.core import Assertion
 from schema_mechanism.core import Item
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaResultTreeNode
 from schema_mechanism.core import SchemaTreeNode
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
@@ -79,6 +80,15 @@ def sym_schema_tree_node(str_repr: str, label: str = None) -> SchemaTreeNode:
     context_str, action_str, _ = str_repr.split('/')
     return SchemaTreeNode(
         context=sym_assert(context_str) if context_str else None,
+        action=Action(action_str) if action_str else None,
+        label=label
+    )
+
+
+def sym_schema_result_tree_node(str_repr: str, label: str = None) -> SchemaResultTreeNode:
+    _, action_str, result_str = str_repr.split('/')
+    return SchemaResultTreeNode(
+        result=sym_assert(result_str) if result_str else None,
         action=Action(action_str) if action_str else None,
         label=label
     )
