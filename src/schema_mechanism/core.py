@@ -46,10 +46,10 @@ StateElement = Hashable
 
 class Activatable(ABC):
     @abstractmethod
-    def is_on(self, state: State, *args, **kwargs) -> bool: ...
+    def is_on(self, state: State, **kwargs) -> bool: ...
 
-    def is_off(self, state: State, *args, **kwargs) -> bool:
-        return not self.is_on(state, *args, **kwargs)
+    def is_off(self, state: State, **kwargs) -> bool:
+        return not self.is_on(state, **kwargs)
 
 
 # TODO: Better name?
@@ -254,17 +254,16 @@ class DelegatedValueHelper:
     def update(self,
                selection_state: State,
                result_state: State,
-               *args, **kwargs) -> None:
+               **kwargs) -> None:
         """ Updates delegated-value-related statistics based on the selection and result states.
 
         :param selection_state: the state from which the last schema was selected (i.e., an action taken)
         :param result_state: the state that immediately followed the provided selection state
-        :param args: optional positional arguments
         :param kwargs: optional keyword arguments
         :return: None
         """
         # start trace if item is On in selection state
-        if self._item.is_on(state=selection_state, *args, **kwargs):
+        if self._item.is_on(state=selection_state, **kwargs):
             self._dv_trace_updates_remaining = GlobalParams().get('dv_trace_max_len')
 
         # update trace value if updates remain
@@ -272,7 +271,7 @@ class DelegatedValueHelper:
             self._update_trace_val(result_state)
 
         # if another On state is encountered during trace, need to terminate previous trace immediately
-        immediate_termination = self._item.is_on(state=result_state, *args, **kwargs)
+        immediate_termination = self._item.is_on(state=result_state, **kwargs)
         if immediate_termination:
             self._dv_trace_updates_remaining = 0
 
@@ -301,7 +300,9 @@ class DelegatedValueHelper:
 
 class Item(Activatable, ValueBearer):
 
-    def __init__(self, source: Any, primitive_value: float = None, *args, **kwargs) -> None:
+    def __init__(self, source: Any, primitive_value: float = None, **kwargs) -> None:
+        super().__init__(**kwargs)
+
         self._source = source
         self._primitive_value = primitive_value or 0.0
         self._delegated_value_helper = DelegatedValueHelper(item=self)
@@ -344,31 +345,25 @@ class Item(Activatable, ValueBearer):
     def update_delegated_value(self,
                                selection_state: State,
                                result_state: State,
-                               *args,
                                **kwargs) -> None:
         """ Updates delegated value based on if item was On in selection and the value of items in the result state.
 
         :param selection_state: the state from which the last schema was selected (i.e., an action taken)
         :param result_state: the state that immediately followed the provided selection state
-        :param args: optional positional arguments
         :param kwargs: optional keyword arguments
         :return: None
         """
         self._delegated_value_helper.update(item=self,
                                             selection_state=selection_state,
                                             result_state=result_state,
-                                            *args, **kwargs)
+                                            **kwargs)
 
     @abstractmethod
-    def is_on(self, state: State, *args, **kwargs) -> bool:
+    def is_on(self, state: State, **kwargs) -> bool:
         return NotImplemented
 
-    def is_off(self, state: State, *args, **kwargs) -> bool:
-        return not self.is_on(state, *args, **kwargs)
-
-    @abstractmethod
-    def copy(self) -> Item:
-        return NotImplemented
+    def is_off(self, state: State, **kwargs) -> bool:
+        return not self.is_on(state, **kwargs)
 
     # TODO: Need to be really careful with the default hash implementations which produce different values between
     # TODO: runs. This will kill and direct serialization/deserialization of data structures that rely on hashes.
@@ -449,11 +444,11 @@ class ReadOnlyItemPool(ItemPool):
 class SymbolicItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
-    def __init__(self, source: str, primitive_value: float = None, *args, **kwargs):
+    def __init__(self, source: str, primitive_value: float = None, **kwargs):
         if not isinstance(source, str):
             raise ValueError('Source for symbolic item must be a string')
 
-        super().__init__(source=source, primitive_value=primitive_value, *args, **kwargs)
+        super().__init__(source=source, primitive_value=primitive_value, **kwargs)
 
     @property
     def source(self) -> str:
@@ -463,11 +458,8 @@ class SymbolicItem(Item):
     def state_elements(self) -> set[str]:
         return {super().source}
 
-    def is_on(self, state: State, *args, **kwargs) -> bool:
+    def is_on(self, state: State, **kwargs) -> bool:
         return self.source in state
-
-    def copy(self) -> Item:
-        return SymbolicItem(self.source)
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, SymbolicItem):
@@ -476,51 +468,6 @@ class SymbolicItem(Item):
 
     def __hash__(self) -> int:
         return hash(self.source)
-
-
-# TODO: There may be a subtle bug here when the StateAssertion is negated and the CompositeItem containing
-# TODO: that negated assertion is included in a negated ItemAssertion or StateAssertion.s
-class CompositeItem(Item, ValueBearer):
-    """ A StateAssertion wrapper that functions like an Item.
-
-    This class is primarily used to support ExtendedResult statistics when the ER_INCREMENTAL_RESULTS is disabled.
-    """
-
-    def __init__(self, source: StateAssertion, *args, **kwargs) -> None:
-        if len(source) < 2:
-            raise ValueError('Source assertion must have at least two elements')
-
-        super().__init__(source=source, primitive_value=source.primitive_value)
-
-    @property
-    def source(self) -> StateAssertion:
-        return super().source
-
-    @property
-    def state_elements(self) -> set[StateElement]:
-        return set(itertools.chain.from_iterable([ia.item.state_elements for ia in self.source.asserts]))
-
-    def is_on(self, state: State, *args, **kwargs) -> bool:
-        return self.source.is_satisfied(state)
-
-    def copy(self) -> Item:
-        return CompositeItem(self.source.copy())
-
-    def __contains__(self, assertion: Assertion) -> bool:
-        if isinstance(assertion, ItemAssertion):
-            return assertion in self.source
-        return False
-
-    def __eq__(self, other) -> bool:
-        if isinstance(other, CompositeItem):
-            return self.source == other.source
-        return False if other is None else NotImplemented
-
-    def __hash__(self) -> int:
-        return hash(self.source)
-
-    def __str__(self) -> str:
-        return f'({str(self.source)})'
 
 
 def non_composite_items(items: Collection[Item]) -> Collection[Item]:
@@ -958,7 +905,7 @@ class ItemStats(ABC):
         pass
 
     @abstractmethod
-    def update(self, *args, **kwargs) -> None:
+    def update(self, **kwargs) -> None:
         pass
 
 
@@ -1075,16 +1022,6 @@ class ECItemStats(ItemStats):
             [self.n_success_and_on, self.n_fail_and_on],
             [self.n_success_and_off, self.n_fail_and_off],
         ])
-
-    def copy(self) -> ECItemStats:
-        new = ECItemStats()
-
-        new._n_success_and_on = self._n_success_and_on
-        new._n_success_and_off = self._n_success_and_off
-        new._n_fail_and_on = self._n_fail_and_on
-        new._n_fail_and_off = self._n_fail_and_off
-
-        return new
 
     def __eq__(self, other) -> bool:
         if isinstance(other, ECItemStats):
@@ -1218,16 +1155,6 @@ class ERItemStats(ItemStats):
             [self.n_on_and_not_activated, self.n_off_and_not_activated]
         ])
 
-    def copy(self) -> ERItemStats:
-        new = ERItemStats()
-
-        new._n_on_and_activated = self._n_on_and_activated
-        new._n_on_and_not_activated = self._n_on_and_not_activated
-        new._n_off_and_activated = self._n_off_and_activated
-        new._n_off_and_not_activated = self._n_off_and_not_activated
-
-        return new
-
     def __eq__(self, other) -> bool:
         if isinstance(other, ERItemStats):
             # the "s is o" check is to handle np.nan fields
@@ -1269,17 +1196,17 @@ class ERItemStats(ItemStats):
 
 
 class ReadOnlySchemaStats(SchemaStats):
-    def update(self, *args, **kwargs):
+    def update(self, **kwargs):
         raise NotImplementedError('Update not implemented for readonly view.')
 
 
 class ReadOnlyECItemStats(ECItemStats):
-    def update(self, *args, **kwargs):
+    def update(self, on: bool, success: bool, count: int = 1) -> None:
         raise NotImplementedError('Update not implemented for readonly view.')
 
 
 class ReadOnlyERItemStats(ERItemStats):
-    def update(self, *args, **kwargs):
+    def update(self, on: bool, activated: bool, count: int = 1) -> None:
         raise NotImplementedError('Update not implemented for readonly view.')
 
 
@@ -1291,8 +1218,8 @@ NULL_ER_ITEM_STATS = ReadOnlyERItemStats()
 
 class Action(UniqueIdMixin):
 
-    def __init__(self, label: Optional[str] = None, *args, **kwargs):
-        super().__init__()
+    def __init__(self, label: Optional[str] = None, **kwargs):
+        super().__init__(**kwargs)
 
         self._label = label
 
@@ -1323,14 +1250,6 @@ class Action(UniqueIdMixin):
         """
         return self._label
 
-    def copy(self) -> Action:
-        # bypasses initializer to force reuse of uid
-        copy = super().__new__(Action)
-        copy._uid = self._uid
-        copy._label = self._label
-
-        return copy
-
 
 # TODO: Implement composite actions.
 class CompositeAction:
@@ -1346,7 +1265,9 @@ class CompositeAction:
 
 
 class Assertion(ABC):
-    def __init__(self, negated: bool, *args, **kwargs) -> None:
+    def __init__(self, negated: bool, **kwargs) -> None:
+        super().__init__(**kwargs)
+
         self._is_negated = negated
 
     @abstractmethod
@@ -1389,16 +1310,17 @@ class Assertion(ABC):
 
 class ItemAssertion(Assertion, ValueBearer):
 
-    def __init__(self, item: Item, negated: bool = False, *args, **kwargs) -> None:
-        super().__init__(negated)
+    def __init__(self, item: Item, negated: bool = False, **kwargs) -> None:
+        super().__init__(negated, **kwargs)
 
         self._item = item
 
     def __iter__(self) -> Iterator[Assertion]:
         yield from [self]
 
+    # TODO: This is ugly. Need a better way of handling CompositeItems.
     def __len__(self) -> int:
-        return 1
+        return len(self._item.source) if isinstance(self._item, CompositeItem) else 1
 
     def __contains__(self, assertion: Assertion) -> bool:
         return self == assertion
@@ -1437,16 +1359,11 @@ class ItemAssertion(Assertion, ValueBearer):
     def items(self) -> frozenset[Item]:
         return frozenset([self._item])
 
-    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
+    def is_satisfied(self, state: State, **kwargs) -> bool:
         if self.is_negated:
-            return self._item.is_off(state, *args, **kwargs)
+            return self._item.is_off(state, **kwargs)
         else:
-            return self._item.is_on(state, *args, **kwargs)
-
-    # TODO: Can this be removed???
-    def copy(self) -> ItemAssertion:
-        """ Performs a shallow copy of this ItemAssertion. """
-        return ItemAssertion(item=self._item, negated=self.is_negated)
+            return self._item.is_on(state, **kwargs)
 
     # TODO: It's not clear how to handle negative assertions. Simply subtracting the values of those items seems
     # TODO: incorrect, as the thing that it is not may actually be more valuable. The safest course for now seems to be
@@ -1469,11 +1386,20 @@ class StateAssertion(Assertion, ValueBearer):
     def __init__(self,
                  asserts: Optional[Collection[ItemAssertion, ...]] = None,
                  negated: bool = False,
-                 *args, **kwargs):
-        super().__init__(negated)
+                 **kwargs):
+        super().__init__(negated, **kwargs)
 
-        self._asserts = frozenset(filter(lambda ia: not ia.is_negated, asserts)) if asserts else frozenset()
-        self._neg_asserts = frozenset(filter(lambda ia: ia.is_negated, asserts)) if asserts else frozenset()
+        # item assertions must be expanded to flatten composite item assertions
+        _asserts = set()
+        if asserts:
+            for ia in asserts:
+                if isinstance(ia.item, CompositeItem):
+                    _asserts.update(*ia.item.source)
+                else:
+                    _asserts.update(ia)
+
+        self._asserts = frozenset(filter(lambda a: not a.is_negated, _asserts)) if _asserts else frozenset()
+        self._neg_asserts = frozenset(filter(lambda a: a.is_negated, _asserts)) if _asserts else frozenset()
 
         self._items = frozenset(itertools.chain.from_iterable(a.items for a in asserts)) if asserts else frozenset()
 
@@ -1482,9 +1408,13 @@ class StateAssertion(Assertion, ValueBearer):
         yield from self._neg_asserts
 
     def __len__(self) -> int:
-        return len(self._asserts) + len(self._neg_asserts)
+        return sum(len(ia) for ia in self._asserts) + sum(len(ia) for ia in self._neg_asserts)
 
     def __contains__(self, item_assert: ItemAssertion) -> bool:
+        if isinstance(item_assert.item, CompositeItem):
+            return all({ia in self._neg_asserts if ia.is_negated else ia in self._asserts
+                        for ia in item_assert.item.source})
+
         return (item_assert in self._neg_asserts if item_assert.is_negated
                 else item_assert in self._asserts)
 
@@ -1516,27 +1446,14 @@ class StateAssertion(Assertion, ValueBearer):
     def negated_asserts(self) -> frozenset[ItemAssertion]:
         return self._neg_asserts
 
-    def copy(self) -> StateAssertion:
-        """ Returns a shallow copy of this object.
-
-        :return: the copy
-        """
-        new = super().__new__(StateAssertion)
-
-        new._asserts = self._asserts
-        new._neg_asserts = self._neg_asserts
-
-        return new
-
-    def is_satisfied(self, state: State, *args, **kwargs) -> bool:
+    def is_satisfied(self, state: State, **kwargs) -> bool:
         """ Satisfied when all non-negated items are On, and all negated items are Off.
 
         :param state: the agent's current state
-        :param args: optional positional arguments
         :param kwargs: optional keyword arguments
         :return: True if this state assertion is satisfied given the current state; False otherwise.
         """
-        return all({ia.is_satisfied(state, *args, **kwargs) for ia in self})
+        return all({ia.is_satisfied(state, **kwargs) for ia in self})
 
     def as_state(self) -> State:
         """ Returns a State consistent with this StateAssertion.
@@ -1544,6 +1461,15 @@ class StateAssertion(Assertion, ValueBearer):
         :return: a State
         """
         return State(set(itertools.chain.from_iterable([ia.item.state_elements for ia in self.asserts])))
+
+    @staticmethod
+    def from_state(state: State) -> StateAssertion:
+        """ Factory method for creating state assertions that would be satisfied by the given State.
+
+        :param state: a State
+        :return: a StateAssertion
+        """
+        return StateAssertion(asserts=[ItemAssertion(ReadOnlyItemPool().get(se)) for se in state])
 
     # TODO: It's not clear how to handle negative assertions. Simply subtracting the values of those items seems
     # TODO: incorrect, as the thing that it is not may actually be more valuable. The safest course for now seems to be
@@ -1562,6 +1488,53 @@ class StateAssertion(Assertion, ValueBearer):
 
 
 NULL_STATE_ASSERT = StateAssertion()
+
+
+# TODO: There may be a subtle bug here when the StateAssertion is negated and the CompositeItem containing
+# TODO: that negated assertion is included in a negated ItemAssertion or StateAssertion.s
+class CompositeItem(StateAssertion, Item):
+    """ A StateAssertion wrapper that functions like an Item.
+
+    This class is primarily used to support ExtendedResult statistics when the ER_INCREMENTAL_RESULTS is disabled.
+    """
+
+    def __init__(self, source: StateAssertion, **kwargs) -> None:
+        if len(source) < 2:
+            raise ValueError('Source assertion must have at least two elements')
+
+        super().__init__(source=source,
+                         primitive_value=source.primitive_value,
+                         asserts=[*source.asserts, *source.negated_asserts])
+
+    @property
+    def source(self) -> StateAssertion:
+        return super().source
+
+    @property
+    def state_elements(self) -> set[StateElement]:
+        return set(itertools.chain.from_iterable([ia.item.state_elements for ia in self.source.asserts]))
+
+    def is_on(self, state: State, **kwargs) -> bool:
+        return self.source.is_satisfied(state)
+
+    def __contains__(self, assertion: Assertion) -> bool:
+        if isinstance(assertion, ItemAssertion):
+            return assertion in self.source
+        return False
+
+    def __eq__(self, other) -> bool:
+        return super().__eq__(other)
+        # if isinstance(other, Item):
+        #     return self.source == other.source
+        # if isinstance(other, StateAssertion):
+        #     return super().__eq__()
+        # return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.source)
+
+    def __str__(self) -> str:
+        return f'({str(self.source)})'
 
 
 class ExtendedItemCollection(Observable):
@@ -1622,11 +1595,11 @@ class ExtendedItemCollection(Observable):
             else:
                 self._new_relevant_items.add(assertion)
 
-    def notify_all(self, *args, **kwargs) -> None:
+    def notify_all(self, **kwargs) -> None:
         if 'source' not in kwargs:
             kwargs['source'] = self
 
-        super().notify_all(*args, **kwargs)
+        super().notify_all(**kwargs)
 
         # clears the set
         self._new_relevant_items = set()
@@ -1875,7 +1848,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
                  action: Action,
                  context: Optional[StateAssertion] = None,
                  result: Optional[StateAssertion] = None,
-                 *args, **kwargs):
+                 **kwargs):
         super().__init__()
 
         self._context: Optional[StateAssertion] = context or NULL_STATE_ASSERT
@@ -2004,21 +1977,20 @@ class Schema(Observer, Observable, UniqueIdMixin):
     def stats(self) -> SchemaStats:
         return self._stats
 
-    def is_applicable(self, state: State, *args, **kwargs) -> bool:
+    def is_applicable(self, state: State, **kwargs) -> bool:
         """ A schema is applicable when its context is satisfied and there are no active overriding conditions.
 
             “A schema is said to be applicable when its context is satisfied and no
                  known overriding conditions obtain.” (Drescher, 1991, p.53)
 
         :param state: the agent's current state
-        :param args: optional positional arguments
         :param kwargs: optional keyword arguments
         :return: True if the schema is applicable in this state; False, otherwise.
         """
         overridden = False
         if self.overriding_conditions is not None:
-            overridden = self.overriding_conditions.is_satisfied(state, *args, **kwargs)
-        return (not overridden) and self.context.is_satisfied(state, *args, **kwargs)
+            overridden = self.overriding_conditions.is_satisfied(state, **kwargs)
+        return (not overridden) and self.context.is_satisfied(state, **kwargs)
 
     def is_primitive(self) -> bool:
         """ Returns whether this instance is a primitive (action-only) schema.
@@ -2091,7 +2063,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
             self._extended_context.update_all(state=s_prev, success=success, count=count)
 
     # invoked by a schema's extended context or extended result when a relevant item is discovered
-    def receive(self, *args, **kwargs) -> None:
+    def receive(self, **kwargs) -> None:
 
         # ext_source should be an ExtendedContext, ExtendedResult, or one of their subclasses
         ext_source: ExtendedItemCollection = kwargs['source']
@@ -2108,22 +2080,6 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         self.notify_all(source=self, spin_off_type=spin_off_type, relevant_items=relevant_items)
 
-    def copy(self) -> Schema:
-        """ Returns a copy of this schema that is equal to its parent.
-
-            Note: The copy returned from this method replicates the immutable components of this schema. As such,
-            it is essentially the parent schema before any learning.
-
-        :return: a copy of this Schema
-        """
-        new = Schema(context=self._context,
-                     action=self._action,
-                     result=self._result)
-
-        new._uid = self._uid
-
-        return new
-
 
 def is_reliable(schema: Schema, threshold: Optional[float] = None) -> bool:
     threshold = threshold or GlobalParams().get('reliability_threshold')
@@ -2133,54 +2089,41 @@ def is_reliable(schema: Schema, threshold: Optional[float] = None) -> bool:
 class SchemaTreeNode(NodeMixin):
     def __init__(self,
                  context: Optional[StateAssertion] = None,
-                 action: Optional[Action] = None,
                  label: str = None) -> None:
-        self._context = context
-        self._action = action
+        self._context = context or NULL_STATE_ASSERT
+        self._label = label
 
         self._schemas = set()
 
-        self.label = label
-
     def __hash__(self) -> int:
-        return hash((self._context, self._action))
+        return hash(self._context)
 
     def __eq__(self, other) -> bool:
         if isinstance(other, SchemaTreeNode):
-            return self._action == other._action and self._context == other._context
+            return self._context == other._context
 
     def __str__(self) -> str:
-        return self.label if self.label else f'{self._context}/{self._action}/'
+        return self._label if self._label else f'{self._context}'
 
     def __repr__(self) -> str:
         return repr_str(self, {'context': self._context,
-                               'action': self._action, })
+                               'label': self._label})
 
     @property
     def context(self) -> Optional[StateAssertion]:
         return self._context
 
     @property
-    def action(self) -> Optional[Action]:
-        return self._action
+    def label(self) -> str:
+        return self._label
 
     @property
-    def schemas(self) -> MutableSet[Schema]:
+    def schemas(self) -> set[Schema]:
         return self._schemas
 
     @schemas.setter
     def schemas(self, value) -> None:
         self._schemas = value
-
-    def copy(self) -> SchemaTreeNode:
-        """ Returns a new SchemaTreeNode with the same context and action.
-
-        Note: any schemas associated with the original will be lost.
-
-        :return: A SchemaTreeNode with the same context and action as this instance.
-        """
-        return SchemaTreeNode(context=self.context,
-                              action=self.action)
 
 
 class SchemaTree:
@@ -2196,19 +2139,20 @@ class SchemaTree:
 
     """
 
-    def __init__(self, primitives: Optional[Collection[Schema]] = None) -> None:
+    def __init__(self, primitives: Collection[Schema]) -> None:
+        if not primitives:
+            raise ValueError('SchemaTree must be initialized with a collection of primitive schemas.')
+
         self._root = SchemaTreeNode(label='root')
-        self._nodes: dict[tuple[StateAssertion, Action], SchemaTreeNode] = dict()
+        self._root.schemas.update(primitives)
 
-        self._n_schemas = 0
+        self._nodes: dict[StateAssertion, SchemaTreeNode] = dict()
+        self._nodes[self._root.context] = self._root
 
-        if primitives:
-            self.add_primitives(primitives)
+        self._n_schemas = len(primitives)
 
     def __iter__(self) -> Iterator[SchemaTreeNode]:
-        iter_ = LevelOrderIter(node=self.root)
-        next(iter_)  # skips root
-        return iter_
+        return LevelOrderIter(node=self.root)
 
     def __len__(self) -> int:
         """ Returns the number of SchemaTreeNodes (not the number of schemas).
@@ -2219,9 +2163,9 @@ class SchemaTree:
 
     def __contains__(self, s: Union[SchemaTreeNode, Schema]) -> bool:
         if isinstance(s, SchemaTreeNode):
-            return (s.context, s.action) in self._nodes
+            return s.context in self._nodes
         elif isinstance(s, Schema):
-            node = self._nodes.get((s.context, s.action))
+            node = self._nodes.get(s.context)
             return s in node.schemas if node else False
 
         return False
@@ -2247,15 +2191,7 @@ class SchemaTree:
         :param schema: the schema (in particular, the context and action) on which this retrieval is based
         :return: a SchemaTreeNode (if found) or raises a KeyError
         """
-        return self._nodes[(schema.context, schema.action)]
-
-    def add_primitives(self, primitives: Collection[Schema]) -> None:
-        """ Adds primitive schemas to this tree.
-
-        :param primitives: a collection of primitive schemas
-        :return: None
-        """
-        self.add(self.root, frozenset(primitives))
+        return self._nodes[schema.context]
 
     def add_context_spin_offs(self, source: Schema, spin_offs: Collection[Schema]) -> None:
         """ Adds context spin-off schemas to this tree.
@@ -2275,7 +2211,7 @@ class SchemaTree:
         """
         self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
 
-    def find_all_satisfied(self, state: State, *args, **kwargs) -> Collection[SchemaTreeNode]:
+    def find_all_satisfied(self, state: State, **kwargs) -> Collection[SchemaTreeNode]:
         """ Returns a collection of tree nodes containing schemas with contexts that are satisfied by this state.
 
         :param state: the state
@@ -2283,10 +2219,10 @@ class SchemaTree:
         """
         matches: MutableSet[SchemaTreeNode] = set()
 
-        nodes_to_process = list(self._root.children)
+        nodes_to_process = [self._root]
         while nodes_to_process:
             node = nodes_to_process.pop()
-            if node.context.is_satisfied(state, *args, **kwargs):
+            if node.context.is_satisfied(state, **kwargs):
                 matches.add(node)
                 if node.children:
                     nodes_to_process += node.children
@@ -2294,9 +2230,6 @@ class SchemaTree:
         return matches
 
     def is_valid_node(self, node: SchemaTreeNode, raise_on_invalid: bool = False) -> bool:
-        if node is self._root:
-            return True
-
         # 1. node is in tree (path from root to node)
         if node not in self:
             if raise_on_invalid:
@@ -2304,27 +2237,20 @@ class SchemaTree:
             return False
 
         # 2. node has proper depth for context
-        if len(node.context) != node.depth - 1:
+        if len(node.context) != node.depth:
             if raise_on_invalid:
                 raise ValueError('invalid node: depth must equal the number of item assertion in context minus 1')
             return False
 
-        # checks that apply to nodes that contain non-primitive schemas (context + action)
-        if node.parent is not self.root:
+        if node is not self.root:
 
-            # 3. node has same action as parent
-            if node.action != node.parent.action:
-                if raise_on_invalid:
-                    raise ValueError('invalid node: must have same action as parent')
-                return False
-
-            # 4. node's context contains all of parents
+            # 3. node's context contains all of parents
             if not all({ia in node.context for ia in node.parent.context}):
                 if raise_on_invalid:
                     raise ValueError('invalid node: context should contain all of parent\'s item assertion')
                 return False
 
-            # 5. node's context contains exactly one item assertion not in parent's context
+            # 4. node's context contains exactly one item assertion not in parent's context
             if len(node.parent.context) + 1 != len(node.context):
                 if raise_on_invalid:
                     raise ValueError('invalid node: context must differ from parent in exactly one assertion.')
@@ -2333,17 +2259,19 @@ class SchemaTree:
         # consistency checks between node and its schemas
         if node.schemas:
 
-            # 6. actions should be identical across all contained schemas, and equal to node's action
-            if not all({node.action == s.action for s in node.schemas}):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: all schemas must have the same action')
-                return False
+            for s in node.schemas:
 
-            # 7. contexts should be identical across all contained schemas, and equal to node's context
-            if not all({node.context == s.context for s in node.schemas}):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: all schemas must have the same context')
-                return False
+                # 5. contexts should be identical across all contained schemas, and equal to node's context
+                if node.context != s.context:
+                    if raise_on_invalid:
+                        raise ValueError('invalid node: all schemas must have the same context')
+                    return False
+
+                # 6. composite results should exist as contexts in the tree
+                if len(s.result) > 1 and SchemaTreeNode(context=s.result) not in self:
+                    if raise_on_invalid:
+                        raise ValueError('invalid node: composite results must exist as a context in tree')
+                    return False
 
         return True
 
@@ -2357,37 +2285,35 @@ class SchemaTree:
 
     def add(self,
             source: Union[Schema, SchemaTreeNode],
-            schemas: frozenset[Schema],
+            spin_offs: frozenset[Schema],
             spin_off_type: Optional[Schema.SpinOffType] = None) -> SchemaTreeNode:
         """ Adds schemas to this schema tree.
 
         :param source: the "source" schema that generated the given (primitive or spin-off) schemas, or the previously
         added tree node containing that "source" schema.
-        :param schemas: a collection of (primitive or spin-off) schemas
+        :param spin_offs: a collection of spin-off schemas
         :param spin_off_type: the schema spin-off type (CONTEXT or RESULT), or None when adding primitive schemas
-
-        Note: The source can also be the tree root. This can be used for adding primitive schemas to the tree. In
-        this case, the spin_off_type should be None or CONTEXT.
 
         :return: the parent node for which the add operation occurred
         """
-        trace(f'adding schemas! [parent: {source}, spin-offs: {[str(s) for s in schemas]}]')
-        if not schemas:
-            raise ValueError('Schemas to add cannot be empty or None')
+        trace(f'adding schemas! [parent: {source}, spin-offs: {[str(s) for s in spin_offs]}]')
+        if not spin_offs:
+            raise ValueError('Spin-off schemas cannot be empty or None')
+
+        if any({source.action != s.action for s in spin_offs}):
+            raise ValueError('Spin-off schemas must have the same action as their source.')
 
         try:
             node = source if isinstance(source, SchemaTreeNode) else self.get(source)
             if Schema.SpinOffType.RESULT is spin_off_type:
                 # needed because schemas to add may already exist in set reducing total new count
                 len_before_add = len(node.schemas)
-                node.schemas |= schemas
+                node.schemas |= spin_offs
                 self._n_schemas += len(node.schemas) - len_before_add
             # for context spin-offs and primitive schemas
             else:
-                for s in schemas:
-                    key = (s.context, s.action)
-
-                    match = self._nodes.get(key)
+                for s in spin_offs:
+                    match = self._nodes.get(s.context)
 
                     # node already exists in tree (generated from different source)
                     if match:
@@ -2396,298 +2322,12 @@ class SchemaTree:
                             self._n_schemas += 1
 
                     else:
-                        new_node = SchemaTreeNode(s.context, s.action)
+                        new_node = SchemaTreeNode(s.context)
                         new_node.schemas.add(s)
 
                         node.children += (new_node,)
 
-                        self._nodes[key] = new_node
-
-                        self._n_schemas += len(new_node.schemas)
-            return node
-        except KeyError:
-            raise ValueError('Source schema does not have a corresponding tree node.')
-
-
-class SchemaResultTreeNode(NodeMixin):
-    def __init__(self,
-                 result: Optional[StateAssertion] = None,
-                 action: Optional[Action] = None,
-                 label: str = None) -> None:
-        self._result = result
-        self._action = action
-
-        self._schemas = set()
-
-        self.label = label
-
-    def __hash__(self) -> int:
-        return hash((self._result, self._action))
-
-    def __eq__(self, other) -> bool:
-        if isinstance(other, SchemaResultTreeNode):
-            return self._action == other._action and self._result == other._result
-
-    def __str__(self) -> str:
-        return self.label if self.label else f'/{self._action}/{self._result}'
-
-    def __repr__(self) -> str:
-        return repr_str(self, {'result': self._result,
-                               'action': self._action, })
-
-    @property
-    def result(self) -> Optional[StateAssertion]:
-        return self._result
-
-    @property
-    def action(self) -> Optional[Action]:
-        return self._action
-
-    @property
-    def schemas(self) -> MutableSet[Schema]:
-        return self._schemas
-
-    @schemas.setter
-    def schemas(self, value) -> None:
-        self._schemas = value
-
-    def copy(self) -> SchemaResultTreeNode:
-        """ Returns a new SchemaResultTreeNode with the same context and action.
-
-        Note: any schemas associated with the original will be lost.
-
-        :return: A SchemaResultTreeNode with the same context and action as this instance.
-        """
-        return SchemaResultTreeNode(result=self.result,
-                                    action=self.action)
-
-
-class SchemaResultTree:
-    """ A search tree of SchemaResultTreeNodes with the following special properties:
-
-    1. Each tree node contains a set of schemas with identical results and actions.
-    2. Each tree node (except the root) has the same action as their descendants.
-    3. Each tree node's depth equals the number of item assertion in its result plus one; for example, the
-    tree nodes corresponding to primitive (action only) schemas would have a tree height of one.
-    4. Each tree node's result contains all of the item assertion in their ancestors plus one new item assertion
-    not found in ANY ancestor. For example, if a node's parent's result contains item assertion 1,2,3, then it
-    will contain 1,2,and 3 plus a new item assertion (say 4).
-
-    """
-
-    def __init__(self, primitives: Optional[Collection[Schema]] = None) -> None:
-        self._root = SchemaResultTreeNode(label='root')
-        self._nodes: dict[tuple[StateAssertion, Action], SchemaResultTreeNode] = dict()
-
-        self._n_schemas = 0
-
-        if primitives:
-            self.add_primitives(primitives)
-
-    def __iter__(self) -> Iterator[SchemaResultTreeNode]:
-        iter_ = LevelOrderIter(node=self.root)
-        next(iter_)  # skips root
-        return iter_
-
-    def __len__(self) -> int:
-        """ Returns the number of SchemaResultTreeNodes (not the number of schemas).
-
-        :return: The number of SchemaResultTreeNodes in this tree.
-        """
-        return len(self._nodes)
-
-    def __contains__(self, s: Union[SchemaResultTreeNode, Schema]) -> bool:
-        if isinstance(s, SchemaResultTreeNode):
-            return (s.result, s.action) in self._nodes
-        elif isinstance(s, Schema):
-            node = self._nodes.get((s.result, s.action))
-            return s in node.schemas if node else False
-
-        return False
-
-    def __str__(self) -> str:
-        return RenderTree(self._root, style=AsciiStyle()).by_attr(lambda s: str(s))
-
-    @property
-    def root(self) -> SchemaResultTreeNode:
-        return self._root
-
-    @property
-    def n_schemas(self) -> int:
-        return self._n_schemas
-
-    @property
-    def height(self) -> int:
-        return self.root.height
-
-    def get(self, schema: Schema) -> SchemaResultTreeNode:
-        """ Retrieves the SchemaResultTreeNode matching this schema's result and action (if it exists).
-
-        :param schema: the schema (in particular, the result and action) on which this retrieval is based
-        :return: a SchemaResultTreeNode (if found) or raises a KeyError
-        """
-        return self._nodes[(schema.result, schema.action)]
-
-    def add_primitives(self, primitives: Collection[Schema]) -> None:
-        """ Adds primitive schemas to this tree.
-
-        :param primitives: a collection of primitive schemas
-        :return: None
-        """
-        self.add(self.root, frozenset(primitives))
-
-    def add_context_spin_offs(self, source: Schema, spin_offs: Collection[Schema]) -> None:
-        """ Adds context spin-off schemas to this tree.
-
-        :param source: the source schema that resulted in these spin-off schemas.
-        :param spin_offs: the spin-off schemas.
-        :return: None
-        """
-        self.add(source, frozenset(spin_offs), Schema.SpinOffType.CONTEXT)
-
-    def add_result_spin_offs(self, source: Schema, spin_offs: Collection[Schema]):
-        """ Adds result spin-off schemas to this tree.
-
-        :param source: the source schema that resulted in these spin-off schemas.
-        :param spin_offs: the spin-off schemas.
-        :return: None
-        """
-        self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
-
-    def find_all_satisfied(self, state: State, *args, **kwargs) -> Collection[SchemaResultTreeNode]:
-        """ Returns a collection of tree nodes containing schemas with results that are satisfied by this state.
-
-        :param state: the state
-        :return: a collection of schemas
-        """
-        matches: MutableSet[SchemaResultTreeNode] = set()
-
-        nodes_to_process = list(self._root.children)
-        while nodes_to_process:
-            node = nodes_to_process.pop()
-            if node.result.is_satisfied(state, *args, **kwargs):
-                matches.add(node)
-                if node.children:
-                    nodes_to_process += node.children
-
-        return matches
-
-    def contains_all(self, assertion: StateAssertion) -> Collection[Schema]:
-        actions = [node.action for node in self.root.children]
-        nodes = set(filter(lambda n: n is not None, [self._nodes.get((assertion, act), None) for act in actions]))
-        schemas = set(itertools.chain.from_iterable(n.schemas for n in nodes))
-        descendant_schemas = set(itertools.chain.from_iterable(d.schemas for n in nodes for d in n.descendants))
-        return schemas.union(descendant_schemas)
-
-    def is_valid_node(self, node: SchemaResultTreeNode, raise_on_invalid: bool = False) -> bool:
-        if node is self._root:
-            return True
-
-        # 1. node is in tree (path from root to node)
-        if node not in self:
-            if raise_on_invalid:
-                raise ValueError('invalid node: no path from node to root')
-            return False
-
-        # 2. node has proper depth for result
-        if len(node.result) != node.depth - 1:
-            if raise_on_invalid:
-                raise ValueError('invalid node: depth must equal the number of item assertion in result minus 1')
-            return False
-
-        # checks that apply to nodes that contain non-primitive schemas (result + action)
-        if node.parent is not self.root:
-
-            # 3. node has same action as parent
-            if node.action != node.parent.action:
-                if raise_on_invalid:
-                    raise ValueError('invalid node: must have same action as parent')
-                return False
-
-            # 4. node's result contains all of parents
-            if not all({ia in node.result for ia in node.parent.result}):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: result should contain all of parent\'s item assertion')
-                return False
-
-            # 5. node's result contains exactly one item assertion not in parent's result
-            if len(node.parent.result) + 1 != len(node.result):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: result must differ from parent in exactly one assertion.')
-                return False
-
-        # consistency checks between node and its schemas
-        if node.schemas:
-
-            # 6. actions should be identical across all contained schemas, and equal to node's action
-            if not all({node.action == s.action for s in node.schemas}):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: all schemas must have the same action')
-                return False
-
-            # 7. results should be identical across all contained schemas, and equal to node's result
-            if not all({node.result == s.result for s in node.schemas}):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: all schemas must have the same result')
-                return False
-
-        return True
-
-    def validate(self, raise_on_invalid: bool = False) -> Collection[SchemaResultTreeNode]:
-        """ Validates that all nodes in the tree comply with its invariant properties and returns invalid nodes.
-
-        :return: A set of invalid nodes (if any).
-        """
-        return set([node for node in LevelOrderIter(self._root,
-                                                    filter_=lambda n: not self.is_valid_node(n, raise_on_invalid))])
-
-    def add(self,
-            source: Union[Schema, SchemaResultTreeNode],
-            schemas: frozenset[Schema],
-            spin_off_type: Optional[Schema.SpinOffType] = None) -> SchemaResultTreeNode:
-        """ Adds schemas to this schema tree.
-
-        :param source: the "source" schema that generated the given (primitive or spin-off) schemas, or the previously
-        added tree node containing that "source" schema.
-        :param schemas: a collection of (primitive or spin-off) schemas
-        :param spin_off_type: the schema spin-off type (CONTEXT or RESULT), or None when adding primitive schemas
-
-        Note: The source can also be the tree root. This can be used for adding primitive schemas to the tree. In
-        this case, the spin_off_type should be None or CONTEXT.
-
-        :return: the parent node for which the add operation occurred
-        """
-        trace(f'adding schemas! [parent: {source}, spin-offs: {[str(s) for s in schemas]}]')
-        if not schemas:
-            raise ValueError('Schemas to add cannot be empty or None')
-
-        try:
-            node = source if isinstance(source, SchemaResultTreeNode) else self.get(source)
-            if Schema.SpinOffType.CONTEXT is spin_off_type:
-                # needed because schemas to add may already exist in set reducing total new count
-                len_before_add = len(node.schemas)
-                node.schemas |= schemas
-                self._n_schemas += len(node.schemas) - len_before_add
-            # for context spin-offs and primitive schemas
-            else:
-                for s in schemas:
-                    key = (s.result, s.action)
-
-                    match = self._nodes.get(key)
-
-                    # node already exists in tree (generated from different source)
-                    if match:
-                        if s not in match.schemas:
-                            match.schemas.add(s)
-                            self._n_schemas += 1
-
-                    else:
-                        new_node = SchemaResultTreeNode(s.result, s.action)
-                        new_node.schemas.add(s)
-
-                        node.children += (new_node,)
-
-                        self._nodes[key] = new_node
+                        self._nodes[s.context] = new_node
 
                         self._n_schemas += len(new_node.schemas)
             return node

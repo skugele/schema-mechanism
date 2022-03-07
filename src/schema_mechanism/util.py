@@ -13,8 +13,8 @@ import sklearn.metrics as sk_metrics
 class UniqueIdMixin:
     _last_uid: int = 0
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
 
         self._uid = self._gen_uid()
 
@@ -30,10 +30,10 @@ class UniqueIdMixin:
 
 
 class Observer:
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
 
-    def receive(self, *args, **kwargs) -> None:
+    def receive(self, **kwargs) -> None:
         """ Receive update from observer.
 
         :return: None
@@ -44,10 +44,10 @@ class Observer:
 class Observable:
     """ An observable subject. """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, **kwargs) -> None:
         self._observers: list[Observer] = list()
 
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
 
     @property
     def observers(self) -> list[Observer]:
@@ -69,23 +69,22 @@ class Observable:
         """
         self._observers.remove(observer)
 
-    def notify_all(self, *args, **kwargs) -> None:
+    def notify_all(self, **kwargs) -> None:
         """ Notify all registered observers.
 
-        :param args: positional args to broadcast to observers
         :param kwargs: keyword args to broadcast to observers
         :return: None
         """
         for obs in self._observers:
-            obs.receive(*args, **kwargs)
+            obs.receive(**kwargs)
 
 
 class Singleton(type, metaclass=ABCMeta):
     _instances = {}
 
-    def __call__(cls, *args, **kwargs):
+    def __call__(cls, **kwargs):
         if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+            cls._instances[cls] = super(Singleton, cls).__call__(**kwargs)
         return cls._instances[cls]
 
 

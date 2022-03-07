@@ -21,11 +21,10 @@ class TestSchemaMemory(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self.tree = SchemaTree()
-
         s1 = sym_schema('/A1/')
         s2 = sym_schema('/A2/')
-        self.tree.add_primitives((s1, s2))
+
+        self.tree = SchemaTree((s1, s2))
 
         s1_1 = sym_schema('1,/A1/')
         s1_2 = sym_schema('2,/A1/')
@@ -90,10 +89,8 @@ class TestSchemaMemory(TestCase):
         self.assertRaises(ValueError, lambda: SchemaMemory(primitives=(invalid_primitive_schema,)))
 
     def test_from_tree(self):
-        tree = SchemaTree()
-
         primitives = primitive_schemas(actions(5))
-        tree.add_primitives(primitives)
+        tree = SchemaTree(primitives)
 
         s1_1 = create_context_spin_off(primitives[0], sym_item_assert('1'))
         s1_2 = create_context_spin_off(primitives[0], sym_item_assert('2'))

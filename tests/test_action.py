@@ -2,9 +2,8 @@ from unittest import TestCase
 
 from schema_mechanism.core import Action
 from test_share.test_func import common_test_setup
-from test_share.test_func import is_eq_with_null_is_false
-from test_share.test_func import is_hash_consistent
-from test_share.test_func import is_hash_same_for_equal_objects
+from test_share.test_func import satisfies_equality_checks
+from test_share.test_func import satisfies_hash_checks
 
 
 class TestAction(TestCase):
@@ -24,25 +23,12 @@ class TestAction(TestCase):
         self.assertTrue(n_actions, len(set([Action() for _ in range(n_actions)])))
 
     def test_eq(self):
-        a1 = Action()
-        a2 = Action()
+        self.assertTrue(satisfies_equality_checks(obj=self.a, other=Action('other')))
 
-        self.assertEqual(a1, a1)
-        self.assertNotEqual(a1, a2)
-
-        # labels are used for equality (if they exist)
+        # test: labels should be used to determine equality (if they exist)
         self.assertEqual(Action('label 1'), Action('label 1'))
         self.assertNotEqual(Action('label 1'), Action('label 2'))
-
-        self.assertTrue(is_eq_with_null_is_false(a1))
+        self.assertNotEqual(Action(), Action())
 
     def test_hash(self):
-        self.assertEqual(int, type(hash(Action)))
-        self.assertTrue(is_hash_consistent(Action()))
-
-        self.assertTrue(is_hash_same_for_equal_objects(self.a, self.a))
-        self.assertTrue(is_hash_same_for_equal_objects(self.a, self.a.copy()))
-
-    def test_copy(self):
-        self.assertIsNot(self.a, self.a.copy())
-        self.assertEqual(self.a, self.a.copy())
+        self.assertTrue(satisfies_hash_checks(obj=self.a))

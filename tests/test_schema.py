@@ -1,3 +1,4 @@
+from copy import copy
 from random import sample
 from time import time
 from unittest import TestCase
@@ -23,13 +24,8 @@ from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.func_api import update_schema
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
-from test_share.test_func import is_eq_consistent
-from test_share.test_func import is_eq_reflexive
-from test_share.test_func import is_eq_symmetric
-from test_share.test_func import is_eq_transitive
-from test_share.test_func import is_eq_with_null_is_false
-from test_share.test_func import is_hash_consistent
-from test_share.test_func import is_hash_same_for_equal_objects
+from test_share.test_func import satisfies_equality_checks
+from test_share.test_func import satisfies_hash_checks
 
 
 class TestSchema(TestCase):
@@ -425,34 +421,11 @@ class TestSchema(TestCase):
         update_schema(self.schema, activated=False, s_prev=act_state, s_curr=result_state, count=1)
         self.schema.notify_all.assert_called()
 
-    def test_copy(self):
-        copy = self.schema.copy()
-
-        self.assertEqual(self.schema, copy)
-        self.assertIsNot(self.schema, copy)
-
-    def test_equal(self):
-        copy = self.schema.copy()
-        other = Schema(
-            context=sym_state_assert('1,2'),
-            action=Action(),
-            result=sym_state_assert('3,4,5'),
-        )
-
-        self.assertEqual(self.schema, self.schema)
-        self.assertEqual(self.schema, copy)
-        self.assertNotEqual(self.schema, other)
-
-        self.assertTrue(is_eq_reflexive(self.schema))
-        self.assertTrue(is_eq_symmetric(x=self.schema, y=copy))
-        self.assertTrue(is_eq_transitive(x=self.schema, y=copy, z=copy.copy()))
-        self.assertTrue(is_eq_consistent(x=self.schema, y=copy))
-        self.assertTrue(is_eq_with_null_is_false(self.schema))
+    def test_eq(self):
+        self.assertTrue(satisfies_equality_checks(obj=self.schema, other=sym_schema('1,2/A1/3,4,5')))
 
     def test_hash(self):
-        self.assertIsInstance(hash(self.schema), int)
-        self.assertTrue(is_hash_consistent(self.schema))
-        self.assertTrue(is_hash_same_for_equal_objects(x=self.schema, y=self.schema.copy()))
+        self.assertTrue(satisfies_hash_checks(obj=self.schema))
 
     @test_share.performance_test
     def test_performance_1(self):
@@ -517,7 +490,6 @@ class TestSchema(TestCase):
     def test_performance_3(self):
         n_iters = 100_000
 
-        copy = self.schema.copy()
         other = Schema(
             context=sym_state_assert('1,2'),
             action=Action(),
@@ -534,7 +506,7 @@ class TestSchema(TestCase):
 
         start = time()
         for _ in range(n_iters):
-            _ = self.schema == copy
+            _ = self.schema == copy(self.schema)
         end = time()
         elapsed_time = end - start
 

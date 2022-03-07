@@ -13,13 +13,8 @@ from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from test_share.test_func import common_test_setup
-from test_share.test_func import is_eq_consistent
-from test_share.test_func import is_eq_reflexive
-from test_share.test_func import is_eq_symmetric
-from test_share.test_func import is_eq_transitive
-from test_share.test_func import is_eq_with_null_is_false
-from test_share.test_func import is_hash_consistent
-from test_share.test_func import is_hash_same_for_equal_objects
+from test_share.test_func import satisfies_equality_checks
+from test_share.test_func import satisfies_hash_checks
 
 
 class TestStateAssertion(TestCase):
@@ -213,24 +208,27 @@ class TestStateAssertion(TestCase):
         self.assertEqual(0, len(StateAssertion()))
         self.assertEqual(len(self.asserts), len(self.sa))
 
-    def test_equal(self):
-        copy = self.sa.copy()
-        other = sym_state_assert('4,5,6')
-
-        self.assertEqual(self.sa, self.sa)
-        self.assertEqual(self.sa, copy)
-        self.assertNotEqual(self.sa, other)
-
-        self.assertTrue(is_eq_reflexive(self.sa))
-        self.assertTrue(is_eq_symmetric(x=self.sa, y=copy))
-        self.assertTrue(is_eq_transitive(x=self.sa, y=copy, z=copy.copy()))
-        self.assertTrue(is_eq_consistent(x=self.sa, y=copy))
-        self.assertTrue(is_eq_with_null_is_false(self.sa))
+    def test_eq(self):
+        self.assertTrue(satisfies_equality_checks(obj=self.sa, other=sym_state_assert('4,5,6')))
 
     def test_hash(self):
-        self.assertIsInstance(hash(self.sa), int)
-        self.assertTrue(is_hash_consistent(self.sa))
-        self.assertTrue(is_hash_same_for_equal_objects(x=self.sa, y=self.sa.copy()))
+        self.assertTrue(satisfies_hash_checks(obj=self.sa))
+
+    def test_equal_with_composite_items(self):
+        self.assertTrue(satisfies_equality_checks(obj=sym_state_assert('(4,5,6),'),
+                                                  other=sym_state_assert('(7,8,9),')))
+
+    def test_equal_with_mixed_item(self):
+        # test: composite items should be equal to their equivalent state assertion
+
+        # positive cases
+        self.assertEqual(sym_state_assert('1,2'), sym_state_assert('(1,2),'), )
+        self.assertEqual(sym_state_assert('~1,~2'), sym_state_assert('(~1,~2),'), )
+        self.assertEqual(sym_state_assert('1,2,~3,4'), sym_state_assert('(1,2,~3,4),'), )
+
+        # negative cases
+        self.assertNotEqual(sym_state_assert('1,2'), sym_state_assert('(3,4),'), )
+        self.assertNotEqual(sym_state_assert('~1,~2'), sym_state_assert('(~1,2),'), )
 
     @test_share.performance_test
     def test_performance_1(self):

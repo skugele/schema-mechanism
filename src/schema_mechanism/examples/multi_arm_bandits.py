@@ -167,7 +167,7 @@ def parse_args():
 
 # global constants
 N_MACHINES = 3
-N_STEPS = 500
+N_STEPS = 1000
 
 
 def run():

@@ -1,4 +1,5 @@
 from collections import Hashable
+from copy import copy
 from typing import Any
 
 from schema_mechanism.core import GlobalParams
@@ -124,3 +125,25 @@ def is_hash_same_for_equal_objects(x: Hashable, y: Hashable) -> bool:
     assert (x == y)
 
     return hash(x) == hash(y)
+
+
+def satisfies_equality_checks(obj: Any, other: Any) -> bool:
+    copy_ = copy(obj)
+
+    return all({
+        is_eq_reflexive(obj),
+        is_eq_symmetric(x=obj, y=copy_),
+        is_eq_transitive(x=obj, y=copy_, z=copy(copy_)),
+        is_eq_consistent(x=obj, y=copy_),
+        is_eq_with_null_is_false(obj),
+        obj != other
+    })
+
+
+def satisfies_hash_checks(obj: Any) -> bool:
+    return all({
+        isinstance(hash(obj), int),
+        is_hash_consistent(obj),
+        is_hash_same_for_equal_objects(obj, obj),
+        is_hash_same_for_equal_objects(obj, copy(obj)),
+    })

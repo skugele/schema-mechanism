@@ -49,11 +49,11 @@ class TestExtendedItemCollection(TestCase):
         self.assertEqual(1, len(self.eic.new_relevant_items))
 
     def test_notify_all(self):
-        self.eic.notify_all('one', 'two', three='three')
+        self.eic.notify_all(one='one', two='two', three='three')
 
         # test that *args and **kwargs were successfully passed to observer
-        self.assertIn('one', self.obs.last_message['args'])
-        self.assertIn('two', self.obs.last_message['args'])
+        self.assertIn('one', self.obs.last_message['kwargs'])
+        self.assertIn('two', self.obs.last_message['kwargs'])
         self.assertIn('three', self.obs.last_message['kwargs'])
 
         # test that 'source' was added to payload automatically

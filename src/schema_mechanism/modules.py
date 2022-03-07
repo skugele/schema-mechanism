@@ -45,11 +45,12 @@ class SchemaMemory(Observer):
     def __init__(self, primitives: Optional[Collection[Schema]] = None) -> None:
         super().__init__()
 
-        self._schema_tree = SchemaTree(primitives)
-        self._schema_tree.validate(raise_on_invalid=True)
+        self._schema_tree = SchemaTree(primitives) if primitives else None
 
         # register listeners for primitives
         if primitives:
+            self._schema_tree.validate(raise_on_invalid=True)
+
             for schema in primitives:
                 schema.register(self)
 
@@ -68,13 +69,15 @@ class SchemaMemory(Observer):
     def schemas(self) -> list[Schema]:
         return list(itertools.chain.from_iterable([n.schemas for n in self._schema_tree]))
 
+    # TODO: Add something for the initialization of the SchemaResultTree??? Or should I just move it out
+    # TODO: of SchemaMemory entirely?
     @staticmethod
     def from_tree(tree: SchemaTree) -> SchemaMemory:
-        """ A factory method to initialize a SchemaMemory instance from a SchemaTree.
+        """ A factory method to initialize a SchemaMemory instance from a SchemaContextTree.
 
         Note: This method can be used to initialize SchemaMemory with arbitrary built-in schemas.
 
-        :param tree: a SchemaTree pre-loaded with schemas.
+        :param tree: a SchemaContextTree pre-loaded with schemas.
         :return: a tree-initialized SchemaMemory instance
         """
         sm = SchemaMemory()
@@ -147,15 +150,16 @@ class SchemaMemory(Observer):
                      explained=explained)
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
-        return list(itertools.chain.from_iterable(n.schemas for n in self._schema_tree.find_all_satisfied(state)))
+        return list(
+            itertools.chain.from_iterable(n.schemas for n in self._schema_tree.find_all_satisfied(state)))
 
-    def receive(self, *args, **kwargs) -> None:
+    def receive(self, **kwargs) -> None:
         source: Schema = kwargs['source']
 
         if isinstance(source, Schema):
-            self._receive_from_schema(schema=source, *args, **kwargs)
+            self._receive_from_schema(schema=source, **kwargs)
 
-    def _receive_from_schema(self, schema: Schema, *args, **kwargs) -> None:
+    def _receive_from_schema(self, schema: Schema, **kwargs) -> None:
         spin_off_type: Schema.SpinOffType = kwargs['spin_off_type']
         relevant_items: Collection[ItemAssertion] = kwargs['relevant_items']
 
@@ -168,6 +172,55 @@ class SchemaMemory(Observer):
         debug(f'creating spin-offs for schema {str(schema)}: {",".join([str(s) for s in spin_offs])}')
 
         self._schema_tree.add(schema, spin_offs, spin_off_type)
+
+    def backward_chains(self, goal_state: StateAssertion, max_len: Optional[int] = None) -> Collection[Chain]:
+        """ Returns a Collection of chains of reliable schemas leading away from the given goal state.
+
+        Used for:
+            (1) composite action controllers (see Drescher 1991, Sections 4.3 and 5.1.2)
+            (2) propagating instrumental value (see Drescher 1991, Sections 3.4.1 and 5.1.2)
+
+        :param goal_state: a state assertion describing the goal state
+        :param max_len: an optional parameter that limits the maximum chain length
+
+        :return: a Collection of Chains
+        """
+
+        pass
+
+        # "A chaining schema's result must include the entire context of the next schema in the chain."
+        # (see Drescher, 1991, p. 100)
+
+        # if max depth == 0
+        #     return empty collection
+
+        # retrieve all schemas with result that matches goal state
+
+        # if no matching schemas
+        #     return empty collection
+        # else
+        #     for each goal schema in goal match list
+        #         retrieve list of RELIABLE schemas with a result that satisfies the goal schema's context
+
+        # X -> M -> J
+        # X -> M -> K
+        # X -> M -> L
+        # ...
+        # X -> N -> ...
+        # X -> O -> ...
+        # ...
+        # Y -> ...
+        # Z -> ...
+
+        #    X (C1/A/G)       ...               Y (C2/A/G)       Z (C3/A/G)                [chain(goal=G, max_depth=N)]
+        #    M (C11/A/C1)     ...               N (C12/A/C1)     O (C13/A/C1)              [chain(goal=C1, max_depth=N-1)]
+        #    J (C111/A/C11)   ...               K (C112/A/C11)   L (C113/A/C11)            [chain(goal=C11, max_depth=N-2)]
+        #    ...
+        #    No Match For C111 or max_depth == 0                                           [chain(goal=C11...1, max_depth=0)]
+
+        # [[J],[K],[L]]                                                   *** result from chain(goal=C11)
+        # [[M,J],[M,K],[M,L]],... [[N,??],[N,??],[N,??]]                  *** result from chain(goal=C1)
+        # [[X,M,J],[X,M,K],[X,M,L]],... [[X,N,??],[X,N,??],[X,N,??]]      *** result from chain(goal=G)
 
 
 # Type aliases
@@ -517,7 +570,7 @@ class SchemaMechanism:
     def known_schemas(self) -> Collection[Schema]:
         return self._schema_memory.schemas
 
-    def select(self, state: State, *args, **kwargs) -> Schema:
+    def select(self, state: State, **kwargs) -> Schema:
         # TODO: Would it be better to lazy initialize items into item pool for non-primitive items?
         for se in state:
             _ = ItemPool().get(se)
@@ -642,43 +695,3 @@ def forward_chains(schema: Schema, depth: int, accept: Callable[[Schema], bool])
 
     # TODO: seems like I need a breadth first graph traversal
     pass
-
-
-# TODO: Implement this
-def backward_chains(memory: SchemaMemory,
-                    chains: Collection[Chain],
-                    goal: StateAssertion,
-                    max_depth: int) -> Collection[Chain]:
-    # used for propagating instrumental value and finding goal proximity (See Drescher 1991, p. 101)
-    pass
-
-    # if max depth == 0
-    #     return empty collection
-
-    # retrieve all schemas with result that matches goal state
-
-    # if no matching schemas
-    #     return empty collection
-    # else
-    #     for each goal schema in goal match list
-    #         retrieve list of RELIABLE schemas with a result that satisfies the goal schema's context
-
-    # X -> M -> J
-    # X -> M -> K
-    # X -> M -> L
-    # ...
-    # X -> N -> ...
-    # X -> O -> ...
-    # ...
-    # Y -> ...
-    # Z -> ...
-
-    #    X (C1/A/G)       ...               Y (C2/A/G)       Z (C3/A/G)                [chain(goal=G, max_depth=N)]
-    #    M (C11/A/C1)     ...               N (C12/A/C1)     O (C13/A/C1)              [chain(goal=C1, max_depth=N-1)]
-    #    J (C111/A/C11)   ...               K (C112/A/C11)   L (C113/A/C11)            [chain(goal=C11, max_depth=N-2)]
-    #    ...
-    #    No Match For C111 or max_depth == 0                                           [chain(goal=C11...1, max_depth=0)]
-
-    # [[J],[K],[L]]                                                   *** result from chain(goal=C11)
-    # [[M,J],[M,K],[M,L]],... [[N,??],[N,??],[N,??]]                  *** result from chain(goal=C1)
-    # [[X,M,J],[X,M,K],[X,M,L]],... [[X,N,??],[X,N,??],[X,N,??]]      *** result from chain(goal=G)

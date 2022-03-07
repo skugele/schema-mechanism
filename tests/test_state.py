@@ -14,13 +14,8 @@ from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
-from test_share.test_func import is_eq_consistent
-from test_share.test_func import is_eq_reflexive
-from test_share.test_func import is_eq_symmetric
-from test_share.test_func import is_eq_transitive
-from test_share.test_func import is_eq_with_null_is_false
-from test_share.test_func import is_hash_consistent
-from test_share.test_func import is_hash_same_for_equal_objects
+from test_share.test_func import satisfies_equality_checks
+from test_share.test_func import satisfies_hash_checks
 
 
 class TestState(TestCase):
@@ -56,22 +51,14 @@ class TestState(TestCase):
         self.assertEqual(None, self.s.label)
 
     def test_eq(self):
-        self.assertEqual(self.s, self.s)
-        self.assertEqual(self.s, self.s_copy)
         self.assertNotEqual(self.s, self.s_disjoint)
         self.assertNotEqual(self.s, self.s_conjoint)
         self.assertNotEqual(self.s, self.s_contained)
 
-        self.assertTrue(is_eq_reflexive(self.s))
-        self.assertTrue(is_eq_symmetric(x=self.s, y=self.s_copy))
-        self.assertTrue(is_eq_transitive(x=self.s, y=self.s_copy, z=self.s_copy_copy))
-        self.assertTrue(is_eq_consistent(x=self.s, y=self.s_copy))
-        self.assertTrue(is_eq_with_null_is_false(self.s))
+        self.assertTrue(satisfies_equality_checks(obj=self.s, other=sym_state('4,5,6')))
 
     def test_hash(self):
-        self.assertIsInstance(hash(self.s), int)
-        self.assertTrue(is_hash_consistent(self.s))
-        self.assertTrue(is_hash_same_for_equal_objects(x=self.s, y=self.s_copy))
+        self.assertTrue(satisfies_hash_checks(obj=self.s))
 
     def test_len(self):
         self.assertEqual(0, len(self.s_empty))

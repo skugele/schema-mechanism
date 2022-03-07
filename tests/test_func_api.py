@@ -105,15 +105,15 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertIn(sym_assert('~4'), sa)
         self.assertIn(sym_assert('5'), sa)
 
-        # test: single composite item
+        # test: single composite item (note: composite items function as a state assertion)
         sa = sym_assert('(1,2,3),')
         self.assertIsInstance(sa, StateAssertion)
-        self.assertEqual(1, len(sa))
+        self.assertEqual(3, len(sa))
 
         # test: single negated composite item
         sa = sym_assert('~(1,2,3),')
         self.assertIsInstance(sa, StateAssertion)
-        self.assertEqual(1, len(sa))
+        self.assertEqual(3, len(sa))
 
         # test: multiple item state assertion with optional trailing comma
         sa = sym_assert('1,~2,~3,')
@@ -122,29 +122,20 @@ class TestFunctionalApi(unittest.TestCase):
 
     def test_sym_schema_tree_node(self):
         # blank node should be allowed
-        stn = sym_schema_tree_node('//', label='blank')
+        stn = sym_schema_tree_node('', label='blank')
         self.assertIsInstance(stn, SchemaTreeNode)
-        self.assertIs(None, stn.context)
-        self.assertIs(None, stn.action)
+        self.assertIs(NULL_STATE_ASSERT, stn.context)
         self.assertEqual('blank', stn.label)
 
-        # action only node
-        stn = sym_schema_tree_node('/A1/')
-        self.assertIsInstance(stn, SchemaTreeNode)
-        self.assertIs(None, stn.context)
-        self.assertEqual(Action('A1'), stn.action)
-
         # context and action node
-        stn = sym_schema_tree_node('1,2,~3/A1/')
+        stn = sym_schema_tree_node('1,2,~3')
         self.assertIsInstance(stn, SchemaTreeNode)
         self.assertEqual(sym_assert('1,2,~3'), stn.context)
-        self.assertEqual(Action('A1'), stn.action)
 
         # should work even if a result is given
-        stn = sym_schema_tree_node('1,2,~3/A1/4,5')
+        stn = sym_schema_tree_node('1,2,~3')
         self.assertIsInstance(stn, SchemaTreeNode)
         self.assertEqual(sym_assert('1,2,~3'), stn.context)
-        self.assertEqual(Action('A1'), stn.action)
 
     def test_sym_schema(self):
         # no action should return error

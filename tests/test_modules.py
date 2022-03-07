@@ -137,7 +137,7 @@ class TestModuleFunctions(TestCase):
         s3 = create_spin_off(schema=s1, spin_off_type=Schema.SpinOffType.RESULT, assertion=sym_item_assert('~(~1,2)'))
 
         self.assertEqual(s1.action, s3.action)
-        self.assertEqual(1, len(s3.result))
+        self.assertEqual(2, len(s3.result))
         self.assertTrue(sym_item_assert('~(~1,2)') in s3.result)
         self.assertIs(NULL_STATE_ASSERT, s3.context)
 

@@ -26,10 +26,9 @@ class TestObserverAndObservables(TestCase):
             self.assertTrue(obs in observable.observers)
 
         # test notify
-        observable.notify_all('args', keyword='kwargs')
+        observable.notify_all(keyword='kwargs')
         for obs in observers:
             self.assertEqual(1, obs.n_received)
-            self.assertEqual('args', obs.last_message['args'][0])
             self.assertEqual('kwargs', obs.last_message['kwargs']['keyword'])
 
         # test unregister

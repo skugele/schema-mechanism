@@ -1,3 +1,4 @@
+from copy import copy
 from time import time
 from unittest import TestCase
 
@@ -13,13 +14,8 @@ from schema_mechanism.core import ReadOnlyECItemStats
 from schema_mechanism.core import ReadOnlyERItemStats
 from schema_mechanism.core import SchemaStats
 from test_share.test_func import common_test_setup
-from test_share.test_func import is_eq_consistent
-from test_share.test_func import is_eq_reflexive
-from test_share.test_func import is_eq_symmetric
-from test_share.test_func import is_eq_transitive
-from test_share.test_func import is_eq_with_null_is_false
-from test_share.test_func import is_hash_consistent
-from test_share.test_func import is_hash_same_for_equal_objects
+from test_share.test_func import satisfies_equality_checks
+from test_share.test_func import satisfies_hash_checks
 
 
 class TestECItemStatistics(TestCase):
@@ -104,42 +100,23 @@ class TestECItemStatistics(TestCase):
         self.assertAlmostEqual(0.0, self.item_stats.success_corr, delta=1e-3)
         self.assertAlmostEqual(0.966, self.item_stats.failure_corr, delta=1e-3)
 
-    def test_copy(self):
-        copy = self.item_stats.copy()
-
-        self.assertEqual(self.item_stats, copy)
-        self.assertIsNot(self.item_stats, copy)
-
-    def test_equal(self):
+    def test_eq(self):
         self.item_stats.update(on=True, success=True)
         self.item_stats.update(on=False, success=False)
 
-        copy = self.item_stats.copy()
-        other = ECItemStats()
-
-        self.assertEqual(self.item_stats, copy)
-        self.assertNotEqual(self.item_stats, other)
-
-        self.assertTrue(is_eq_reflexive(self.item_stats))
-        self.assertTrue(is_eq_symmetric(x=self.item_stats, y=copy))
-        self.assertTrue(is_eq_transitive(x=self.item_stats, y=copy, z=copy.copy()))
-        self.assertTrue(is_eq_consistent(x=self.item_stats, y=copy))
-        self.assertTrue(is_eq_with_null_is_false(self.item_stats))
+        self.assertTrue(satisfies_equality_checks(obj=self.item_stats, other=ECItemStats()))
 
     def test_hash(self):
         self.item_stats.update(on=True, success=True)
         self.item_stats.update(on=False, success=False)
 
-        self.assertIsInstance(hash(self.item_stats), int)
-        self.assertTrue(is_hash_consistent(self.item_stats))
-        self.assertTrue(is_hash_same_for_equal_objects(x=self.item_stats, y=self.item_stats.copy()))
+        self.assertTrue(satisfies_hash_checks(obj=self.item_stats))
 
     @test_share.performance_test
     def test_performance_equal(self):
         self.item_stats.update(on=True, success=True)
         self.item_stats.update(on=False, success=False)
 
-        copy = self.item_stats.copy()
         other = ECItemStats()
 
         n_iters = 100_000
@@ -156,7 +133,7 @@ class TestECItemStatistics(TestCase):
         elapsed_time = 0
         for _ in range(n_iters):
             start = time()
-            _ = self.item_stats == copy
+            _ = self.item_stats == copy(self.item_stats)
             end = time()
             elapsed_time += end - start
 
@@ -205,35 +182,17 @@ class TestERItemStatistics(TestCase):
         self.assertEqual(self.item_stats.n_off_and_activated, 8)
         self.assertEqual(self.item_stats.n_off_and_not_activated, 8)
 
-    def test_copy(self):
-        copy = self.item_stats.copy()
-
-        self.assertEqual(self.item_stats, copy)
-        self.assertIsNot(self.item_stats, copy)
-
-    def test_equal(self):
+    def test_eq(self):
         self.item_stats.update(on=True, activated=True)
         self.item_stats.update(on=False, activated=False)
 
-        copy = self.item_stats.copy()
-        other = ERItemStats()
-
-        self.assertEqual(self.item_stats, copy)
-        self.assertNotEqual(self.item_stats, other)
-
-        self.assertTrue(is_eq_reflexive(self.item_stats))
-        self.assertTrue(is_eq_symmetric(x=self.item_stats, y=copy))
-        self.assertTrue(is_eq_transitive(x=self.item_stats, y=copy, z=copy.copy()))
-        self.assertTrue(is_eq_consistent(x=self.item_stats, y=copy))
-        self.assertTrue(is_eq_with_null_is_false(self.item_stats))
+        self.assertTrue(satisfies_equality_checks(obj=self.item_stats, other=ECItemStats()))
 
     def test_hash(self):
         self.item_stats.update(on=True, activated=True)
         self.item_stats.update(on=False, activated=False)
 
-        self.assertIsInstance(hash(self.item_stats), int)
-        self.assertTrue(is_hash_consistent(self.item_stats))
-        self.assertTrue(is_hash_same_for_equal_objects(x=self.item_stats, y=self.item_stats.copy()))
+        self.assertTrue(satisfies_hash_checks(obj=self.item_stats))
 
     def test_drescher_correlation(self):
         GlobalParams().set('correlation_method', DrescherCorrelationTest())
@@ -273,7 +232,6 @@ class TestERItemStatistics(TestCase):
         self.item_stats.update(on=True, activated=True)
         self.item_stats.update(on=False, activated=False)
 
-        copy = self.item_stats.copy()
         other = ECItemStats()
 
         n_iters = 100_000
@@ -290,7 +248,7 @@ class TestERItemStatistics(TestCase):
         elapsed_time = 0
         for _ in range(n_iters):
             start = time()
-            _ = self.item_stats == copy
+            _ = self.item_stats == copy(self.item_stats)
             end = time()
             elapsed_time += end - start
 

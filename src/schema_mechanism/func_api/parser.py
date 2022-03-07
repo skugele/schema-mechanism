@@ -8,6 +8,7 @@ from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import Item
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
+from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import StateAssertion
 
@@ -59,7 +60,7 @@ class ObjectTransformer(Transformer):
         return ItemAssertion(item=item, negated=is_negated or False)
 
     def state_assertion(self, item_asserts: list[Any]) -> StateAssertion:
-        return StateAssertion(asserts=item_asserts)
+        return StateAssertion(asserts=item_asserts) if item_asserts else NULL_STATE_ASSERT
 
     def schema(self, tokens: list[Any]) -> Schema:
         (context, action, result) = tokens

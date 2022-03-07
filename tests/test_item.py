@@ -1,4 +1,5 @@
 import unittest
+from copy import copy
 from random import sample
 from time import time
 from unittest import TestCase
@@ -23,8 +24,8 @@ from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
 from test_share.test_func import is_eq_transitive
 from test_share.test_func import is_eq_with_null_is_false
-from test_share.test_func import is_hash_consistent
-from test_share.test_func import is_hash_same_for_equal_objects
+from test_share.test_func import satisfies_equality_checks
+from test_share.test_func import satisfies_hash_checks
 
 
 class TestSymbolicItem(TestCase):
@@ -61,30 +62,11 @@ class TestSymbolicItem(TestCase):
         self.assertFalse(self.item.is_on(sym_state('123')))
         self.assertFalse(self.item.is_on(sym_state('123,4321')))
 
-    def test_copy(self):
-        copy = self.item.copy()
-
-        self.assertEqual(self.item, copy)
-        self.assertIsNot(self.item, copy)
-
-    def test_equal(self):
-        copy = self.item.copy()
-        other = SymbolicItem('123')
-
-        self.assertEqual(self.item, self.item)
-        self.assertEqual(self.item, copy)
-        self.assertNotEqual(self.item, other)
-
-        self.assertTrue(is_eq_reflexive(self.item))
-        self.assertTrue(is_eq_symmetric(x=self.item, y=copy))
-        self.assertTrue(is_eq_transitive(x=self.item, y=copy, z=copy.copy()))
-        self.assertTrue(is_eq_consistent(x=self.item, y=copy))
-        self.assertTrue(is_eq_with_null_is_false(self.item))
+    def test_eq(self):
+        self.assertTrue(satisfies_equality_checks(obj=self.item, other=SymbolicItem('123')))
 
     def test_hash(self):
-        self.assertIsInstance(hash(self.item), int)
-        self.assertTrue(is_hash_consistent(self.item))
-        self.assertTrue(is_hash_same_for_equal_objects(x=self.item, y=self.item.copy()))
+        self.assertTrue(satisfies_hash_checks(obj=self.item))
 
     @test_share.performance_test
     def test_performance(self):
@@ -536,30 +518,30 @@ class TestCompositeItem(unittest.TestCase):
         self.assertFalse(self.item.is_on(sym_state('1,4')))
         self.assertFalse(self.item.is_on(sym_state('2,4')))
 
-    def test_copy(self):
-        copy = self.item.copy()
-
-        self.assertEqual(self.item, copy)
-        self.assertIsNot(self.item, copy)
-
     def test_equal(self):
-        copy = self.item.copy()
+        obj = self.item
         other = CompositeItem(sym_state_assert('~7,8,9'))
+        copy_ = copy(obj)
 
-        self.assertEqual(self.item, self.item)
-        self.assertEqual(self.item, copy)
-        self.assertNotEqual(self.item, other)
+        self.assertEqual(obj, obj)
+        self.assertEqual(obj, copy_)
+        self.assertNotEqual(obj, other)
 
-        self.assertTrue(is_eq_reflexive(self.item))
-        self.assertTrue(is_eq_symmetric(x=self.item, y=copy))
-        self.assertTrue(is_eq_transitive(x=self.item, y=copy, z=copy.copy()))
-        self.assertTrue(is_eq_consistent(x=self.item, y=copy))
-        self.assertTrue(is_eq_with_null_is_false(self.item))
+        self.assertTrue(is_eq_reflexive(obj))
+        self.assertTrue(is_eq_symmetric(x=obj, y=copy_))
+        self.assertTrue(is_eq_transitive(x=obj, y=copy_, z=copy(copy_)))
+        self.assertTrue(is_eq_consistent(x=obj, y=copy_))
+        self.assertTrue(is_eq_with_null_is_false(obj))
+
+    def test_eq(self):
+        self.assertTrue(satisfies_equality_checks(obj=self.item, other=CompositeItem(sym_state_assert('~7,8,9'))))
 
     def test_hash(self):
-        self.assertIsInstance(hash(self.item), int)
-        self.assertTrue(is_hash_consistent(self.item))
-        self.assertTrue(is_hash_same_for_equal_objects(x=self.item, y=self.item.copy()))
+        self.assertTrue(satisfies_hash_checks(obj=self.item))
+
+    def test_equal_with_state_assert(self):
+        self.assertEqual(self.item, self.sa)
+        self.assertTrue(is_eq_symmetric(x=self.item, y=self.sa))
 
     def test_item_from_pool(self):
         sa1 = sym_state_assert('2,~3,~4')

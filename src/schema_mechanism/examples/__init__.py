@@ -56,6 +56,13 @@ def display_schema_info(schema: Schema, sm: SchemaMechanism) -> None:
         return
 
 
+def display_schema_memory(sm: SchemaMechanism) -> None:
+    info(f'schema memory:')
+    for line in str(sm.schema_memory).split('\n'):
+        info(line)
+
+
 def display_summary(sm: SchemaMechanism) -> None:
     display_item_values()
     display_known_schemas(sm)
+    display_schema_memory(sm)

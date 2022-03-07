@@ -2,15 +2,11 @@ from unittest import TestCase
 
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.func_api import sym_item
+from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_state
 from test_share.test_func import common_test_setup
-from test_share.test_func import is_eq_consistent
-from test_share.test_func import is_eq_reflexive
-from test_share.test_func import is_eq_symmetric
-from test_share.test_func import is_eq_transitive
-from test_share.test_func import is_eq_with_null_is_false
-from test_share.test_func import is_hash_consistent
-from test_share.test_func import is_hash_same_for_equal_objects
+from test_share.test_func import satisfies_equality_checks
+from test_share.test_func import satisfies_hash_checks
 
 
 class TestItemAssertion(TestCase):
@@ -49,12 +45,19 @@ class TestItemAssertion(TestCase):
         except AttributeError:
             pass
 
-    def test_copy(self):
-        copy = self.ia.copy()
+    def test_len(self):
+        i_non_composite = sym_item_assert('1')
+        i_composite_1 = sym_item_assert('(1,2)')
+        i_composite_2 = sym_item_assert('(~1,~2)')
+        i_composite_3 = sym_item_assert('(1,2,~3,4,5)')
 
-        self.assertEqual(self.ia, copy)
-        self.assertNotEqual(self.ia_neg, copy)
-        self.assertIsNot(self.ia, copy)
+        # test: non-composite item assertions should have a length of 1
+        self.assertEqual(1, len(i_non_composite))
+
+        # test: composite item assertion should have length equal to that of its state assertion
+        self.assertEqual(2, len(i_composite_1))
+        self.assertEqual(2, len(i_composite_2))
+        self.assertEqual(5, len(i_composite_3))
 
     def test_is_satisfied(self):
         # not negated
@@ -81,27 +84,8 @@ class TestItemAssertion(TestCase):
         self.assertTrue(self.ia_neg.is_satisfied(sym_state('123')))
         self.assertTrue(self.ia_neg.is_satisfied(sym_state('123,4321')))
 
-    def test_equal(self):
-        copy = self.ia.copy()
-        other = ItemAssertion(sym_item('123'))
-
-        self.assertEqual(self.ia, copy)
-        self.assertNotEqual(self.ia, other)
-
-        self.assertTrue(is_eq_reflexive(self.ia))
-        self.assertTrue(is_eq_symmetric(x=self.ia, y=copy))
-        self.assertTrue(is_eq_transitive(x=self.ia, y=copy, z=copy.copy()))
-        self.assertTrue(is_eq_consistent(x=self.ia, y=copy))
-        self.assertTrue(is_eq_with_null_is_false(self.ia))
-
-        # test equality operation between Item and ItemAssertion
-        self.assertEqual(self.ia, self.ia.item)
-        self.assertNotEqual(self.ia, other.item)
-
-        self.assertTrue(is_eq_symmetric(x=self.ia, y=self.ia.item))
-        self.assertTrue(is_eq_consistent(x=self.ia, y=self.ia.item))
+    def test_eq(self):
+        self.assertTrue(satisfies_equality_checks(obj=self.ia, other=ItemAssertion(sym_item('123'))))
 
     def test_hash(self):
-        self.assertIsInstance(hash(self.ia), int)
-        self.assertTrue(is_hash_consistent(self.ia))
-        self.assertTrue(is_hash_same_for_equal_objects(x=self.ia, y=self.ia.copy()))
+        self.assertTrue(satisfies_hash_checks(obj=self.ia))
