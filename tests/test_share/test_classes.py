@@ -81,8 +81,9 @@ class MockSchema(Schema):
                  action: Action,
                  context: Optional[StateAssertion] = None,
                  result: Optional[StateAssertion] = None,
-                 reliability: float = None):
-        super().__init__(action=action, context=context, result=result)
+                 reliability: float = None,
+                 **kwargs):
+        super().__init__(action=action, context=context, result=result, **kwargs)
 
         self._reliability = reliability
 

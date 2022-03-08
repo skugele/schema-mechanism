@@ -36,7 +36,7 @@ class RangeValidator(Validator):
 
     def __call__(self, value: Any) -> None:
         if (value < self.low) or (value > self.high) or (value in self.exclude):
-            raise ValueError(f'Value must be between {self.low} and {self.high} excluding {self.exclude}.')
+            raise ValueError(f'Value must be between {self.low} and {self.high} excluding {self.exclude or None}.')
 
 
 class TypeValidator(Validator):
@@ -124,3 +124,4 @@ class CustomValidator(Validator):
 
 
 NULL_VALIDATOR = AcceptAllValidator()
+POSITIVE_INTEGER_VALIDATOR = MultiValidator([TypeValidator([int]), RangeValidator(low=1)])

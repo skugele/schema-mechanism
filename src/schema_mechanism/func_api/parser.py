@@ -65,7 +65,7 @@ class ObjectTransformer(Transformer):
     def schema(self, tokens: list[Any]) -> Schema:
         (context, action, result) = tokens
         schema_type = GlobalParams().get('schema_type')
-        return schema_type(context=context, action=action, result=result)
+        return schema_type(context=context, action=action, result=result, **self.opt_kwargs)
 
     def action(self, tokens: list[Any]) -> Action:
         (action,) = tokens

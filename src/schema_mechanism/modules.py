@@ -67,7 +67,7 @@ class SchemaMemory(Observer):
 
     @property
     def schemas(self) -> list[Schema]:
-        return list(itertools.chain.from_iterable([n.schemas for n in self._schema_tree]))
+        return list(itertools.chain.from_iterable([n.schemas_satisfied_by for n in self._schema_tree]))
 
     # TODO: Add something for the initialization of the SchemaResultTree??? Or should I just move it out
     # TODO: of SchemaMemory entirely?
@@ -87,7 +87,7 @@ class SchemaMemory(Observer):
 
         # register listeners for schemas in tree
         for node in sm._schema_tree:
-            for schema in node.schemas:
+            for schema in node.schemas_satisfied_by:
                 schema.register(sm)
 
         return sm
@@ -151,7 +151,7 @@ class SchemaMemory(Observer):
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
         return list(
-            itertools.chain.from_iterable(n.schemas for n in self._schema_tree.find_all_satisfied(state)))
+            itertools.chain.from_iterable(n.schemas_satisfied_by for n in self._schema_tree.find_all_satisfied(state)))
 
     def receive(self, **kwargs) -> None:
         source: Schema = kwargs['source']
@@ -173,7 +173,10 @@ class SchemaMemory(Observer):
 
         self._schema_tree.add(schema, spin_offs, spin_off_type)
 
-    def backward_chains(self, goal_state: StateAssertion, max_len: Optional[int] = None) -> Collection[Chain]:
+    def backward_chains(self,
+                        goal_state: StateAssertion,
+                        max_len: Optional[int] = None,
+                        term_states: Optional[Collection[StateAssertion]] = None) -> list[Chain]:
         """ Returns a Collection of chains of reliable schemas leading away from the given goal state.
 
         Used for:
@@ -182,17 +185,42 @@ class SchemaMemory(Observer):
 
         :param goal_state: a state assertion describing the goal state
         :param max_len: an optional parameter that limits the maximum chain length
+        :param term_states: terminal states
 
         :return: a Collection of Chains
         """
+        if not goal_state or goal_state == NULL_STATE_ASSERT:
+            return list()
 
-        pass
+        if max_len is not None and max_len <= 0:
+            return list()
+
+        term_states = term_states or set()
+
+        chains = list()
+
+        nodes = self._schema_tree.find_all_would_satisfy(goal_state)
+        for n in nodes:
+            more_chains = list()
+            for s in n.schemas_would_satisfy:
+                if (s.context != goal_state) and (s.context not in term_states) and (
+                        s.result not in term_states) and is_reliable(s):
+                    chains_ = self.backward_chains(
+                        goal_state=s.context,
+                        max_len=max_len - 1 if max_len else None,
+                        term_states={s.result, goal_state, *term_states}
+                    )
+                    if chains_:
+                        for c in chains_:
+                            c.append(s)
+                    else:
+                        chains_.append(Chain([s]))
+                    more_chains.extend(chains_)
+            chains.extend(more_chains)
+        return chains
 
         # "A chaining schema's result must include the entire context of the next schema in the chain."
         # (see Drescher, 1991, p. 100)
-
-        # if max depth == 0
-        #     return empty collection
 
         # retrieve all schemas with result that matches goal state
 
@@ -679,7 +707,14 @@ class ChainNode:
 
 
 class Chain(deque):
-    pass
+    def __str__(self):
+        return '->'.join([str(link) for link in self])
+
+    def __repr__(self):
+        return str(self)
+
+    def __hash__(self):
+        return hash(tuple(self))
 
 
 # TODO: Implement this
