@@ -20,8 +20,8 @@ params.set('verbosity', Verbosity.INFO)
 
 
 def display_known_schemas(sm: SchemaMechanism) -> None:
-    info(f'number of known schemas ({len(sm.known_schemas)})')
-    for s in sm.known_schemas:
+    info(f'number of known schemas ({len(sm.schema_memory)})')
+    for s in sm.schema_memory:
         info(f'\t{str(s)}')
 
 
@@ -34,23 +34,19 @@ def display_item_values() -> None:
         info(f'\t{repr(i)}')
 
 
-def display_schema_info(schema: Schema, sm: SchemaMechanism) -> None:
-    schemas = sm.schema_memory.schemas
+def display_schema_info(schema: Schema) -> None:
     try:
-        ndx = schemas.index(schema)
-        s = schemas[ndx]
-
         info(f'schema: {schema}')
-        if s.extended_context:
+        if schema.extended_context:
             info('EXTENDED_CONTEXT')
-            info(f'relevant items: {s.extended_context.relevant_items}')
-            for k, v in s.extended_context.stats.items():
+            info(f'relevant items: {schema.extended_context.relevant_items}')
+            for k, v in schema.extended_context.stats.items():
                 info(f'item: {k} -> {repr(v)}')
 
-        if s.extended_result:
+        if schema.extended_result:
             info('EXTENDED_RESULT')
-            info(f'relevant items: {s.extended_result.relevant_items}')
-            for k, v in s.extended_result.stats.items():
+            info(f'relevant items: {schema.extended_result.relevant_items}')
+            for k, v in schema.extended_result.stats.items():
                 info(f'item: {k} -> {repr(v)}')
     except ValueError:
         return

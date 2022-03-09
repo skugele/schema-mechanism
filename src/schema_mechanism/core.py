@@ -412,6 +412,8 @@ class ItemPool(metaclass=Singleton):
         ItemPool._items.clear()
         ItemPool._composite_items.clear()
 
+    # TODO: can this be changed to a overloaded method for source=StateElement and source=StateAssertion using
+    # TODO: the @singledispatch decorator?
     def get(self, source: Any, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
         read_only = kwargs.get('read_only', False)
         item_type = item_type or GlobalParams().get('item_type')
@@ -1253,17 +1255,38 @@ class Action(UniqueIdMixin):
         return self._label
 
 
-# TODO: Implement composite actions.
-class CompositeAction:
+class CompositeAction(Action):
     """
 
-     “A composite action is considered to have been implicitly taken whenever its goal state becomes satisfied--that
-     is, makes a transition from Off to On--even if that composite action was never initiated by an activated schema.
-     Marginal attribution can thereby detect results caused by the goal state, even if the goal state obtains due
-     to external events.” (See Drescher, 1991, p. 91)
-
     """
-    pass
+
+    class Controller:
+        def __init__(self):
+            self._components: Collection[Schema] = set()
+            self._goal_proximity: dict[Schema, int] = defaultdict(lambda: np.inf)
+
+        @property
+        def components(self) -> Collection[Schema]:
+            return self._components
+
+        def update(self) -> None:
+            pass
+
+    def __init__(self, goal_state: StateAssertion, **kwargs):
+        super().__init__(**kwargs)
+
+        if not goal_state:
+            raise ValueError('Goal state is not optional.')
+
+        self._goal_state = goal_state
+        self._controller = CompositeAction.Controller()
+
+    @property
+    def controller(self) -> CompositeAction.Controller:
+        return self._controller
+
+    def is_enabled(self, state: State) -> bool:
+        return any({schema.is_applicable(state) for schema in self._controller.components})
 
 
 class Assertion(ABC):

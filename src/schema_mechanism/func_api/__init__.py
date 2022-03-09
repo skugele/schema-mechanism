@@ -52,6 +52,10 @@ def sym_item_assert(str_repr: str, **kwargs) -> ItemAssertion:
 
 
 def sym_state_assert(str_repr: str, **kwargs) -> StateAssertion:
+    # parser requires a trailing comma for one element state assertions
+    if str_repr and not str_repr.endswith(','):
+        str_repr += ','
+
     obj = sym_assert(str_repr, **kwargs)
     if not isinstance(obj, StateAssertion):
         raise ValueError(f'String representation for state assertion is invalid: {str_repr}')

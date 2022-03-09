@@ -65,19 +65,16 @@ class SchemaMemory(Observer):
     def __str__(self):
         return str(self._schema_tree)
 
-    @property
-    def schemas(self) -> list[Schema]:
-        return list(itertools.chain.from_iterable([n.schemas_satisfied_by for n in self._schema_tree]))
+    def __iter__(self) -> Schema:
+        yield from itertools.chain.from_iterable([n.schemas_satisfied_by for n in self._schema_tree])
 
-    # TODO: Add something for the initialization of the SchemaResultTree??? Or should I just move it out
-    # TODO: of SchemaMemory entirely?
     @staticmethod
     def from_tree(tree: SchemaTree) -> SchemaMemory:
-        """ A factory method to initialize a SchemaMemory instance from a SchemaContextTree.
+        """ A factory method to initialize a SchemaMemory instance from a SchemaTree.
 
         Note: This method can be used to initialize SchemaMemory with arbitrary built-in schemas.
 
-        :param tree: a SchemaContextTree pre-loaded with schemas.
+        :param tree: a SchemaTree pre-loaded with schemas.
         :return: a tree-initialized SchemaMemory instance
         """
         sm = SchemaMemory()
@@ -122,6 +119,15 @@ class SchemaMemory(Observer):
 
         # state transition explained by activated reliable schema (see SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
         explained = False
+
+        # TODO: Need to calculate activation for schema's with composite actions.
+        # TODO: It may be cleanest to create a new "is_activated" method on the schema class, to abstract away the
+        # TODO: differences between composite and primitive actions.
+
+        # “A composite action is considered to have been implicitly taken whenever its goal state becomes
+        #  satisfied--that is, makes a transition from Off to On--even if that composite action was never initiated by
+        #  an activated schema. Marginal attribution can thereby detect results caused by the goal state, even if the
+        #  goal state obtains due to external events.” (See Drescher, 1991, p. 91)
 
         # I'm assuming that only APPLICABLE schemas should be updated. This is based on the belief that all
         # of the probabilities within a schema are really conditioned on the context being satisfied, even
@@ -177,7 +183,10 @@ class SchemaMemory(Observer):
                         goal_state: StateAssertion,
                         max_len: Optional[int] = None,
                         term_states: Optional[Collection[StateAssertion]] = None) -> list[Chain]:
-        """ Returns a Collection of chains of reliable schemas leading away from the given goal state.
+        """ Returns a Collection of chains of RELIABLE schemas in proximity to the given goal state.
+
+        "A chaining schema's result must include the entire context of the next schema in the chain."
+            (see Drescher, 1991, p. 100)
 
         Used for:
             (1) composite action controllers (see Drescher 1991, Sections 4.3 and 5.1.2)
@@ -202,9 +211,12 @@ class SchemaMemory(Observer):
         nodes = self._schema_tree.find_all_would_satisfy(goal_state)
         for n in nodes:
             more_chains = list()
+
             for s in n.schemas_would_satisfy:
-                if (s.context != goal_state) and (s.context not in term_states) and (
-                        s.result not in term_states) and is_reliable(s):
+                if ((s.context != goal_state)
+                        and (s.context not in term_states)
+                        and (s.result not in term_states)
+                        and is_reliable(s)):
                     chains_ = self.backward_chains(
                         goal_state=s.context,
                         max_len=max_len - 1 if max_len else None,
@@ -218,37 +230,6 @@ class SchemaMemory(Observer):
                     more_chains.extend(chains_)
             chains.extend(more_chains)
         return chains
-
-        # "A chaining schema's result must include the entire context of the next schema in the chain."
-        # (see Drescher, 1991, p. 100)
-
-        # retrieve all schemas with result that matches goal state
-
-        # if no matching schemas
-        #     return empty collection
-        # else
-        #     for each goal schema in goal match list
-        #         retrieve list of RELIABLE schemas with a result that satisfies the goal schema's context
-
-        # X -> M -> J
-        # X -> M -> K
-        # X -> M -> L
-        # ...
-        # X -> N -> ...
-        # X -> O -> ...
-        # ...
-        # Y -> ...
-        # Z -> ...
-
-        #    X (C1/A/G)       ...               Y (C2/A/G)       Z (C3/A/G)                [chain(goal=G, max_depth=N)]
-        #    M (C11/A/C1)     ...               N (C12/A/C1)     O (C13/A/C1)              [chain(goal=C1, max_depth=N-1)]
-        #    J (C111/A/C11)   ...               K (C112/A/C11)   L (C113/A/C11)            [chain(goal=C11, max_depth=N-2)]
-        #    ...
-        #    No Match For C111 or max_depth == 0                                           [chain(goal=C11...1, max_depth=0)]
-
-        # [[J],[K],[L]]                                                   *** result from chain(goal=C11)
-        # [[M,J],[M,K],[M,L]],... [[N,??],[N,??],[N,??]]                  *** result from chain(goal=C1)
-        # [[X,M,J],[X,M,K],[X,M,L]],... [[X,N,??],[X,N,??],[X,N,??]]      *** result from chain(goal=G)
 
 
 # Type aliases
@@ -594,10 +575,6 @@ class SchemaMechanism:
     def schema_selection(self) -> SchemaSelection:
         return self._schema_selection
 
-    @property
-    def known_schemas(self) -> Collection[Schema]:
-        return self._schema_memory.schemas
-
     def select(self, state: State, **kwargs) -> Schema:
         # TODO: Would it be better to lazy initialize items into item pool for non-primitive items?
         for se in state:
@@ -665,6 +642,15 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
             if schema.result is NULL_STATE_ASSERT
             else Assertion.replicate_with(old=schema.result, new=assertion)
         )
+
+        # TODO: create CompositeAction if result is novel.
+        # TODO: construct a bare schema containing the composite action.
+        # "Whenever a bare schema spawns a spinoff schema, the mechanism determines whether the new schema's result
+        #  is novel, as opposed to its already appearing as the result component of some other schema. If the result is
+        #  novel, the schema mechanism defines a new composite action with that result as its goal state; it is the
+        #  action of achieving that result. The schema mechanism also constructs a bare schema which has that action;
+        #  that schema's extended result then can discover effects of achieving the action's goal state."
+        #      (See Drescher 1991, p. 90)
 
         return Schema(action=schema.action, context=schema.context, result=new_result)
 

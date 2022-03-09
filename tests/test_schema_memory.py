@@ -59,6 +59,11 @@ class TestSchemaMemory(TestCase):
         s1_r102 = sym_schema('/A1/102,')
         self.tree.add_result_spin_offs(s1, (s1_r102,))
 
+        self.schemas = {
+            s1, s2, s1_1, s1_2, s1_3, s1_4, s2_1, s2_2, s1_1_1, s1_1_2, s1_1_3, s1_1_4, s1_1_2_1, s1_1_2_2, s1_1_2_3,
+            s1_1_2_1_1, s1_1_2_3_1, s1_1_r100, s1_r102
+        }
+
         # Tree contents:
         #
         # root
@@ -112,6 +117,9 @@ class TestSchemaMemory(TestCase):
         s_not_found = sym_schema('1,2,3,4,5/A7/')
         self.assertNotIn(s_not_found, self.sm)
 
+    def test_schemas(self):
+        pass
+
     def test_all_applicable(self):
         # case 1: only no-context, action-only nodes
         state = sym_state('')
@@ -144,7 +152,7 @@ class TestSchemaMemory(TestCase):
 
         selected_schema = sym_schema('1,3,5,7/A1/10,')
 
-        all_schemas = set(self.sm.schemas)
+        all_schemas = set([s for s in self.sm])
         applicable_schemas = set(self.sm.all_applicable(selection_state))
         non_applicable_schemas = all_schemas - applicable_schemas
 
