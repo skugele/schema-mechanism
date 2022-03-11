@@ -902,6 +902,14 @@ class CompositeAction(Action):
 
         self._controller = CompositeAction.Controller(goal_state)
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, CompositeAction):
+            return self.goal_state == other.goal_state
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.goal_state)
+
     @property
     def goal_state(self) -> StateAssertion:
         return self._controller.goal_state

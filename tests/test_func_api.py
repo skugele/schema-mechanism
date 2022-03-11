@@ -1,6 +1,7 @@
 import unittest
 
 from schema_mechanism.core import Action
+from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import NULL_STATE_ASSERT
@@ -189,6 +190,65 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertEqual(Action('A1'), schema.action)
         self.assertIn(sym_assert('(~3,4)'), schema.result)
         self.assertIn(sym_assert('5'), schema.result)
+
+    def test_sym_schema_with_composite_actions(self):
+        # primitive schemas with composite actions
+        schema = sym_schema('/A,/')
+        self.assertIsInstance(schema, Schema)
+        self.assertIs(NULL_STATE_ASSERT, schema.context)
+        self.assertIs(NULL_STATE_ASSERT, schema.result)
+        self.assertEqual(CompositeAction(sym_state_assert('A,')), schema.action)
+
+        schema = sym_schema('/~A,/')
+        self.assertIsInstance(schema, Schema)
+        self.assertIs(NULL_STATE_ASSERT, schema.context)
+        self.assertIs(NULL_STATE_ASSERT, schema.result)
+        self.assertEqual(CompositeAction(sym_state_assert('~A,')), schema.action)
+
+        schema = sym_schema('/(1,2),/')
+        self.assertIsInstance(schema, Schema)
+        self.assertIs(NULL_STATE_ASSERT, schema.context)
+        self.assertIs(NULL_STATE_ASSERT, schema.result)
+        self.assertEqual(CompositeAction(sym_state_assert('(1,2),')), schema.action)
+
+        schema = sym_schema('/(~1,2),/')
+        self.assertIsInstance(schema, Schema)
+        self.assertIs(NULL_STATE_ASSERT, schema.context)
+        self.assertIs(NULL_STATE_ASSERT, schema.result)
+        self.assertEqual(CompositeAction(sym_state_assert('(~1,2),')), schema.action)
+
+        # context only schema with composite actions
+        schema = sym_schema('1,~2/(~1,2),/')
+        self.assertIsInstance(schema, Schema)
+        self.assertIsNot(NULL_STATE_ASSERT, schema.context)
+        self.assertIs(NULL_STATE_ASSERT, schema.result)
+        self.assertEqual(CompositeAction(sym_state_assert('(~1,2),')), schema.action)
+        self.assertIn(sym_assert('1'), schema.context)
+        self.assertIn(sym_assert('~2'), schema.context)
+        self.assertNotIn(sym_assert('3'), schema.context)
+
+        # result only schema
+        schema = sym_schema('/(~1,2),/1,~2')
+        self.assertIsInstance(schema, Schema)
+        self.assertIs(NULL_STATE_ASSERT, schema.context)
+        self.assertIsNot(NULL_STATE_ASSERT, schema.result)
+        self.assertEqual(CompositeAction(sym_state_assert('(~1,2),')), schema.action)
+        self.assertIn(sym_assert('1'), schema.result)
+        self.assertIn(sym_assert('~2'), schema.result)
+        self.assertNotIn(sym_assert('3'), schema.result)
+
+        # full schema
+        schema = sym_schema('1,~2/(~1,2),/~3,4')
+        self.assertIsInstance(schema, Schema)
+        self.assertIsNot(NULL_STATE_ASSERT, schema.context)
+        self.assertIsNot(NULL_STATE_ASSERT, schema.result)
+        self.assertEqual(CompositeAction(sym_state_assert('(~1,2),')), schema.action)
+        self.assertIn(sym_assert('1'), schema.context)
+        self.assertIn(sym_assert('~2'), schema.context)
+        self.assertNotIn(sym_assert('3'), schema.context)
+        self.assertIn(sym_assert('~3'), schema.result)
+        self.assertIn(sym_assert('4'), schema.result)
+        self.assertNotIn(sym_assert('5'), schema.result)
 
     def test_sym_composite_item(self):
         self.assertIsInstance(sym_item('(1,2)'), CompositeItem)

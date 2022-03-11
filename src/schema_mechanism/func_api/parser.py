@@ -4,6 +4,7 @@ from lark import Lark
 from lark import Transformer
 
 from schema_mechanism.core import Action
+from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import Item
 from schema_mechanism.core import ItemAssertion
@@ -21,18 +22,22 @@ GRAMMAR = r"""
             | composite_item
             | item_assertion
             | state_assertion
-            | schema
-            | action
+            | schema_with_primitive_action
+            | schema_with_composite_action
+            | primitive_action
+            | composite_action
 
     STRING : /[^~,\/)(]+/
 
     negated : "~"
-    action: STRING   
+    primitive_action: STRING   
+    composite_action: state_assertion
     item: STRING
     item_assertion : [negated] (item | composite_item)
     state_assertion : item_assertion ("," | ("," item_assertion)+ [","])
     composite_item : "(" state_assertion ")"
-    schema : [state_assertion] "/" action "/" [state_assertion]
+    schema_with_primitive_action : [state_assertion] "/" primitive_action "/" [state_assertion]
+    schema_with_composite_action : [state_assertion] "/" composite_action "/" [state_assertion]
 
     %import common.WS
     %ignore WS
@@ -64,14 +69,26 @@ class ObjectTransformer(Transformer):
     def state_assertion(self, item_asserts: list[Any]) -> StateAssertion:
         return StateAssertion(asserts=item_asserts) if item_asserts else NULL_STATE_ASSERT
 
-    def schema(self, tokens: list[Any]) -> Schema:
-        (context, action, result) = tokens
+    def schema_with_primitive_action(self, tokens: list[Any]) -> Schema:
+        (context, primitive_action, result) = tokens
         schema_type = GlobalParams().get('schema_type') or Schema
-        return schema_type(context=context, action=action, result=result, **self.opt_kwargs)
+        return schema_type(context=context, action=primitive_action, result=result, **self.opt_kwargs)
 
-    def action(self, tokens: list[Any]) -> Action:
+    def schema_with_composite_action(self, tokens: list[Any]) -> Schema:
+        (context, composite_action, result) = tokens
+        schema_type = GlobalParams().get('schema_type') or Schema
+        return schema_type(context=context,
+                           action=composite_action,
+                           result=result,
+                           **self.opt_kwargs)
+
+    def primitive_action(self, tokens: list[Any]) -> Action:
         (action,) = tokens
         return Action(label=str(action))
+
+    def composite_action(self, tokens: list[Any]) -> CompositeAction:
+        (state_assertion,) = tokens
+        return CompositeAction(goal_state=state_assertion)
 
     def negated(self, _: Any):
         return True

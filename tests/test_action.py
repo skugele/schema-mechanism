@@ -22,7 +22,7 @@ class TestAction(TestCase):
         n_actions = 100_000
         self.assertTrue(n_actions, len(set([Action() for _ in range(n_actions)])))
 
-    def test_eq(self):
+    def test_equals(self):
         self.assertTrue(satisfies_equality_checks(obj=self.a, other=Action('other')))
 
         # test: labels should be used to determine equality (if they exist)

@@ -39,6 +39,7 @@ class TestSchema(TestCase):
             _ = self._item_pool.get(str(i), primitive_value=1.0, item_type=SymbolicItem)
 
         self.schema = sym_schema('0,1/A1/2,3,4')
+        self.schema_ca = sym_schema('0,1/2,3/2,3,4')
 
         self.obs = MockObserver()
         self.schema.register(self.obs)
@@ -86,21 +87,6 @@ class TestSchema(TestCase):
         except AttributeError:
             pass
 
-    # def test_items_in_context_and_result(self):
-    #     for item in itertools.chain.from_iterable([self.schema.context.items, self.schema.result.items]):
-    #         self.assertIsInstance(item, SymbolicItem)
-    #         self.assertEqual(1.0, item.primitive_value)
-    #
-    #     # all schemas should share the same underlying items
-    #     s1 = sym_schema('1,2/A1/3,4')
-    #     s2 = sym_schema('1,2/A2/3,4')
-    #
-    #     for i1, i2 in zip(s1.context.items, s2.context.items):
-    #         self.assertIs(i1, i2)
-    #
-    #     for i1, i2 in zip(s1.result.items, s2.result.items):
-    #         self.assertIs(i1, i2)
-
     def test_is_context_satisfied(self):
         c = sym_state_assert('1,~2,3')
         schema = Schema(context=c, action=Action(), result=None)
@@ -122,6 +108,10 @@ class TestSchema(TestCase):
         # case 3 : both present negated item and missing non-negated item
         self.assertFalse(schema.context.is_satisfied(state=sym_state('1,2')))
         self.assertFalse(schema.context.is_satisfied(state=sym_state('2,3')))
+
+        # complex action schema
+        self.assertTrue(self.schema_ca.context.is_satisfied(state=sym_state('0,1')))
+        self.assertTrue(self.schema_ca.context.is_satisfied(state=sym_state('0,1,2')))
 
     def test_is_applicable(self):
         # test: primitive schemas should always be applicable
@@ -161,6 +151,12 @@ class TestSchema(TestCase):
         # expected to NOT be applicable (due to overriding condition)
         self.assertFalse(schema.is_applicable(state=sym_state('1,3,4,5')))
 
+        # Tests applicability of schema with complex action
+        ###################################################
+        self.assertTrue(self.schema_ca.is_applicable(sym_state('0,1')))
+        self.assertFalse(self.schema_ca.is_applicable(sym_state('1')))
+        self.assertFalse(self.schema_ca.is_applicable(sym_state('2')))
+
     def test_predicts_state(self):
         state = sym_state('1,2,3')  # used for all test cases
 
@@ -199,6 +195,9 @@ class TestSchema(TestCase):
         # ---> negative cases
         self.assertFalse(sym_schema('/action/(1,3),~2').predicts_state(state))
         self.assertFalse(sym_schema('/action/(1,2,3),4').predicts_state(state))
+
+        # complex action schema
+        self.assertTrue(self.schema_ca.predicts_state(sym_state('2,3,4')))
 
     def test_update_1(self):
         # testing activated + success

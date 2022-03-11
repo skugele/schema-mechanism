@@ -14,6 +14,8 @@ from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.share import GlobalParams
 from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
+from test_share.test_func import satisfies_equality_checks
+from test_share.test_func import satisfies_hash_checks
 
 
 class TestShared(unittest.TestCase):
@@ -85,6 +87,7 @@ class TestCompositeAction(TestShared):
         self.label = 'CA1'
 
         self.ca = CompositeAction(goal_state=self.goal_state, label=self.label)
+        self.other = CompositeAction(goal_state=sym_state_assert('F'), label='other')
 
     # noinspection PyTypeChecker,PyArgumentList
     def test_init(self):
@@ -104,6 +107,21 @@ class TestCompositeAction(TestShared):
 
         # test: a unique id should be assigned
         self.assertIsNotNone(self.ca.uid)
+
+    def test_equals(self):
+        self.assertTrue(satisfies_equality_checks(obj=self.ca, other=self.other))
+
+        # test: goal state is used to determine equality NOT labels
+        ca_1 = CompositeAction(sym_state_assert('1,2'), label='CA1')
+        ca_2 = CompositeAction(sym_state_assert('1,2'), label='CA2')
+        ca_3 = CompositeAction(sym_state_assert('1,3'), label='CA1')
+
+        self.assertEqual(ca_1, ca_2)
+        self.assertNotEqual(ca_1, ca_3)
+        self.assertNotEqual(ca_2, ca_3)
+
+    def test_hash(self):
+        self.assertTrue(satisfies_hash_checks(obj=self.ca))
 
 
 class TestController(TestShared):
