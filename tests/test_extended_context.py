@@ -3,9 +3,7 @@ from unittest import TestCase
 from unittest.mock import PropertyMock
 from unittest.mock import patch
 
-from schema_mechanism.core import DrescherCorrelationTest
 from schema_mechanism.core import ExtendedContext
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_EC_ITEM_STATS
@@ -17,6 +15,8 @@ from schema_mechanism.func_api import sym_asserts
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
+from schema_mechanism.share import GlobalParams
+from schema_mechanism.stats import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
 
@@ -27,7 +27,7 @@ class TestExtendedContext(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        GlobalParams().set('correlation_method', DrescherCorrelationTest())
+        GlobalParams().set('correlation_test', DrescherCorrelationTest())
         GlobalParams().set('positive_correlation_threshold', 0.65)
         GlobalParams().set('negative_correlation_threshold', 0.65)
 
@@ -200,8 +200,8 @@ class TestExtendedContext(TestCase):
         self.ec.update(i1, on=True, success=True)
 
         i1_stats = self.ec.stats[i1]
-        self.assertTrue(i1_stats.success_corr > GlobalParams().get('positive_correlation_threshold'))
-        self.assertTrue(i1_stats.failure_corr <= GlobalParams().get('negative_correlation_threshold'))
+        self.assertTrue(i1_stats.positive_correlation_stat > GlobalParams().get('positive_correlation_threshold'))
+        self.assertTrue(i1_stats.negative_correlation_stat <= GlobalParams().get('negative_correlation_threshold'))
 
         self.assertEqual(1, len(self.ec.pending_relevant_items))
         self.ec.check_pending_relevant_items()
@@ -238,8 +238,8 @@ class TestExtendedContext(TestCase):
         self.ec.update(i1, on=False, success=False, count=10)
 
         i1_stats = self.ec.stats[i1]
-        self.assertTrue(i1_stats.success_corr > GlobalParams().get('positive_correlation_threshold'))
-        self.assertTrue(i1_stats.failure_corr <= GlobalParams().get('negative_correlation_threshold'))
+        self.assertTrue(i1_stats.positive_correlation_stat > GlobalParams().get('positive_correlation_threshold'))
+        self.assertTrue(i1_stats.negative_correlation_stat <= GlobalParams().get('negative_correlation_threshold'))
 
         # verify suppressed item NOT in relevant items list
         self.assertEqual(0, len(self.ec.pending_relevant_items))

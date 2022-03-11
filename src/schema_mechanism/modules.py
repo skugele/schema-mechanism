@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import itertools
-from collections import deque
 from collections.abc import Callable
 from collections.abc import Collection
 from collections.abc import Sequence
@@ -12,9 +11,9 @@ import numpy as np
 
 from schema_mechanism.core import Action
 from schema_mechanism.core import Assertion
+from schema_mechanism.core import Chain
 from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import CompositeItem
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Item
 from schema_mechanism.core import ItemAssertion
@@ -25,14 +24,15 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
-from schema_mechanism.core import SupportedFeature
-from schema_mechanism.core import debug
-from schema_mechanism.core import is_feature_enabled
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
-from schema_mechanism.core import rng
-from schema_mechanism.core import trace
+from schema_mechanism.share import GlobalParams
+from schema_mechanism.share import SupportedFeature
+from schema_mechanism.share import debug
+from schema_mechanism.share import is_feature_enabled
+from schema_mechanism.share import rng
+from schema_mechanism.share import trace
 from schema_mechanism.util import Observer
 
 
@@ -518,7 +518,7 @@ class SchemaSelection:
         # Composite Actions #
         #####################
 
-        # TODO: What does this mean?
+        # TODO: Implement this.
         #   “A composite action is enabled when one of its components is applicable. If a schema is applicable but
         #    its action is not enabled, its selection for activation is inhibited; having a non-enabled action is,
         #    in this respect, similar to having an override condition obtain.” (Drescher, 1991, p.90)
@@ -676,31 +676,6 @@ def create_result_spin_off(source: Schema, item_assert: ItemAssertion) -> Schema
     :return: a new result spin-off
     """
     return create_spin_off(source, Schema.SpinOffType.RESULT, item_assert)
-
-
-class ChainNode:
-    def __init__(self, schema: Schema, proximity: int):
-        self._schema = schema
-        self._proximity = proximity
-
-    @property
-    def schema(self) -> Schema:
-        return self._schema
-
-    @property
-    def proximity(self) -> int:
-        return self._proximity
-
-
-class Chain(deque):
-    def __str__(self):
-        return '->'.join([str(link) for link in self])
-
-    def __repr__(self):
-        return str(self)
-
-    def __hash__(self):
-        return hash(tuple(self))
 
 
 # TODO: Implement this

@@ -1,14 +1,14 @@
 from random import sample
 from unittest import TestCase
 
-from schema_mechanism.core import DrescherCorrelationTest
 from schema_mechanism.core import ExtendedResult
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_ER_ITEM_STATS
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
+from schema_mechanism.share import GlobalParams
+from schema_mechanism.stats import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
 
@@ -19,7 +19,7 @@ class TestExtendedResult(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        GlobalParams().set('correlation_method', DrescherCorrelationTest())
+        GlobalParams().set('correlation_test', DrescherCorrelationTest())
         GlobalParams().set('positive_correlation_threshold', 0.65)
         GlobalParams().set('negative_correlation_threshold', 0.65)
 
@@ -98,8 +98,8 @@ class TestExtendedResult(TestCase):
         self.assertEqual(1, len(self.er.new_relevant_items))
 
         i1_stats = self.er.stats[i1]
-        self.assertTrue(i1_stats.positive_transition_corr > GlobalParams().get('positive_correlation_threshold'))
-        self.assertTrue(i1_stats.negative_transition_corr <= GlobalParams().get('negative_correlation_threshold'))
+        self.assertTrue(i1_stats.positive_correlation_stat > GlobalParams().get('positive_correlation_threshold'))
+        self.assertTrue(i1_stats.negative_correlation_stat <= GlobalParams().get('negative_correlation_threshold'))
 
         # verify only one relevant item
         self.assertEqual(1, len(self.er.relevant_items))
@@ -128,8 +128,8 @@ class TestExtendedResult(TestCase):
         self.er.update(i1, on=False, activated=False, count=10)
 
         i1_stats = self.er.stats[i1]
-        self.assertTrue(i1_stats.positive_transition_corr > GlobalParams().get('positive_correlation_threshold'))
-        self.assertTrue(i1_stats.negative_transition_corr <= GlobalParams().get('negative_correlation_threshold'))
+        self.assertTrue(i1_stats.positive_correlation_stat > GlobalParams().get('positive_correlation_threshold'))
+        self.assertTrue(i1_stats.negative_correlation_stat <= GlobalParams().get('negative_correlation_threshold'))
 
         # verify suppressed item NOT in relevant items list
         self.assertEqual(0, len(self.er.relevant_items))

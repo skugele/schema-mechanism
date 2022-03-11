@@ -1,7 +1,6 @@
 from unittest import TestCase
 
 from schema_mechanism.core import Action
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SupportedFeature
@@ -10,6 +9,7 @@ from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import create_spin_off
+from schema_mechanism.share import GlobalParams
 from test_share.test_func import common_test_setup
 
 

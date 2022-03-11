@@ -4,13 +4,15 @@ from lark import Lark
 from lark import Transformer
 
 from schema_mechanism.core import Action
-from schema_mechanism.core import GlobalParams
+from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import Item
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import StateAssertion
+from schema_mechanism.core import SymbolicItem
+from schema_mechanism.share import GlobalParams
 
 # Lark-based parser grammar (see https://lark-parser.readthedocs.io/en/latest/) used for parsing string representations
 # into core objects (e.g., items, assertions, and schemas).
@@ -47,13 +49,13 @@ class ObjectTransformer(Transformer):
 
     def item(self, tokens: list[Any]) -> Item:
         (state_element,) = tokens
-        self.opt_kwargs['item_type'] = GlobalParams().get('item_type')
+        self.opt_kwargs['item_type'] = GlobalParams().get('item_type') or SymbolicItem
         return ItemPool().get(str(state_element), **self.opt_kwargs)
 
     def composite_item(self, tokens: list[Any]) -> Item:
         (state_assertion,) = tokens
-        self.opt_kwargs['item_type'] = GlobalParams().get('composite_item_type')
-        return ItemPool().get(source=state_assertion, **self.opt_kwargs)
+        self.opt_kwargs['item_type'] = GlobalParams().get('composite_item_type') or CompositeItem
+        return ItemPool().get(state_assertion, **self.opt_kwargs)
 
     def item_assertion(self, tokens: list[Any]) -> ItemAssertion:
         (is_negated, item) = tokens
@@ -64,7 +66,7 @@ class ObjectTransformer(Transformer):
 
     def schema(self, tokens: list[Any]) -> Schema:
         (context, action, result) = tokens
-        schema_type = GlobalParams().get('schema_type')
+        schema_type = GlobalParams().get('schema_type') or Schema
         return schema_type(context=context, action=action, result=result, **self.opt_kwargs)
 
     def action(self, tokens: list[Any]) -> Action:

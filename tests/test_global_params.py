@@ -1,12 +1,10 @@
 import unittest
 
-from schema_mechanism.core import CompositeItem
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import SupportedFeature
-from schema_mechanism.core import SymbolicItem
-from schema_mechanism.core import Verbosity
-from schema_mechanism.core import display_message
 from schema_mechanism.core import is_feature_enabled
+from schema_mechanism.share import GlobalParams
+from schema_mechanism.share import Verbosity
+from schema_mechanism.share import display_message
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
@@ -95,48 +93,6 @@ class TestGlobalParams(unittest.TestCase):
 
         # test: values NOT between 0 and 1 and non-integer values should be rejected
         for illegal_value in [-1, 0.5, 'str']:
-            try:
-                self.gp.set(key, illegal_value)
-                self.fail('Did not raise expected ValueError on illegal value')
-            except ValueError:
-                pass
-
-    def test_item_type(self):
-        key = 'item_type'
-
-        # test: value should be the default before updates
-        self.assertEqual(self.gp.defaults[key], self.gp.get(key))
-
-        # test: instances of CompositeItem should be accepted and returned
-        self.gp.set(key, SymbolicItem)
-        self.assertEqual(SymbolicItem, self.gp.get(key))
-
-        self.gp.set(key, MockSymbolicItem)
-        self.assertEqual(MockSymbolicItem, self.gp.get(key))
-
-        # test: values that are not derived from Item class should be rejected
-        for illegal_value in [int, str]:
-            try:
-                self.gp.set(key, illegal_value)
-                self.fail('Did not raise expected ValueError on illegal value')
-            except ValueError:
-                pass
-
-    def test_composite_item_type(self):
-        key = 'composite_item_type'
-
-        # test: value should be the default before updates
-        self.assertEqual(self.gp.defaults[key], self.gp.get(key))
-
-        # test: instances of CompositeItem should be accepted and returned
-        self.gp.set(key, CompositeItem)
-        self.assertEqual(CompositeItem, self.gp.get(key))
-
-        self.gp.set(key, MockCompositeItem)
-        self.assertEqual(MockCompositeItem, self.gp.get(key))
-
-        # test: values that are not derived from CompositeItem class should be rejected
-        for illegal_value in [SymbolicItem, MockSymbolicItem, str]:
             try:
                 self.gp.set(key, illegal_value)
                 self.fail('Did not raise expected ValueError on illegal value')
@@ -288,3 +244,15 @@ class TestGlobalParams(unittest.TestCase):
                 self.assertTrue(is_feature_enabled(feature))
             else:
                 self.assertFalse(is_feature_enabled(feature))
+
+    def test_defaults(self):
+        self.assertEqual(Verbosity.WARN, self.gp.defaults['verbosity'])
+        self.assertEqual('{timestamp} [{severity}]\t{message}', self.gp.defaults['output_format'])
+        self.assertLessEqual(0, self.gp.defaults['rng_seed'])
+        self.assertEqual(0.01, self.gp.defaults['learning_rate'])
+        self.assertEqual(0.95, self.gp.defaults['positive_correlation_threshold'])
+        self.assertEqual(0.95, self.gp.defaults['negative_correlation_threshold'])
+        self.assertEqual(0.95, self.gp.defaults['reliability_threshold'])
+        self.assertEqual(5, self.gp.defaults['dv_trace_max_len'])
+        self.assertEqual(0.6, self.gp.defaults['goal_weight'])
+        self.assertEqual(0.4, self.gp.defaults['explore_weight'])

@@ -6,12 +6,12 @@ from typing import Optional
 from schema_mechanism.core import Action
 from schema_mechanism.core import State
 from schema_mechanism.core import StateElement
-from schema_mechanism.core import info
-from schema_mechanism.core import rng
 from schema_mechanism.examples import display_summary
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import SchemaMechanism
+from schema_mechanism.share import info
+from schema_mechanism.share import rng
 from schema_mechanism.util import Observable
 
 

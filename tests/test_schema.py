@@ -8,8 +8,6 @@ import numpy as np
 
 import test_share
 from schema_mechanism.core import Action
-from schema_mechanism.core import DrescherCorrelationTest
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
@@ -22,6 +20,8 @@ from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.func_api import update_schema
+from schema_mechanism.share import GlobalParams
+from schema_mechanism.stats import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
 from test_share.test_func import satisfies_equality_checks
@@ -397,7 +397,7 @@ class TestSchema(TestCase):
         self.assertEqual(1.0, self.schema.reliability)
 
     def test_notify_all(self):
-        GlobalParams().set('correlation_method', DrescherCorrelationTest())
+        GlobalParams().set('correlation_test', DrescherCorrelationTest())
 
         self.schema.notify_all = MagicMock()
 

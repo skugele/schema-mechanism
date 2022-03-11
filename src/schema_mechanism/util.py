@@ -1,3 +1,4 @@
+import importlib
 import itertools
 from abc import ABCMeta
 from collections import Collection
@@ -5,6 +6,7 @@ from collections.abc import Iterable
 from itertools import tee
 from typing import Any
 from typing import Optional
+from typing import Type
 
 import numpy as np
 import sklearn.metrics as sk_metrics
@@ -129,3 +131,8 @@ def pairwise(iterable):
     a, b = tee(iterable)
     next(b, None)
     return zip(a, b)
+
+
+def dynamic_type(module_name: str, class_name: str) -> Type[Any]:
+    module = importlib.import_module(module_name)
+    return getattr(module, class_name)

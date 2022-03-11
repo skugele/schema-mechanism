@@ -1,45 +1,43 @@
 from __future__ import annotations
+from __future__ import annotations
 
 import itertools
-import sys
 from abc import ABC
 from abc import abstractmethod
-from collections import Iterable
 from collections import defaultdict
+from collections import deque
 from collections.abc import Collection
 from collections.abc import Hashable
 from collections.abc import Iterator
 from collections.abc import MutableSet
-from datetime import datetime
 from enum import Enum
-from enum import IntEnum
 from enum import auto
 from enum import unique
-from time import time
+from functools import singledispatchmethod
 from typing import Any
 from typing import Optional
-from typing import TextIO
 from typing import Type
 from typing import Union
 
 import numpy as np
-import scipy.stats as stats
 from anytree import AsciiStyle
 from anytree import LevelOrderIter
 from anytree import NodeMixin
 from anytree import RenderTree
 
+from schema_mechanism.share import GlobalParams
+from schema_mechanism.share import SupportedFeature
+from schema_mechanism.share import debug
+from schema_mechanism.share import is_feature_enabled
+from schema_mechanism.share import trace
+from schema_mechanism.stats import FisherExactCorrelationTest
+from schema_mechanism.stats import ItemCorrelationTest
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
 from schema_mechanism.util import UniqueIdMixin
+from schema_mechanism.util import pairwise
 from schema_mechanism.util import repr_str
-from schema_mechanism.validate import MultiValidator
-from schema_mechanism.validate import NULL_VALIDATOR
-from schema_mechanism.validate import RangeValidator
-from schema_mechanism.validate import SubClassValidator
-from schema_mechanism.validate import TypeValidator
-from schema_mechanism.validate import Validator
 
 StateElement = Hashable
 
@@ -68,19 +66,14 @@ class ValueBearer(ABC):
 
 
 class State(ValueBearer):
-    def __init__(self, elements: Collection[StateElement], label: Optional[str] = None) -> None:
+    def __init__(self, elements: Collection[StateElement]) -> None:
         super().__init__()
 
         self._elements = frozenset(elements)
-        self._label = label
 
     @property
     def elements(self) -> Collection[StateElement]:
         return self._elements
-
-    @property
-    def label(self) -> Optional[str]:
-        return self._label
 
     @property
     def primitive_value(self) -> float:
@@ -123,8 +116,7 @@ class State(ValueBearer):
         return hash(self._elements)
 
     def __str__(self) -> str:
-        e_str = ','.join([str(se) for se in self._elements])
-        return f'{e_str} ({self._label})' if self._label else e_str
+        return ','.join([str(se) for se in self._elements])
 
 
 def held_state(s_prev: State, s_curr: State) -> frozenset[Item]:
@@ -313,6 +305,7 @@ class Item(Activatable, ValueBearer):
     def source(self) -> Any:
         return self._source
 
+    # TODO: Is this needed? Couldn't this be accessed through the source? Perhaps we can create an external function?
     @property
     @abstractmethod
     def state_elements(self) -> set[StateElement]:
@@ -383,68 +376,6 @@ class Item(Activatable, ValueBearer):
                                'aav': self.avg_accessible_value, })
 
 
-class ItemPool(metaclass=Singleton):
-    """
-    Implements a flyweight design pattern for Item types.
-    """
-    _items: dict[StateElement, Item] = dict()
-    _composite_items: dict[StateAssertion, CompositeItem] = dict()
-
-    def __contains__(self, source: Any) -> bool:
-        return source in ItemPool._items or source in ItemPool._composite_items
-
-    def __len__(self) -> int:
-        return len(ItemPool._items) + len(ItemPool._composite_items)
-
-    def __iter__(self) -> Iterator[Item]:
-        yield from ItemPool._items.values()
-        yield from ItemPool._composite_items.values()
-
-    @property
-    def items(self) -> Collection[Item]:
-        return ItemPool._items.values()
-
-    @property
-    def composite_items(self) -> Collection[CompositeItem]:
-        return ItemPool._composite_items.values()
-
-    def clear(self):
-        ItemPool._items.clear()
-        ItemPool._composite_items.clear()
-
-    # TODO: can this be changed to a overloaded method for source=StateElement and source=StateAssertion using
-    # TODO: the @singledispatch decorator?
-    def get(self, source: Any, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
-        read_only = kwargs.get('read_only', False)
-        item_type = item_type or GlobalParams().get('item_type')
-
-        type_dict = (
-            ItemPool._composite_items
-            if item_type is GlobalParams().get('composite_item_type')
-            else ItemPool._items
-        )
-
-        obj = type_dict.get(source)
-
-        # create new item and add to pool if not found and not read_only
-        if not obj and not read_only:
-            obj = type_dict[source] = item_type(source, **kwargs)
-
-        return obj
-
-
-class ReadOnlyItemPool(ItemPool):
-    def __init__(self):
-        self._pool = ItemPool()
-
-    def get(self, source: Any, item_type: Optional[Type[Item]] = None, **kwargs) -> Item:
-        kwargs['read_only'] = True
-        return self._pool.get(source, item_type=item_type, **kwargs)
-
-    def clear(self):
-        raise NotImplementedError('ReadOnlyItemPool does not support clear operation.')
-
-
 class SymbolicItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
@@ -480,156 +411,6 @@ def non_composite_items(items: Collection[Item]) -> Collection[Item]:
 
 def composite_items(items: Collection[Item]) -> Collection[Item]:
     return list(filter(lambda i: isinstance(i, CompositeItem), items))
-
-
-class Verbosity(IntEnum):
-    TRACE = auto()
-    DEBUG = auto()
-    INFO = auto()
-    WARN = auto()
-    ERROR = auto()
-    FATAL = auto()
-    NONE = auto()
-
-
-class SupportedFeature(Enum):
-    # "There is an embellishment of the marginal attribution algorithm--deferring to a more specific applicable schema--
-    #  that often enables the discovery of an item whose relevance has been obscured." (see Drescher,1991, pp. 75-76)
-    EC_DEFER_TO_MORE_SPECIFIC_SCHEMA = auto()
-
-    # "[another] embellishment also reduces redundancy: when a schema's extended context simultaneously detects the
-    # relevance of several items--that is, their statistics pass the significance threshold on the same trial--the most
-    # specific is chosen as the one for inclusion in a spin-off from that schema." (see Drescher, 1991, p. 77)
-    #
-    #     Note: Requires that EC_DEFER_TO_MORE_SPECIFIC is also enabled.
-    EC_MOST_SPECIFIC_ON_MULTIPLE = auto()
-
-    # "The machinery's sensitivity to results is amplified by an embellishment of marginal attribution: when a given
-    #  schema is idle (i.e., it has not just completed an activation), the updating of its extended result data is
-    #  suppressed for any state transition which is explained--meaning that the transition is predicted as the result
-    #  of a reliable schema whose activation has just completed." (see Drescher, 1991, p. 73)
-    ER_SUPPRESS_UPDATE_ON_EXPLAINED = auto()
-
-    # Supports the creation of result spin-off schemas incrementally. This was not supported in the original schema
-    # mechanism because of the proliferation of composite results that result. It is allowed here to facilitate
-    # comparison and experimentation.
-    ER_INCREMENTAL_RESULTS = auto()
-
-    # Modifies the schema mechanism to only create context spin-offs containing positive assertions.
-    EC_POSITIVE_ASSERTIONS_ONLY = auto()
-
-    # Modifies the schema mechanism to only create result spin-offs containing positive assertions.
-    ER_POSITIVE_ASSERTIONS_ONLY = auto()
-
-
-class SupportedFeatureValidator(Validator):
-    def __call__(self, features: Optional[Collection[SupportedFeature]]) -> None:
-        features = set(features)
-        for value in features:
-            if not isinstance(value, SupportedFeature):
-                raise ValueError(f'Unsupported feature: {value}')
-
-        if (SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE in features and
-                SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA not in features):
-            raise ValueError(f'The feature EC_MOST_SPECIFIC_ON_MULTIPLE requires EC_DEFER_TO_MORE_SPECIFIC_SCHEMA')
-
-
-def is_feature_enabled(feature: SupportedFeature) -> bool:
-    return feature in GlobalParams().get('features')
-
-
-class GlobalParams(metaclass=Singleton):
-
-    def __init__(self) -> None:
-        self._defaults: dict[str, Any] = dict()
-        self._validators: dict[str, Validator] = defaultdict(lambda: NULL_VALIDATOR)
-
-        self._set_validators()
-        self._set_defaults()
-
-        self._params: dict[str, Any] = dict(self._defaults)
-
-    @property
-    def defaults(self) -> dict[str, Any]:
-        return self._defaults
-
-    def set(self, name: str, value: Any) -> None:
-        if name not in self._params:
-            warn(f'Parameter "{name}" does not exist. Creating new parameter.')
-
-        # raises ValueError if new value is invalid
-        self._validators[name](value)
-
-        self._params[name] = value
-
-    def get(self, name: str) -> Any:
-        if name not in self._params:
-            warn(f'Parameter "{name}" does not exist.')
-
-        return self._params.get(name)
-
-    def reset(self):
-        self._params = dict(self._defaults)
-
-    def _set_defaults(self):
-        # verbosity used to determine the active print/warn statements
-        self._defaults['verbosity'] = Verbosity.WARN
-
-        # format string used by output functions (debug, info, warn, error, fatal)
-        self._defaults['output_format'] = '{timestamp} [{severity}]\t{message}'
-
-        # default seed for the random number generator
-        self._defaults['rng_seed'] = int(time())
-
-        # determines step size for incremental updates (e.g., this is used for delegated value updates)
-        self._defaults['learning_rate'] = 0.01
-
-        # method for determining statistical correlation
-        self._defaults['correlation_method'] = FisherExactCorrelationTest()
-
-        # thresholds for determining the relevance of items (1.0 -> correlation always occurs)
-        self._defaults['positive_correlation_threshold'] = 0.95
-        self._defaults['negative_correlation_threshold'] = 0.95
-
-        # success threshold used for determining that a schema is reliable (1.0 -> schema always succeeds)
-        self._defaults['reliability_threshold'] = 0.95
-
-        # used by delegated value helper
-        self._defaults['dv_trace_max_len'] = 5
-
-        # schema selection weighting
-        self._defaults['goal_weight'] = 0.6
-        self._defaults['explore_weight'] = 0.4
-
-        # default features
-        self._defaults['features'] = {
-            SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA,
-            SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE,
-            SupportedFeature.ER_POSITIVE_ASSERTIONS_ONLY,
-            SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY,
-            SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED,
-        }
-
-        # object factories
-        self._defaults['schema_type'] = Schema
-        self._defaults['item_type'] = SymbolicItem
-        self._defaults['composite_item_type'] = CompositeItem
-
-    def _set_validators(self):
-        self._validators['features'] = SupportedFeatureValidator()
-        self._validators['rng_seed'] = TypeValidator([int])
-        self._validators['learning_rate'] = RangeValidator(0.0, 1.0)
-        self._validators['correlation_method'] = TypeValidator([ItemCorrelationTest])
-        self._validators['positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
-        self._validators['negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
-        self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
-        self._validators['goal_weight'] = RangeValidator(0.0, 1.0)
-        self._validators['explore_weight'] = RangeValidator(0.0, 1.0)
-        self._validators['verbosity'] = TypeValidator([Verbosity])
-        self._validators['output_format'] = TypeValidator([str])
-        self._validators['item_type'] = SubClassValidator([Item])
-        self._validators['composite_item_type'] = SubClassValidator([CompositeItem])
-        self._validators['dv_trace_max_len'] = MultiValidator([TypeValidator([int]), RangeValidator(low=0.0)])
 
 
 class GlobalStats(metaclass=Singleton):
@@ -738,172 +519,35 @@ class SchemaStats:
         return repr_str(self, attr_values)
 
 
-class ItemCorrelationTest(ABC):
-
-    def positive_corr(self, table: Iterable) -> bool:
-        """
-
-        :param table:
-        :return:
-        """
-        return self.positive_corr_statistic(table) >= GlobalParams().get('positive_correlation_threshold')
-
-    def negative_corr(self, table: Iterable) -> bool:
-        """
-
-        :param table:
-        :return:
-        """
-        return self.negative_corr_statistic(table) >= GlobalParams().get('negative_correlation_threshold')
-
-    @abstractmethod
-    def positive_corr_statistic(self, table: Iterable) -> float:
-        pass
-
-    @abstractmethod
-    def negative_corr_statistic(self, table: Iterable) -> float:
-        pass
-
-    def validate_data(self, data: Iterable) -> np.ndarray:
-        """ Raises a ValueError if data cannot be interpreted as a 2x2 array of integers.
-
-        :param data: the iterable to validate
-        :return: True if valid table; False otherwise.
-        """
-        table = np.array(data)
-        if not (table.shape == (2, 2) and np.issubdtype(table.dtype, int)):
-            raise ValueError('invalid data: must be interpretable as a 2x2 array of integers')
-        return table
-
-
-class DrescherCorrelationTest(ItemCorrelationTest):
-
-    def positive_corr_statistic(self, table: Iterable) -> float:
-        """ Returns the part-to-part ratio Pr(A | X) : Pr(A | not X)
-
-        Input data should be a 2x2 table of the form: [[N(A,X), N(not A,X)], [N(A,not X), N(not A,not X)]],
-        where N(A,X) is the number of events that are both A AND X
-
-        :return: the ratio as a float, or numpy.NAN if division by zero
-        """
-        # raises ValueError
-        table = self.validate_data(table)
-
-        try:
-            n_x = np.sum(table[0, :])
-            n_not_x = np.sum(table[1, :])
-
-            n_a_and_x = table[0, 0]
-            n_a_and_not_x = table[1, 0]
-
-            if n_x == 0 or n_not_x == 0:
-                return 0.0
-
-            # calculate conditional probabilities
-            pr_a_given_x = n_a_and_x / n_x
-            pr_a_given_not_x = n_a_and_not_x / n_not_x
-
-            pr_a = pr_a_given_x + pr_a_given_not_x
-
-            if pr_a == 0:
-                return 0.0
-
-            # the part-to-part ratio Pr(A | X) : Pr(A | not X)
-            ratio = pr_a_given_x / pr_a
-            return ratio
-        except ZeroDivisionError:
-            return 0.0
-
-    def negative_corr_statistic(self, table: Iterable) -> float:
-        """ Returns the part-to-part ratio Pr(not A | X) : Pr(not A | not X)
-
-        Input data should be a 2x2 table of the form: [[N(A,X), N(not A,X)], [N(A,not X), N(not A,not X)]],
-        where N(A,X) is the number of events that are both A AND X
-
-        :return: the ratio as a float, or numpy.NAN if division by zero
-        """
-        # raises ValueError
-        table = self.validate_data(table)
-
-        try:
-            n_x = np.sum(table[0, :])
-            n_not_x = np.sum(table[1, :])
-
-            n_not_a_and_x = table[0, 1]
-            n_not_a_and_not_x = table[1, 1]
-
-            if n_x == 0 or n_not_x == 0:
-                return 0.0
-
-            # calculate conditional probabilities
-            pr_not_a_given_x = n_not_a_and_x / n_x
-            pr_not_a_given_not_x = n_not_a_and_not_x / n_not_x
-
-            pr_not_a = pr_not_a_given_x + pr_not_a_given_not_x
-
-            if pr_not_a == 0:
-                return 0.0
-
-            # the part-to-part ratio between Pr(not A | X) : Pr(not A | not X)
-            ratio = pr_not_a_given_x / pr_not_a
-            return ratio
-        except ZeroDivisionError:
-            return 0.0
-
-
-class BarnardExactCorrelationTest(ItemCorrelationTest):
-
-    def positive_corr_statistic(self, table: Iterable) -> float:
-        """
-
-        :param table:
-        :return:
-        """
-        # raises ValueError
-        table = self.validate_data(table)
-
-        return 1.0 - stats.barnard_exact(table, alternative='greater').pvalue
-
-    def negative_corr_statistic(self, table: Iterable) -> float:
-        """
-
-        :param table:
-        :return:
-        """
-        # raises ValueError
-        table = self.validate_data(table)
-
-        return 1.0 - stats.barnard_exact(table, alternative='less').pvalue
-
-
-class FisherExactCorrelationTest(ItemCorrelationTest):
-
-    def positive_corr_statistic(self, table: Iterable) -> float:
-        """
-
-        :param table:
-        :return:
-        """
-        # raises ValueError
-        table = self.validate_data(table)
-
-        _, p_value = stats.fisher_exact(table, alternative='greater')
-        return 1.0 - p_value
-
-    def negative_corr_statistic(self, table: Iterable) -> float:
-        """
-
-        :param table:
-        :return:
-        """
-        # raises ValueError
-        table = self.validate_data(table)
-
-        _, p_value = stats.fisher_exact(table, alternative='less')
-        return 1.0 - p_value
-
-
 class ItemStats(ABC):
+    @property
+    def correlation_test(self) -> ItemCorrelationTest:
+        return GlobalParams().get('correlation_test') or FisherExactCorrelationTest()
+
+    @property
+    def positive_correlation_threshold(self) -> float:
+        return GlobalParams().get('positive_correlation_threshold')
+
+    @property
+    def negative_correlation_threshold(self) -> float:
+        return GlobalParams().get('negative_correlation_threshold')
+
+    @property
+    def positive_correlation_stat(self) -> float:
+        return self.correlation_test.positive_corr_statistic(self.as_array())
+
+    @property
+    def negative_correlation_stat(self) -> float:
+        return self.correlation_test.negative_corr_statistic(self.as_array())
+
+    @property
+    def positive_correlation(self) -> bool:
+        return self.correlation_test.positive_corr_statistic(self.as_array()) >= self.positive_correlation_threshold
+
+    @property
+    def negative_correlation(self) -> bool:
+        return self.correlation_test.negative_corr_statistic(self.as_array()) >= self.negative_correlation_threshold
+
     @abstractmethod
     def as_array(self) -> np.ndarray:
         pass
@@ -922,6 +566,8 @@ class ECItemStats(ItemStats):
     """
 
     def __init__(self):
+        super().__init__()
+
         self._n_success_and_on = 0
         self._n_success_and_off = 0
         self._n_fail_and_on = 0
@@ -939,46 +585,6 @@ class ECItemStats(ItemStats):
 
         elif not on and not success:
             self._n_fail_and_off += count
-
-    @property
-    def success_corr(self) -> float:
-        """ Returns the ratio p(success | item on) : p(success | item off)
-
-        :return: the ratio as a float, or numpy.NAN if division by zero
-        """
-        try:
-            # # calculate conditional probabilities
-            # p_success_given_on = self._n_success_and_on / self.n_on
-            # p_success_given_off = self._n_success_and_off / self.n_off
-            #
-            # # the part-to-part ratio between p(success | on) : p(success | off)
-            # return p_success_given_on / (p_success_given_on + p_success_given_off)
-            correlation_method: ItemCorrelationTest = GlobalParams().get('correlation_method')
-
-            success_corr = correlation_method.positive_corr_statistic(self.as_array())
-            return success_corr
-        except ZeroDivisionError:
-            return np.NAN
-
-    @property
-    def failure_corr(self) -> float:
-        """ Returns the ratio p(failure | item on) : p(failure | item off)
-
-        :return: the ratio as a float, or numpy.NAN if division by zero
-        """
-        try:
-            # # calculate conditional probabilities
-            # p_fail_given_on = self._n_fail_and_on / self.n_on
-            # p_fail_given_off = self._n_fail_and_off / self.n_off
-            #
-            # # the part-to-part ratio between p(failure | on) : p(failure | off)
-            # return p_fail_given_on / (p_fail_given_on + p_fail_given_off)
-            correlation_method: ItemCorrelationTest = GlobalParams().get('correlation_method')
-
-            failure_corr = correlation_method.negative_corr_statistic(self.as_array())
-            return failure_corr
-        except ZeroDivisionError:
-            return np.NAN
 
     @property
     def n_on(self) -> int:
@@ -1046,16 +652,16 @@ class ECItemStats(ItemStats):
 
     def __str__(self) -> str:
         attr_values = (
-            f'sc: {self.success_corr:.2}',
-            f'fc: {self.failure_corr:.2}',
+            f'sc: {self.positive_correlation_stat:.2}',
+            f'fc: {self.negative_correlation_stat:.2}',
         )
 
         return f'{self.__class__.__name__}[{"; ".join(attr_values)}]'
 
     def __repr__(self):
         attr_values = {
-            'success_corr': f'{self.success_corr:.2}',
-            'failure_corr': f'{self.failure_corr:.2}',
+            'success_corr': f'{self.positive_correlation_stat:.2}',
+            'failure_corr': f'{self.negative_correlation_stat:.2}',
             'n_on': f'{self.n_on:,}',
             'n_off': f'{self.n_off:,}',
             'n_success_and_on': f'{self.n_success_and_on:,}',
@@ -1071,42 +677,12 @@ class ERItemStats(ItemStats):
     """ Extended result item-level statistics """
 
     def __init__(self):
+        super().__init__()
+
         self._n_on_and_activated = 0
         self._n_on_and_not_activated = 0
         self._n_off_and_activated = 0
         self._n_off_and_not_activated = 0
-
-    @property
-    def positive_transition_corr(self) -> float:
-        """ Returns the positive-transition correlation for this item.
-
-            "The positive-transition correlation is the ratio of the probability of the slot's item turning On when
-            the schema's action has just been taken to the probability of its turning On when the schema's action
-            is not being taken." (see Drescher, 1991, p. 71)
-
-        :return: the positive-transition correlation
-        """
-        try:
-            correlation_method: ItemCorrelationTest = GlobalParams().get('correlation_method')
-            return correlation_method.positive_corr_statistic(self.as_array())
-        except ZeroDivisionError:
-            return np.NAN
-
-    @property
-    def negative_transition_corr(self) -> float:
-        """ Returns the negative-transition correlation for this item.
-
-            "The negative-transition correlation is the ratio of the probability of the slot's item turning Off when
-            the schema's action has just been taken to the probability of its turning Off when the schema's action
-            is not being taken." (see Drescher, 1991, p. 72)
-
-        :return: the negative-transition correlation
-        """
-        try:
-            correlation_method: ItemCorrelationTest = GlobalParams().get('correlation_method')
-            return correlation_method.negative_corr_statistic(self.as_array())
-        except ZeroDivisionError:
-            return np.NAN
 
     @property
     def n_on(self) -> int:
@@ -1178,16 +754,16 @@ class ERItemStats(ItemStats):
 
     def __str__(self) -> str:
         attr_values = (
-            f'ptc: {self.positive_transition_corr:.2}',
-            f'ntc: {self.negative_transition_corr:.2}',
+            f'ptc: {self.positive_correlation_stat:.2}',
+            f'ntc: {self.negative_correlation_stat:.2}',
         )
 
         return f'{self.__class__.__name__}[{"; ".join(attr_values)}]'
 
     def __repr__(self) -> str:
         attr_values = {
-            'positive_transition_corr': f'{self.positive_transition_corr:.2}',
-            'negative_transition_corr': f'{self.negative_transition_corr:.2}',
+            'positive_transition_corr': f'{self.positive_correlation_stat:.2}',
+            'negative_transition_corr': f'{self.negative_correlation_stat:.2}',
             'n_on': f'{self.n_on:,}',
             'n_off': f'{self.n_off:,}',
             'n_on_and_activated': f'{self.n_on_and_activated:,}',
@@ -1205,11 +781,17 @@ class ReadOnlySchemaStats(SchemaStats):
 
 
 class ReadOnlyECItemStats(ECItemStats):
+    def __init__(self):
+        super().__init__()
+
     def update(self, on: bool, success: bool, count: int = 1) -> None:
         raise NotImplementedError('Update not implemented for readonly view.')
 
 
 class ReadOnlyERItemStats(ERItemStats):
+    def __init__(self):
+        super().__init__()
+
     def update(self, on: bool, activated: bool, count: int = 1) -> None:
         raise NotImplementedError('Update not implemented for readonly view.')
 
@@ -1256,21 +838,61 @@ class Action(UniqueIdMixin):
 
 
 class CompositeAction(Action):
-    """
-
+    """ "A composite action is essentially a subroutine: it is defined to be the action of achieving the designated
+     goal state, by whatever means is available. The means are given by chains of schemas that lead to the goal
+     state..." (See Drescher 1991, p. 59)
     """
 
     class Controller:
-        def __init__(self):
-            self._components: Collection[Schema] = set()
-            self._goal_proximity: dict[Schema, int] = defaultdict(lambda: np.inf)
+        def __init__(self, goal_state: StateAssertion):
+            self._goal_state = goal_state
+            self._proximity: dict[Schema, float] = defaultdict(lambda: 0.0)
+            self._components: set[Schema] = set()
+
+            # "Proximity is inversely proportionate to the expected time to reach the goal state, derived from the
+            #  expected activation time of the schemas in the relevant chain; proximity is also proportionate to those
+            #  schemas' reliability, and inversely proportionate to their cost of activation."
+            #  (See Drescher 1991, p. 60)
+
+            # "each time a composite action is explicitly initiated, the controller keeps track of which component
+            #  schemas are actually activated and when.... If the action successfully culminates in the goal state,
+            #  the actual cost and duration of execution from each entry point are compared with the proximity
+            #  information stored in the slot of each component actually activated; in case of discrepancy, the stored
+            #  information is adjusted in the direction of the actual data. If the action fails to reach its goal
+            #  state, the proximity measures for the utilized components are degraded." (See Drescher 1991, p. 92)
 
         @property
-        def components(self) -> Collection[Schema]:
+        def goal_state(self) -> StateAssertion:
+            return self._goal_state
+
+        @property
+        def components(self) -> set[Schema]:
+            """ The set of schemas that are selectable in pursuit of the controller's goal state.
+
+            Note: Components are currently limited to RELIABLE schemas that chain to the controller's goal state.
+            Drescher may have also allowed UNRELIABLE schemas as components.
+
+            :return: the set of component schemas
+            """
             return self._components
 
-        def update(self) -> None:
-            pass
+        def proximity(self, schema: Schema) -> float:
+            return self._proximity[schema]
+
+        def update(self, chains: list[Chain[Schema]]) -> None:
+            if not chains:
+                return
+
+            lr: float = GlobalParams().get('learning_rate')
+
+            for chain in chains:
+                avg_duration_to_goal_state = 0.0
+
+                for schema in reversed(chain):
+                    self._components.add(schema)
+
+                    avg_duration_to_goal_state += schema.avg_duration
+                    self._proximity[schema] += lr * (1.0 / avg_duration_to_goal_state - self._proximity[schema])
 
     def __init__(self, goal_state: StateAssertion, **kwargs):
         super().__init__(**kwargs)
@@ -1278,14 +900,24 @@ class CompositeAction(Action):
         if not goal_state:
             raise ValueError('Goal state is not optional.')
 
-        self._goal_state = goal_state
-        self._controller = CompositeAction.Controller()
+        self._controller = CompositeAction.Controller(goal_state)
+
+    @property
+    def goal_state(self) -> StateAssertion:
+        return self._controller.goal_state
 
     @property
     def controller(self) -> CompositeAction.Controller:
         return self._controller
 
     def is_enabled(self, state: State) -> bool:
+        """
+
+        "A composite action is enabled when one of its components is applicable." (See Drescher 1991, p. 90)
+
+        :param state:
+        :return:
+        """
         return any({schema.is_applicable(state) for schema in self._controller.components})
 
 
@@ -1319,11 +951,13 @@ class Assertion(ABC):
     def is_satisfied(self, state: State) -> bool:
         pass
 
+    # TODO: This should be removed
     @property
     @abstractmethod
     def items(self) -> frozenset[Item]:
         pass
 
+    # TODO: This should be removed
     @staticmethod
     def replicate_with(old: Assertion, new: Assertion) -> StateAssertion:
         for ia in new:
@@ -1371,6 +1005,7 @@ class ItemAssertion(Assertion, ValueBearer):
     def __repr__(self) -> str:
         return repr_str(self, {'item': self._item, 'negated': self.is_negated})
 
+    # TODO: This should be removed
     @property
     def item(self) -> Item:
         """ Returns the Item on which this ItemAssertion is based.
@@ -1380,6 +1015,7 @@ class ItemAssertion(Assertion, ValueBearer):
         """
         return self._item
 
+    # TODO: This should be removed
     @property
     def items(self) -> frozenset[Item]:
         return frozenset([self._item])
@@ -1393,14 +1029,18 @@ class ItemAssertion(Assertion, ValueBearer):
     # TODO: It's not clear how to handle negative assertions. Simply subtracting the values of those items seems
     # TODO: incorrect, as the thing that it is not may actually be more valuable. The safest course for now seems to be
     # TODO: to exclude negated asserts from these calculations.
+
+    # TODO: This should be removed
     @property
     def primitive_value(self):
         return 0.0 if self.is_negated else self._item.primitive_value
 
+    # TODO: This should be removed
     @property
     def delegated_value(self):
         return 0.0 if self.is_negated else self._item.delegated_value
 
+    # TODO: This should be removed
     @property
     def avg_accessible_value(self) -> float:
         return 0.0 if self.is_negated else self._item.avg_accessible_value
@@ -1459,6 +1099,7 @@ class StateAssertion(Assertion, ValueBearer):
     def __repr__(self) -> str:
         return repr_str(self, {'asserts': str(self)})
 
+    # TODO: This should be removed
     @property
     def items(self) -> frozenset[Item]:
         return self._items
@@ -1480,6 +1121,7 @@ class StateAssertion(Assertion, ValueBearer):
         """
         return all({ia.is_satisfied(state, **kwargs) for ia in self})
 
+    # TODO: This should be removed
     def as_state(self) -> State:
         """ Returns a State consistent with this StateAssertion.
 
@@ -1487,6 +1129,7 @@ class StateAssertion(Assertion, ValueBearer):
         """
         return State(set(itertools.chain.from_iterable([ia.item.state_elements for ia in self.asserts])))
 
+    # TODO: This should be removed
     @staticmethod
     def from_state(state: State) -> StateAssertion:
         """ Factory method for creating state assertions that would be satisfied by the given State.
@@ -1499,14 +1142,18 @@ class StateAssertion(Assertion, ValueBearer):
     # TODO: It's not clear how to handle negative assertions. Simply subtracting the values of those items seems
     # TODO: incorrect, as the thing that it is not may actually be more valuable. The safest course for now seems to be
     # TODO: to exclude negated asserts from these calculations.
+
+    # TODO: This should be removed
     @property
     def primitive_value(self):
         return sum(ia.item.primitive_value for ia in self._asserts)
 
+    # TODO: This should be removed
     @property
     def delegated_value(self):
         return sum(ia.item.delegated_value for ia in self._asserts)
 
+    # TODO: This should be removed
     @property
     def avg_accessible_value(self) -> float:
         return sum(ia.item.avg_accessible_value for ia in self._asserts)
@@ -1549,11 +1196,6 @@ class CompositeItem(StateAssertion, Item):
 
     def __eq__(self, other) -> bool:
         return super().__eq__(other)
-        # if isinstance(other, Item):
-        #     return self.source == other.source
-        # if isinstance(other, StateAssertion):
-        #     return super().__eq__()
-        # return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
         return hash(self.source)
@@ -1629,18 +1271,6 @@ class ExtendedItemCollection(Observable):
         # clears the set
         self._new_relevant_items = set()
 
-    @property
-    def correlation_method(self) -> ItemCorrelationTest:
-        return GlobalParams().get('correlation_method')
-
-    @property
-    def positive_correlation_threshold(self) -> float:
-        return GlobalParams().get('positive_correlation_threshold')
-
-    @property
-    def negative_correlation_threshold(self) -> float:
-        return GlobalParams().get('negative_correlation_threshold')
-
     # TODO: this is an ugly design! there must be a better way....
     @property
     def new_relevant_items(self) -> frozenset[Assertion]:
@@ -1714,12 +1344,12 @@ class ExtendedResult(ExtendedItemCollection):
             self.notify_all(source=self)
 
     def _check_for_relevance(self, item: Item, item_stats: ERItemStats) -> None:
-        if item_stats.positive_transition_corr > self.positive_correlation_threshold:
+        if item_stats.positive_correlation:
             item_assert = ItemAssertion(item)
             if item_assert not in self.relevant_items:
                 self.update_relevant_items(item_assert)
 
-        elif item_stats.negative_transition_corr > self.negative_correlation_threshold:
+        elif item_stats.negative_correlation:
             item_assert = ItemAssertion(item, negated=True)
             if item_assert not in self.relevant_items:
                 self.update_relevant_items(
@@ -1830,8 +1460,8 @@ class ExtendedContext(ExtendedItemCollection):
         # TODO: The check against thresholds should be done in the correlation test classes
         # if item is relevant, a new item assertion is created
         item_assert = (
-            ItemAssertion(item) if item_stats.success_corr > self.positive_correlation_threshold else
-            ItemAssertion(item, negated=True) if item_stats.failure_corr > self.negative_correlation_threshold else
+            ItemAssertion(item) if item_stats.positive_correlation else
+            ItemAssertion(item, negated=True) if item_stats.negative_correlation else
             None
         )
 
@@ -1910,18 +1540,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         if self._is_primitive or is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
             self._extended_result.register(self)
 
-        # TODO: Is duration or cost needed?
-
-        # The duration is the average time from the activation to the completion of an action.
-        # self.duration = Schema.INITIAL_DURATION
-
-        # TODO: This may be necessary to properly balance delegated and instrumental values against the cost of
-        # TODO: obtaining that future reward. (An alternative might be to use discounted eligibility traces in the
-        # TODO: delegated value calculations.)
-        # The cost is the minimum (i.e., the greatest magnitude) of any negative-valued results
-        # of schemas that are implicitly activated as a side effect of the given schema’s [explicit]
-        # activation on that occasion (see Drescher, 1991, p.55).
-        # self.cost = Schema.INITIAL_COST
+        self._avg_duration = 1.0
 
     def __eq__(self, other) -> bool:
         if isinstance(other, Schema):
@@ -2002,6 +1621,33 @@ class Schema(Observer, Observable, UniqueIdMixin):
     def stats(self) -> SchemaStats:
         return self._stats
 
+    # TODO: All durations are currently fixed at 1.0. Need a way to calculate duration during action execution to
+    # TODO: enable this update.
+    @property
+    def avg_duration(self) -> float:
+        """ The average time from schema activation to the completion of the schema's action.
+
+        :return:
+        """
+        return self._avg_duration
+
+    # TODO: Cost still needs to be implemented; however, the specifics of its update are still unclear to me. Based
+    # TODO: on Drescher's description (see Drescher 1991, p. 54) it seems like a WORST CASE activation result. This
+    # TODO: seems strange unless we include something about schema reliability. Cost may be meant to counter-balance
+    # TODO: delegated value, which seems like a BEST CASE activation result, but I'm not convinced there is a value to
+    # TODO: separating these factors.
+    @property
+    def cost(self) -> float:
+        """ The schema's activation cost.
+
+        "[a schema's] cost is the minimum (i.e., the greatest magnitude) of any negative-valued results of schemas that
+         are implicitly activated as a side-effect of the given schema's activation on that occasion."
+             (See Drescher 1991, p. 54)
+
+        :return: a float quantifying the schema's cost
+        """
+        raise NotImplementedError('Schema cost has not been implemented yet.')
+
     def is_applicable(self, state: State, **kwargs) -> bool:
         """ A schema is applicable when its context is satisfied and there are no active overriding conditions.
 
@@ -2046,6 +1692,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         return is_satisfied and state_items == result_items
 
+    # TODO: may need to add a parameter for duration of last execution to update average duration.
     def update(self,
                activated: bool,
                s_prev: Optional[State],
@@ -2411,63 +2058,155 @@ class SchemaTree:
         except KeyError:
             raise ValueError('Source schema does not have a corresponding tree node.')
 
-
-def _output_fd(level: Verbosity) -> TextIO:
-    return sys.stdout if level < Verbosity.WARN else sys.stderr
-
-
-def _timestamp() -> str:
-    return datetime.now().isoformat()
-
-
-def display_message(message: str, level: Verbosity) -> None:
-    verbosity = GlobalParams().get('verbosity')
-    output_format = GlobalParams().get('output_format')
-
-    if level >= verbosity:
-        out = output_format.format(timestamp=_timestamp(), severity=level.name, message=message)
-        print(out, file=_output_fd(level), flush=True)
-
-
-def trace(message):
-    display_message(message=message, level=Verbosity.TRACE)
-
-
-def debug(message):
-    display_message(message=message, level=Verbosity.DEBUG)
+    # @property
+    # def primitive_value(self) -> float:
+    #     if not self._elements:
+    #         return 0.0
+    #
+    #     return sum(ReadOnlyItemPool().get(se).primitive_value for se in self._elements)
+    #
+    # @property
+    # def delegated_value(self) -> float:
+    #     if not self._elements:
+    #         return 0.0 - GlobalStats().baseline_value
+    #     return np.max([ReadOnlyItemPool().get(se).delegated_value for se in self._elements])
+    #
+    # @property
+    # def avg_accessible_value(self) -> float:
+    #     if not self._elements:
+    #         return 0.0
+    #     items = [ReadOnlyItemPool().get(se) for se in self._elements]
+    #     return np.max([i.avg_accessible_value for i in items])
 
 
-def info(message):
-    display_message(message=message, level=Verbosity.INFO)
+# @singledispatch
+# def primitive_value(other: Any) -> float:
+#     print('primitive_value(other)')
+#     return other.primitive_value
+#
+#
+# @primitive_value.register
+# def _(state: State) -> float:
+#     print('primitive_value(state)')
+#     if not state or len(state) == 0:
+#         return 0.0
+#     return sum(ReadOnlyItemPool().get(se).primitive_value for se in state)
+#
+#
+# @primitive_value.register
+# def _(assertion: Assertion) -> float:
+#     print('primitive_value(assertion)')
+#
+#
+# @primitive_value.register
+# def _(se: StateElement) -> float:
+#     print('primitive_value(stateelement)')
+#
+#
+# @primitive_value.register
+# def _(item: Item) -> float:
+#     print('primitive_value(item)')
+
+class ItemPool(metaclass=Singleton):
+    """
+    Implements a flyweight design pattern for Item types.
+    """
+    _items: dict[StateElement, Item] = dict()
+    _composite_items: dict[StateAssertion, CompositeItem] = dict()
+
+    def __contains__(self, source: Any) -> bool:
+        return source in ItemPool._items or source in ItemPool._composite_items
+
+    def __len__(self) -> int:
+        return len(ItemPool._items) + len(ItemPool._composite_items)
+
+    def __iter__(self) -> Iterator[Item]:
+        yield from ItemPool._items.values()
+        yield from ItemPool._composite_items.values()
+
+    @property
+    def items(self) -> Collection[Item]:
+        return ItemPool._items.values()
+
+    @property
+    def composite_items(self) -> Collection[CompositeItem]:
+        return ItemPool._composite_items.values()
+
+    def clear(self):
+        ItemPool._items.clear()
+        ItemPool._composite_items.clear()
+
+    # TODO: can this be changed to a overloaded method for source=StateElement and source=StateAssertion using
+    # TODO: the @singledispatch decorator?
+    @singledispatchmethod
+    def get(self, source: Any, /, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
+        raise NotImplementedError(f'Source type is not supported.')
+
+    @get.register
+    def _(self, source: StateElement, /, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
+        read_only = kwargs.get('read_only', False)
+        item_type = item_type or SymbolicItem
+
+        obj = self._items.get(source)
+
+        # create new item and add to pool if not found and not read_only
+        if not obj and not read_only:
+            obj = self._items[source] = item_type(source, **kwargs)
+
+        return obj
+
+    @get.register
+    def _(self, source: StateAssertion, /, *,
+          item_type: Optional[Type[CompositeItem]] = None,
+          **kwargs) -> Optional[CompositeItem]:
+        read_only = kwargs.get('read_only', False)
+        item_type = item_type or CompositeItem
+
+        obj = self._composite_items.get(source)
+
+        # create new item and add to pool if not found and not read_only
+        if not obj and not read_only:
+            obj = self._composite_items[source] = item_type(source, **kwargs)
+
+        return obj
 
 
-def warn(message):
-    display_message(message=message, level=Verbosity.WARN)
+class ReadOnlyItemPool(ItemPool):
+    def __init__(self):
+        self._pool = ItemPool()
+
+    def get(self, source: Any, item_type: Optional[Type[Item]] = None, **kwargs) -> Item:
+        kwargs['read_only'] = True
+        return self._pool.get(source, item_type=item_type, **kwargs)
+
+    def clear(self):
+        raise NotImplementedError('ReadOnlyItemPool does not support clear operation.')
 
 
-def error(message):
-    display_message(message=message, level=Verbosity.ERROR)
+class Chain(deque):
+    def __str__(self):
+        return ' -> '.join([str(link) for link in self])
 
+    def __repr__(self):
+        return str(self)
 
-def fatal(message):
-    display_message(message=message, level=Verbosity.FATAL)
+    def __hash__(self):
+        return hash(tuple(self))
 
+    def is_valid(self, raise_on_invalid: bool = False) -> bool:
+        if len(self) == 0:
+            return True
 
-_rng = None
-_seed = None
+        if not all({isinstance(s, Schema) for s in self}):
+            if raise_on_invalid:
+                raise ValueError(f'All elements of Chain must be Schemas.')
+            return False
 
-
-def rng():
-    global _rng
-    global _seed
-
-    new_seed = GlobalParams().get('rng_seed')
-    if new_seed != _seed:
-        warn(f'(Re-)initializing random number generator using seed="{new_seed}".')
-        warn(f'For reproducibility, you should also set "PYTHONHASHSEED={new_seed}" in your environment variables.')
-
-        # setting globals
-        _rng = np.random.default_rng(new_seed)
-        _seed = new_seed
-
-    return _rng
+        s1: Schema
+        s2: Schema
+        for s1, s2 in pairwise(self):
+            if not s2.context.is_satisfied(s1.result.as_state()):
+                if raise_on_invalid:
+                    raise ValueError(f'Schemas contexts must be satisfied by their predecessor\'s result')
+                return False
+        return True

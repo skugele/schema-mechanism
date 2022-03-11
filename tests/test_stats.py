@@ -5,14 +5,14 @@ from unittest import TestCase
 import numpy as np
 
 import test_share
-from schema_mechanism.core import BarnardExactCorrelationTest
-from schema_mechanism.core import DrescherCorrelationTest
 from schema_mechanism.core import ECItemStats
 from schema_mechanism.core import ERItemStats
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import ReadOnlyECItemStats
 from schema_mechanism.core import ReadOnlyERItemStats
 from schema_mechanism.core import SchemaStats
+from schema_mechanism.share import GlobalParams
+from schema_mechanism.stats import BarnardExactCorrelationTest
+from schema_mechanism.stats import DrescherCorrelationTest
 from test_share.test_func import common_test_setup
 from test_share.test_func import satisfies_equality_checks
 from test_share.test_func import satisfies_hash_checks
@@ -65,7 +65,7 @@ class TestECItemStatistics(TestCase):
         self.assertEqual(self.item_stats.n_fail_and_off, 8)
 
     def test_drescher_correlation(self):
-        GlobalParams().set('correlation_method', DrescherCorrelationTest())
+        GlobalParams().set('correlation_test', DrescherCorrelationTest())
 
         self.item_stats.update(on=True, success=True, count=12)
         self.item_stats.update(on=True, success=False, count=7)
@@ -73,11 +73,11 @@ class TestECItemStatistics(TestCase):
         self.item_stats.update(on=False, success=False, count=8)
 
         # results include a +1 increment to each of the above statistics
-        self.assertAlmostEqual(0.6984, self.item_stats.success_corr, delta=1e-3)
-        self.assertAlmostEqual(0.3362, self.item_stats.failure_corr, delta=1e-3)
+        self.assertAlmostEqual(0.6984, self.item_stats.positive_correlation_stat, delta=1e-3)
+        self.assertAlmostEqual(0.3362, self.item_stats.negative_correlation_stat, delta=1e-3)
 
     def test_barnard_correlation_1(self):
-        GlobalParams().set('correlation_method', BarnardExactCorrelationTest())
+        GlobalParams().set('correlation_test', BarnardExactCorrelationTest())
 
         self.item_stats.update(on=True, success=True, count=12)
         self.item_stats.update(on=True, success=False, count=7)
@@ -85,11 +85,11 @@ class TestECItemStatistics(TestCase):
         self.item_stats.update(on=False, success=False, count=8)
 
         # results include a +1 increment to each of the above statistics
-        self.assertAlmostEqual(0.966, self.item_stats.success_corr, delta=1e-3)
-        self.assertAlmostEqual(0.0, self.item_stats.failure_corr, delta=1e-3)
+        self.assertAlmostEqual(0.966, self.item_stats.positive_correlation_stat, delta=1e-3)
+        self.assertAlmostEqual(0.0, self.item_stats.negative_correlation_stat, delta=1e-3)
 
     def test_barnard_correlation_2(self):
-        GlobalParams().set('correlation_method', BarnardExactCorrelationTest())
+        GlobalParams().set('correlation_test', BarnardExactCorrelationTest())
 
         self.item_stats.update(on=True, success=True, count=3)
         self.item_stats.update(on=True, success=False, count=8)
@@ -97,8 +97,8 @@ class TestECItemStatistics(TestCase):
         self.item_stats.update(on=False, success=False, count=7)
 
         # results include a +1 increment to each of the above statistics
-        self.assertAlmostEqual(0.0, self.item_stats.success_corr, delta=1e-3)
-        self.assertAlmostEqual(0.966, self.item_stats.failure_corr, delta=1e-3)
+        self.assertAlmostEqual(0.0, self.item_stats.positive_correlation_stat, delta=1e-3)
+        self.assertAlmostEqual(0.966, self.item_stats.negative_correlation_stat, delta=1e-3)
 
     def test_eq(self):
         self.item_stats.update(on=True, success=True)
@@ -195,37 +195,37 @@ class TestERItemStatistics(TestCase):
         self.assertTrue(satisfies_hash_checks(obj=self.item_stats))
 
     def test_drescher_correlation(self):
-        GlobalParams().set('correlation_method', DrescherCorrelationTest())
+        GlobalParams().set('correlation_test', DrescherCorrelationTest())
 
         self.item_stats.update(on=True, activated=True, count=12)
         self.item_stats.update(on=False, activated=True, count=7)
         self.item_stats.update(on=True, activated=False, count=3)
         self.item_stats.update(on=False, activated=False, count=8)
 
-        self.assertAlmostEqual(0.6984, self.item_stats.positive_transition_corr, delta=1e-3)
-        self.assertAlmostEqual(0.3362, self.item_stats.negative_transition_corr, delta=1e-3)
+        self.assertAlmostEqual(0.6984, self.item_stats.positive_correlation_stat, delta=1e-3)
+        self.assertAlmostEqual(0.3362, self.item_stats.negative_correlation_stat, delta=1e-3)
 
     def test_barnard_correlation_1(self):
-        GlobalParams().set('correlation_method', BarnardExactCorrelationTest())
+        GlobalParams().set('correlation_test', BarnardExactCorrelationTest())
 
         self.item_stats.update(on=True, activated=True, count=12)
         self.item_stats.update(on=False, activated=True, count=7)
         self.item_stats.update(on=True, activated=False, count=3)
         self.item_stats.update(on=False, activated=False, count=8)
 
-        self.assertAlmostEqual(0.966, self.item_stats.positive_transition_corr, delta=1e-3)
-        self.assertAlmostEqual(0.0, self.item_stats.negative_transition_corr, delta=1e-3)
+        self.assertAlmostEqual(0.966, self.item_stats.positive_correlation_stat, delta=1e-3)
+        self.assertAlmostEqual(0.0, self.item_stats.negative_correlation_stat, delta=1e-3)
 
     def test_barnard_correlation_2(self):
-        GlobalParams().set('correlation_method', BarnardExactCorrelationTest())
+        GlobalParams().set('correlation_test', BarnardExactCorrelationTest())
 
         self.item_stats.update(on=True, activated=True, count=3)
         self.item_stats.update(on=False, activated=True, count=8)
         self.item_stats.update(on=True, activated=False, count=12)
         self.item_stats.update(on=False, activated=False, count=7)
 
-        self.assertAlmostEqual(0.0, self.item_stats.positive_transition_corr, delta=1e-3)
-        self.assertAlmostEqual(0.966, self.item_stats.negative_transition_corr, delta=1e-3)
+        self.assertAlmostEqual(0.0, self.item_stats.positive_correlation_stat, delta=1e-3)
+        self.assertAlmostEqual(0.966, self.item_stats.negative_correlation_stat, delta=1e-3)
 
     @test_share.performance_test
     def test_performance_equal(self):

@@ -2,10 +2,10 @@ from collections import Hashable
 from copy import copy
 from typing import Any
 
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
-from schema_mechanism.core import Verbosity
+from schema_mechanism.share import GlobalParams
+from schema_mechanism.share import Verbosity
 
 
 def common_test_setup():

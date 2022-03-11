@@ -5,11 +5,10 @@ from typing import Iterable
 import numpy as np
 
 import test_share
-from schema_mechanism.core import BarnardExactCorrelationTest
-from schema_mechanism.core import DrescherCorrelationTest
-from schema_mechanism.core import FisherExactCorrelationTest
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import ItemCorrelationTest
+from schema_mechanism.stats import BarnardExactCorrelationTest
+from schema_mechanism.stats import DrescherCorrelationTest
+from schema_mechanism.stats import FisherExactCorrelationTest
 from test_share.test_func import common_test_setup
 
 
@@ -55,24 +54,6 @@ class TestItemCorrTest(unittest.TestCase):
         # test: iterables with incorrect dimensions should be not be accepted
         self.assertRaises(ValueError, lambda: self.test_instance.validate_data([1, 2]))
         self.assertRaises(ValueError, lambda: self.test_instance.validate_data([[1], [2]]))
-
-    def test_positive_corr(self):
-        # test: should return True when positive corr. statistic is >= threshold
-        GlobalParams().set('positive_correlation_threshold', 0.95)
-        self.assertTrue(self.test_instance.positive_corr([[1, 2], [3, 4]]))
-
-        # test: should return True when positive corr. statistic is < threshold
-        GlobalParams().set('positive_correlation_threshold', 0.951)
-        self.assertFalse(self.test_instance.positive_corr([[1, 2], [3, 4]]))
-
-    def test_negative_corr(self):
-        # test: should return True when negative corr. statistic is >= threshold
-        GlobalParams().set('negative_correlation_threshold', 0.95)
-        self.assertTrue(self.test_instance.negative_corr([[1, 2], [3, 4]]))
-
-        # test: should return True when negative corr. statistic is < threshold
-        GlobalParams().set('negative_correlation_threshold', 0.951)
-        self.assertFalse(self.test_instance.negative_corr([[1, 2], [3, 4]]))
 
 
 class TestDrescherCorrTest(unittest.TestCase):

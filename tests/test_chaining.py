@@ -1,12 +1,13 @@
 import unittest
 
-from schema_mechanism.core import GlobalParams
+import test_share
+from schema_mechanism.core import Chain
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state_assert
-from schema_mechanism.modules import Chain
 from schema_mechanism.modules import SchemaMemory
+from schema_mechanism.share import GlobalParams
 from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
 
@@ -302,3 +303,63 @@ class TestBackwardChaining(unittest.TestCase):
         ]
         chains = self.sm.backward_chains(goal_state=sym_state_assert('~E,'))
         self.assertSetEqual(set(expected_chains), set(chains))
+
+
+class TestChain(unittest.TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+        self.schemas = [
+            sym_schema('1,2/A1/(3,4),'),
+            sym_schema('3,4/A1/5,'),
+            sym_schema('5,/A2/(8,9),'),
+            sym_schema('8,9/A1/101,102'),
+            sym_schema('101,/A10/1,'),
+        ]
+        self.chain = Chain(self.schemas)
+
+    def test_init(self):
+        # test: empty Chain should be allowed
+        try:
+            Chain()
+        except Exception as e:
+            self.fail(f'Unexpected exception: {str(e)}')
+
+        # test: schemas properly initialized
+        self.assertSetEqual(set(self.schemas), set(self.chain))
+
+    def test_is_valid(self):
+        # test: empty Chain should be valid
+        self.assertTrue(Chain().is_valid())
+
+        # test: all single Schema Chains should be valid
+        self.assertTrue(Chain([sym_schema('1,/A1/2,')]).is_valid())
+        self.assertTrue(Chain([sym_schema('/A1/2,')]).is_valid())
+        self.assertTrue(Chain([sym_schema('/A1/(1,2),')]).is_valid())
+        self.assertTrue(Chain([sym_schema('1,2,3,4/A1/(5,6,7),')]).is_valid())
+
+        # test: all non-Schema Chains should be invalid
+        self.assertFalse(Chain(['bad']).is_valid())
+        self.assertFalse(Chain([1, 2, 3]).is_valid())
+        self.assertFalse(Chain([sym_schema('1,2/A1/3,4'), 'not a schema']).is_valid())
+        self.assertRaises(ValueError, lambda: Chain([1, 'bad']).is_valid(raise_on_invalid=True))
+
+        # test: these two element Chains should be valid
+        self.assertTrue(Chain([sym_schema('/A1/'), sym_schema('/A2/'), ]).is_valid())
+        self.assertTrue(Chain([sym_schema('1,/A1/2,'), sym_schema('2,/A1/3,'), ]).is_valid())
+        self.assertTrue(Chain([sym_schema('/A1/2,'), sym_schema('2,/A1/(3,4),'), ]).is_valid())
+        self.assertTrue(Chain([sym_schema('/A1/(2,3),'), sym_schema('2,3/A1/4,'), ]).is_valid())
+        self.assertTrue(Chain([sym_schema('/A1/(2,3),'), sym_schema('2,/A1/4,'), ]).is_valid())
+
+        # test: these two element Chains should be invalid
+        self.assertFalse(Chain([sym_schema('1,/A1/2,'), sym_schema('3,/A1/4,'), ]).is_valid())
+        self.assertFalse(Chain([sym_schema('/A1/2,'), sym_schema('2,3/A1/(3,4),'), ]).is_valid())
+        self.assertFalse(Chain([sym_schema('/A1/(2,3),'), sym_schema('2,3,4/A1/5,'), ]).is_valid())
+        self.assertFalse(Chain([sym_schema('/A1/'), sym_schema('2,/A1/4,'), ]).is_valid())
+
+        # test: this complex chain should be valid
+        self.assertTrue(self.chain.is_valid())
+
+    @test_share.string_test
+    def test_str(self):
+        print(str(self.chain))

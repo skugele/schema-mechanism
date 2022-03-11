@@ -1,12 +1,12 @@
 import random
 
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ReadOnlyItemPool
 from schema_mechanism.core import Schema
-from schema_mechanism.core import Verbosity
-from schema_mechanism.core import info
 from schema_mechanism.modules import SchemaMechanism
+from schema_mechanism.share import GlobalParams
+from schema_mechanism.share import Verbosity
+from schema_mechanism.share import info
 
 RANDOM_SEED = 8675309
 

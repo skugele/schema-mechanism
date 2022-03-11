@@ -4,7 +4,6 @@ from unittest import TestCase
 
 import numpy as np
 
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import ItemPool
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.modules import AbsoluteDiffMatchStrategy
@@ -14,6 +13,7 @@ from schema_mechanism.modules import NoOpEvaluationStrategy
 from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.modules import primitive_values
+from schema_mechanism.share import GlobalParams
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
 

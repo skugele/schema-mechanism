@@ -37,18 +37,16 @@ class TestState(TestCase):
         self.s_conjoint = State(elements=['1', '2', '4'])
         self.s_contained = State(elements=[*self.s.elements, 100])
 
-        self.s_empty = State(elements=[], label='empty')
+        self.s_empty = State(elements=[])
 
         GlobalStats(baseline_value=-1.0)
 
     def test_init(self):
         self.assertEqual(0, len(self.s_empty.elements))
         self.assertEqual(frozenset([]), self.s_empty.elements)
-        self.assertEqual('empty', self.s_empty.label)
 
         self.assertEqual(3, len(self.s.elements))
         self.assertEqual(frozenset(['1', '2', '3']), self.s.elements)
-        self.assertEqual(None, self.s.label)
 
     def test_eq(self):
         self.assertNotEqual(self.s, self.s_disjoint)

@@ -19,11 +19,10 @@ from schema_mechanism.core import new_state
 from schema_mechanism.func_api.parser import parse
 
 
-# TODO: generalize the current string -> int conversions in the sym_* methods to support other conversion types
-def sym_state(str_repr: str, label: Optional[str] = None) -> State:
+def sym_state(str_repr: str) -> State:
     if not str_repr:
-        return State([], label)
-    return State([se for se in str_repr.split(',')], label)
+        return State([])
+    return State([se for se in str_repr.split(',')])
 
 
 def sym_item(str_repr: str, **kwargs) -> Item:

@@ -82,11 +82,17 @@ class MockSchema(Schema):
                  context: Optional[StateAssertion] = None,
                  result: Optional[StateAssertion] = None,
                  reliability: float = None,
+                 avg_duration: float = None,
                  **kwargs):
         super().__init__(action=action, context=context, result=result, **kwargs)
 
         self._reliability = reliability
+        self._avg_duration = avg_duration
 
     @property
     def reliability(self) -> float:
         return super().reliability if self._reliability is None else self._reliability
+
+    @property
+    def avg_duration(self) -> float:
+        return super().avg_duration if self._avg_duration is None else self._avg_duration

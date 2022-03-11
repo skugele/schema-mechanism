@@ -9,7 +9,6 @@ import numpy as np
 import test_share
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import DelegatedValueHelper
-from schema_mechanism.core import GlobalParams
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import State
@@ -17,6 +16,7 @@ from schema_mechanism.core import SymbolicItem
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
+from schema_mechanism.share import GlobalParams
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
 from test_share.test_func import is_eq_consistent
@@ -547,7 +547,7 @@ class TestCompositeItem(unittest.TestCase):
         sa1 = sym_state_assert('2,~3,~4')
 
         len_before = len(self.pool)
-        item1 = self.pool.get(source=sa1, item_type=CompositeItem)
+        item1 = self.pool.get(sa1, item_type=CompositeItem)
 
         self.assertIsInstance(item1, CompositeItem)
         self.assertEqual(sa1, item1.source)
@@ -556,7 +556,7 @@ class TestCompositeItem(unittest.TestCase):
         self.assertIn(sa1, self.pool)
 
         len_before = len(self.pool)
-        item2 = self.pool.get(source=sa1, item_type=CompositeItem)
+        item2 = self.pool.get(sa1, item_type=CompositeItem)
 
         self.assertIs(item1, item2)
         self.assertEqual(len_before, len(self.pool))
@@ -564,7 +564,7 @@ class TestCompositeItem(unittest.TestCase):
         sa2 = sym_state_assert('2,3,4')
 
         len_before = len(self.pool)
-        item3 = self.pool.get(source=sa2, item_type=CompositeItem)
+        item3 = self.pool.get(sa2, item_type=CompositeItem)
 
         self.assertNotEqual(item2, item3)
         self.assertEqual(sa2, item3.source)
