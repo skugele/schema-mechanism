@@ -3,11 +3,13 @@ from random import sample
 from time import time
 from unittest import TestCase
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import numpy as np
 
 import test_share
 from schema_mechanism.core import Action
+from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
@@ -151,11 +153,24 @@ class TestSchema(TestCase):
         # expected to NOT be applicable (due to overriding condition)
         self.assertFalse(schema.is_applicable(state=sym_state('1,3,4,5')))
 
+    def test_is_applicable_with_composite_action(self):
         # Tests applicability of schema with complex action
         ###################################################
-        self.assertTrue(self.schema_ca.is_applicable(sym_state('0,1')))
+
+        # test: if context is not satisfied then it SHOULD NOT be applicable
+        self.assertFalse(self.schema_ca.is_applicable(sym_state('A,B')))
+        self.assertFalse(self.schema_ca.is_applicable(sym_state('0')))
         self.assertFalse(self.schema_ca.is_applicable(sym_state('1')))
-        self.assertFalse(self.schema_ca.is_applicable(sym_state('2')))
+
+        # test: schema SHOULD NOT be applicable if its action is not enabled
+        with patch('schema_mechanism.core.CompositeAction.is_enabled', return_value=False) as mock:
+            self.assertFalse(self.schema_ca.is_applicable(sym_state('0,1')))
+            mock.assert_called()
+
+        # test: schema SHOULD be applicable if its action is enabled and its context is satisfied
+        with patch('schema_mechanism.core.CompositeAction.is_enabled', return_value=True) as mock:
+            self.assertTrue(self.schema_ca.is_applicable(sym_state('0,1')))
+            mock.assert_called()
 
     def test_predicts_state(self):
         state = sym_state('1,2,3')  # used for all test cases
@@ -526,4 +541,7 @@ class TestSchema(TestCase):
     @test_share.string_test
     def test_str(self):
         schema = Schema(action=Action('A1'))
+        print(schema)
+
+        schema = Schema(action=CompositeAction(sym_state_assert('1,2,~3')))
         print(schema)

@@ -284,6 +284,35 @@ class TestSchemaTree(TestCase):
         for schema in [s1_r1_c1_2, s1_r2_c1_3, s2_r1_c1_2]:
             self.assertEqual(schema.context, tree.get(schema.context).context)
 
+    def test_add_primitives(self):
+        p1 = sym_schema('/A1/')
+        p2 = sym_schema('/A2/')
+
+        tree = SchemaTree(primitives=[p1, p2])
+
+        # test: primitive actions
+        new_primitives = [sym_schema(f'/A{i}/') for i in range(5, 10)]
+
+        for s in new_primitives:
+            self.assertNotIn(s, tree)
+
+        tree.add_primitives(new_primitives)
+
+        for s in new_primitives:
+            self.assertIn(s, tree)
+
+        # test: composite actions
+        new_primitives = [
+            sym_schema(f'/1,2/'),
+            sym_schema(f'/1,3/'),
+            sym_schema(f'/2,3/'),
+            sym_schema(f'/3,~4/'),
+        ]
+        tree.add_primitives(new_primitives)
+
+        for s in new_primitives:
+            self.assertIn(s, tree)
+
     def test_is_valid_node_1(self):
         # sanity check: all nodes in the test tree should be valid
         for schema in self.tree:

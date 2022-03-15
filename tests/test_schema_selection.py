@@ -1,29 +1,46 @@
 import unittest
 from collections import defaultdict
+from collections import deque
+from collections.abc import Sequence
+from typing import Optional
 from unittest import TestCase
 
 import numpy as np
 
+from schema_mechanism.core import Chain
 from schema_mechanism.core import ItemPool
+from schema_mechanism.core import Schema
 from schema_mechanism.func_api import sym_schema
+from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import AbsoluteDiffMatchStrategy
 from schema_mechanism.modules import EpsilonGreedyExploratoryStrategy
 from schema_mechanism.modules import GoalPursuitEvaluationStrategy
-from schema_mechanism.modules import NoOpEvaluationStrategy
 from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.modules import primitive_values
 from schema_mechanism.share import GlobalParams
+from test_share.test_classes import MockSchema
+from test_share.test_classes import MockSchemaSelection
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
+
+
+def primitive_value_evaluation_strategy(schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
+    values = list([s.result.primitive_value for s in schemas])
+    return np.array(values)
+
+
+def delegated_value_evaluation_strategy(schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
+    values = list([s.result.delegated_value for s in schemas])
+    return np.array(values)
 
 
 class TestSchemaSelection(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        GlobalParams()
-        self.ss = SchemaSelection()
+        # allows direct setting of reliability (only reliable schemas are eligible for chaining)
+        GlobalParams().set('schema_type', MockSchema)
 
         pool = ItemPool()
 
@@ -34,18 +51,44 @@ class TestSchemaSelection(TestCase):
         self.i5 = pool.get('5', item_type=MockSymbolicItem, primitive_value=2.0, avg_accessible_value=0.0)
         self.i6 = pool.get('6', item_type=MockSymbolicItem, primitive_value=-3.0, avg_accessible_value=0.0)
 
-        # note: negated items have zero primitive value
-        self.s_prim = sym_schema('/A1/')  # total primitive value = 0.0; total delegated value = 0.0
-        self.s1 = sym_schema('1,2/A1/3,')  # total primitive value = 0.95; total delegated value = 0.0
-        self.s2 = sym_schema('1,2/A1/4,')  # total primitive value = -1.0; total delegated value = 0.0
-        self.s3 = sym_schema('1,2/A1/5,')  # total primitive value = 2.0; total delegated value = 0.0
-        self.s4 = sym_schema('1,2/A1/3,4')  # total primitive value = -0.05; total delegated value = 0.0
-        self.s5 = sym_schema('1,2/A1/3,4,5')  # total primitive value = 1.95; total delegated value = 0.0
-        self.s6 = sym_schema('1,2/A1/3,4,5,6')  # total primitive value = -1.05; total delegated value = 0.0
-        self.s7 = sym_schema('1,2/A1/3,4,5,~6')  # total primitive value = 1.95; total delegated value = 0.0
+        # note: negated items have zero pv
+        self.s1 = sym_schema('/A1/', reliability=0.0)  # total pv = 0.0; total dv = 0.0
+        self.s2 = sym_schema('/A2/', reliability=0.0)  # total pv = 0.0; total dv = 0.0
+        self.s3 = sym_schema('/A3/', reliability=0.0)  # total pv = 0.0; total dv = 0.0
 
-        self.s8 = sym_schema('1,2/A1/(3,4),')  # total primitive value = -0.05; total delegated value = 0.0
-        self.s9 = sym_schema('1,2/A1/(~5,6),')  # total primitive value = 1.95; total delegated value = 0.0
+        self.s1_c12_r3 = sym_schema('1,2/A1/3,', reliability=1.0)  # total pv = 0.95; total dv = 0.0
+        self.s1_c12_r4 = sym_schema('1,2/A1/4,', reliability=1.0)  # total pv = -1.0; total dv = 0.0
+        self.s1_c12_r5 = sym_schema('1,2/A1/5,', reliability=1.0)  # total pv = 2.0; total dv = 0.0
+        self.s1_c12_r34 = sym_schema('1,2/A1/(3,4),', reliability=1.0)  # total pv = -0.05; total dv = 0.0
+        self.s1_c12_r345 = sym_schema('1,2/A1/(3,4,5),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
+        self.s1_c12_r3456 = sym_schema('1,2/A1/(3,4,5,6),', reliability=1.0)  # total pv = -1.05; total dv = 0.0
+        self.s1_c12_r345_not6 = sym_schema('1,2/A1/(3,4,5,~6),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
+
+        # chained schemas
+        self.s1_c12_r2 = sym_schema('1,2/A1/2,', reliability=1.0)  # total pv = 0.0; total dv = 0.0
+        self.s2_c2_r3 = sym_schema('2,/A2/3,', reliability=1.0)  # total pv = 0.95; total dv = 0.0
+        self.s3_c3_r4 = sym_schema('3,/A3/4,', reliability=1.0)  # total pv = -1.0; total dv = 0.0
+        self.s1_c4_r5 = sym_schema('4,/A1/5,', reliability=1.0)  # total pv = 2.0; total dv = 0.0
+        self.s3_c5_r24 = sym_schema('5,/A3/(2,4),', reliability=1.0)  # total pv = -1.0; total dv = 0.0
+
+        # composite action schemas
+        self.sca24_c12_r35 = sym_schema('1,2/2,4/(3,5),', reliability=1.0)  # total pv = 2.95; total dv = 0.0
+        self.sca24_c12_r136 = sym_schema('1,2/2,4/(1,3,6),', reliability=1.0)  # total pv = -2.05; total dv = 0.0
+
+        self.chains = [Chain([self.s1_c12_r2, self.s2_c2_r3, self.s3_c3_r4, self.s1_c4_r5, self.s3_c5_r24])]
+
+        self.sca24_c12_r35.action.controller.update(self.chains)
+        self.sca24_c12_r136.action.controller.update(self.chains)
+
+        self.selection_state = sym_state('1,2')
+
+        self.ss = SchemaSelection(
+            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
+            value_strategies=[
+                GoalPursuitEvaluationStrategy(),
+                EpsilonGreedyExploratoryStrategy(0.9)
+            ],
+        )
 
     def test_primitive_values(self):
         # sanity checks
@@ -59,7 +102,8 @@ class TestSchemaSelection(TestCase):
 
         expected_values = [0.0, 0.95, -1.0, 2.0, -0.05, 1.95, -1.05, 1.95]
         actual_values = primitive_values(
-            schemas=[self.s_prim, self.s1, self.s2, self.s3, self.s4, self.s5, self.s6, self.s7])
+            schemas=[self.s1, self.s1_c12_r3, self.s1_c12_r4, self.s1_c12_r5, self.s1_c12_r34, self.s1_c12_r345,
+                     self.s1_c12_r3456, self.s1_c12_r345_not6])
 
         for exp, act in zip(expected_values, actual_values):
             self.assertAlmostEqual(exp, act)
@@ -75,42 +119,318 @@ class TestSchemaSelection(TestCase):
         ###############
 
         # Empty or None list of applicable schemas should return a ValueError
-        self.assertRaises(ValueError, lambda: self.ss.select(schemas=[]))
+        self.assertRaises(ValueError, lambda: self.ss.select(schemas=[], state=self.selection_state))
 
         # noinspection PyTypeChecker
-        self.assertRaises(ValueError, lambda: self.ss.select(schemas=None))
+        self.assertRaises(ValueError, lambda: self.ss.select(schemas=None, state=self.selection_state))
 
         # Given a single applicable schema, select should return that schema
         schema = sym_schema('1,2/A1/3,4')
-        sd = self.ss.select(schemas=[schema])
+        sd = self.ss.select(schemas=[schema], state=self.selection_state)
         self.assertEqual(schema, sd.selected)
 
     def test_select_2(self):
         # primitive value-based selections
         ##################################
-        ss = SchemaSelection(goal_pursuit=GoalPursuitEvaluationStrategy(),
-                             explore=NoOpEvaluationStrategy(),
-                             select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)))
+        ss = SchemaSelection(
+            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
+            value_strategies=[primitive_value_evaluation_strategy]
+        )
 
-        # selection between uneven schemas, all with non-negated items (s3 should win)
-        sd = ss.select(schemas=[self.s1, self.s2, self.s3, self.s4])
-        self.assertEqual(self.s3, sd.selected)
+        # selection between uneven schemas, all with non-negated items (s1_c12_r5 should win)
+        sd = ss.select(schemas=[self.s1_c12_r3, self.s1_c12_r4, self.s1_c12_r5, self.s1_c12_r34],
+                       state=self.selection_state)
+        self.assertEqual(self.s1_c12_r5, sd.selected)
 
-        # selection between uneven schemas, some with negated items (s7 should win)
-        sd = ss.select(schemas=[self.s4, self.s6, self.s7])
-        self.assertEqual(self.s7, sd.selected)
+        # selection between uneven schemas, some with negated items (s1_c12_r345_not6 should win)
+        sd = ss.select(schemas=[self.s1_c12_r34, self.s1_c12_r3456, self.s1_c12_r345_not6], state=self.selection_state)
+        self.assertEqual(self.s1_c12_r345_not6, sd.selected)
 
         # selection between multiple schemas with close values should be randomized
         selections = defaultdict(lambda: 0.0)
-        applicable_schemas = [self.s3, self.s5, self.s7]
+        applicable_schemas = [self.s1_c12_r5, self.s1_c12_r345, self.s1_c12_r345_not6]
         for _ in range(100):
-            sd = ss.select(applicable_schemas)
+            sd = ss.select(applicable_schemas, state=self.selection_state)
             selections[sd.selected] += 1
 
         self.assertEqual(len(applicable_schemas), len(selections.keys()))
 
-    def test_notify_all(self):
+    # TODO: Add these test cases!
+    def test_calc_effective_values(self):
         pass
+
+    # TODO: Add these test cases!
+    def test_selection_weights(self):
+        pass
+
+    def test_select_with_pending_schema_1a(self):
+        # testing selection with composite action schema (scenario: composite action schema wins)
+        ss = SchemaSelection(
+            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+            value_strategies=[primitive_value_evaluation_strategy],
+        )
+
+        self.assertIs(None, ss.pending_schema)
+
+        schema_with_ca = self.sca24_c12_r35
+
+        applicable = [
+            self.s1,  # total pv = 0.0
+            self.s1_c12_r3,  # total pv = 0.95
+            self.s1_c12_r4,  # total pv = -1.0
+            self.s1_c12_r5,  # total pv = 2.0
+            self.s1_c12_r34,  # total pv = -0.05
+            self.s1_c12_r345,  # total pv = 1.95
+            self.s1_c12_r3456,  # total pv = -1.05
+            self.s1_c12_r345_not6,  # total pv = 1.95
+            self.s1_c12_r2,  # total pv = 0.0  [also a component of schema_with_ca]
+
+            schema_with_ca  # total pv = 2.95
+        ]
+
+        expected_values = [0.0, 0.95, -1.0, 2.0, -0.05, 1.95, -1.05, 1.95, 0.0, 2.95]
+        actual_values = primitive_value_evaluation_strategy(applicable)
+
+        # sanity check:
+        for exp, act in zip(expected_values, actual_values):
+            self.assertAlmostEqual(exp, act)
+
+        # test: pending schema should be selected
+        sd = ss.select(applicable, state=sym_state('1,2'))
+
+        self.assertIs(schema_with_ca, ss.pending_schema)
+        self.assertIs(self.s2_c2_r3, sd.selected)
+
+    def test_select_with_pending_schema_1b(self):
+        # testing selection with composite action schema (scenario: composite action schema loses)
+        ss = SchemaSelection(
+            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            value_strategies=[primitive_value_evaluation_strategy],
+        )
+
+        self.assertIs(None, ss.pending_schema)
+
+        schema_with_ca = self.sca24_c12_r136
+
+        applicable = [
+            self.s1,  # total pv = 0.0
+            self.s1_c12_r3,  # total pv = 0.95
+            self.s1_c12_r4,  # total pv = -1.0
+            self.s1_c12_r5,  # total pv = 2.0
+            self.s1_c12_r34,  # total pv = -0.05
+            self.s1_c12_r345,  # total pv = 1.95
+            self.s1_c12_r3456,  # total pv = -1.05
+            self.s1_c12_r345_not6,  # total pv = 1.95
+            self.s1_c12_r2,  # total pv = 0.0  [also a component of schema_with_ca]
+
+            schema_with_ca  # total pv = -2.05
+        ]
+
+        expected_values = [0.0, 0.95, -1.0, 2.0, -0.05, 1.95, -1.05, 1.95, 0.0, -2.05]
+        actual_values = primitive_value_evaluation_strategy(applicable)
+
+        # sanity check:
+        for exp, act in zip(expected_values, actual_values):
+            self.assertAlmostEqual(exp, act)
+
+        # test: pending schema should be selected
+        sd = ss.select(applicable, state=sym_state('1,2'))
+
+        self.assertIs(self.s1_c12_r5, sd.selected)
+        self.assertIs(None, ss.pending_schema)
+
+    def test_select_with_pending_schema_2(self):
+        # testing the selection of a pending schema's components to completion
+
+        # mock is used to directly set the pending schema
+        mock_ss = MockSchemaSelection(
+            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            value_strategies=[primitive_value_evaluation_strategy],
+            pending_schemas=deque([self.sca24_c12_r35])
+        )
+
+        # sanity check: pending schema set
+        self.assertIs(mock_ss.pending_schema, self.sca24_c12_r35)
+
+        selection_states = [sym_state('2'), sym_state('3'), sym_state('4'), sym_state('5')]
+
+        applicables = [
+            [self.s2_c2_r3, self.s1_c12_r2],
+            [self.s3_c3_r4],
+            [self.s1_c4_r5],
+            [self.s3_c5_r24],
+        ]
+
+        # test: selection should iterate through controller chain to goal state
+        for state, applicable in zip(selection_states, applicables):
+            sd = mock_ss.select(applicable, state)
+            self.assertIs(applicable[0], sd.selected)
+            self.assertIs(mock_ss.pending_schema, self.sca24_c12_r35)
+            self.assertIn(sd.selected, self.sca24_c12_r35.action.controller.components)
+
+        applicable = [sym_schema('2,4/A1/5,')]
+        state = sym_state('2,4')
+        mock_ss.select(applicable, state)
+
+        # test: pending schema SHOULD be None since selection state was pending schema's controller's goal state
+        self.assertEqual(None, mock_ss.pending_schema)
+
+    def test_select_with_pending_schema_3(self):
+        # testing the abortion of a pending schema (selection state leads to no applicable components)
+
+        # mock is used to directly set the pending schema
+        mock_ss = MockSchemaSelection(
+            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            value_strategies=[primitive_value_evaluation_strategy],
+            pending_schemas=deque([self.sca24_c12_r35])
+        )
+
+        # sanity check: pending schema set
+        self.assertIs(mock_ss.pending_schema, self.sca24_c12_r35)
+
+        selection_states = [
+            sym_state('2'),  # satisfies context of component self.s2_c2_r3
+            sym_state('3'),  # satisfies context of component self.s3_c3_r4
+            sym_state('6'),  # no applicable components (should terminate pending schema)
+        ]
+
+        applicables = [
+            [self.s2_c2_r3],
+            [self.s3_c3_r4],
+            [self.s3],
+        ]
+
+        for state, applicable in zip(selection_states, applicables):
+            sd = mock_ss.select(applicable, state)
+
+            self.assertIs(applicable[0], sd.selected)
+
+            # current state does NOT satisfy a controller component
+            if state == selection_states[-1]:
+
+                # test: pending schema should be set to None if no applicable controller components
+                self.assertEqual(None, mock_ss.pending_schema)
+
+            # current state satisfies a controller component
+            else:
+                # test: pending schema should remain the same
+                self.assertIs(mock_ss.pending_schema, self.sca24_c12_r35)
+
+                # test: selected schema should be a controller component
+                self.assertIn(sd.selected, self.sca24_c12_r35.action.controller.components)
+
+    def test_select_with_pending_schema_4(self):
+        # testing the interruption of a pending schema (alternative schema with much higher value)
+
+        # mock is used to directly set the pending schema
+        mock_ss = MockSchemaSelection(
+            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            value_strategies=[primitive_value_evaluation_strategy],
+            pending_schemas=deque([self.sca24_c12_r35])
+        )
+
+        # sanity check: pending schema set
+        self.assertIs(mock_ss.pending_schema, self.sca24_c12_r35)
+
+        _ = ItemPool().get('HIGH', item_type=MockSymbolicItem, primitive_value=np.inf, avg_accessible_value=np.inf)
+        s_high = sym_schema('2,/A2/HIGH,', reliability=1.0)
+
+        # satisfies context of component self.s2_c2_r3 and high-value alternative
+        sd = mock_ss.select([self.s2_c2_r3, s_high], sym_state('2'))
+        self.assertIs(s_high, sd.selected)
+        self.assertIs(None, mock_ss.pending_schema)
+
+    def test_select_with_nested_pending_schemas(self):
+        # testing selection from nested pending schemas with composite actions
+
+        # Items
+        #######
+        pool = ItemPool()
+
+        _ = pool.get('1', item_type=MockSymbolicItem, primitive_value=0.0)
+        _ = pool.get('2', item_type=MockSymbolicItem, primitive_value=0.0)
+        _ = pool.get('3', item_type=MockSymbolicItem, primitive_value=0.95)
+        _ = pool.get('4', item_type=MockSymbolicItem, primitive_value=-1.0)
+        _ = pool.get('5', item_type=MockSymbolicItem, primitive_value=2.0)
+        _ = pool.get('6', item_type=MockSymbolicItem, primitive_value=-3.0)
+
+        _ = pool.get('J', item_type=MockSymbolicItem, primitive_value=10.0)
+        _ = pool.get('K', item_type=MockSymbolicItem, primitive_value=15.0)
+        _ = pool.get('L', item_type=MockSymbolicItem, primitive_value=20.0)
+
+        _ = pool.get('M', item_type=MockSymbolicItem, primitive_value=50.0)
+        _ = pool.get('N', item_type=MockSymbolicItem, primitive_value=100.0)
+
+        _ = pool.get('Z', item_type=MockSymbolicItem, primitive_value=1000.0)
+
+        # L0 Schemas
+        ############
+
+        # S1: 1>2
+        s1 = sym_schema('1,/A1/2,', reliability=1.0)
+
+        # S2: 2>3
+        s2 = sym_schema('2,/A2/3,', reliability=1.0)
+
+        # S3: 3>4
+        s3 = sym_schema('3,/A3/4,', reliability=1.0)
+
+        # S4: 4>5
+        s4 = sym_schema('4,/A1/5,', reliability=1.0)
+
+        # S5: 5>6
+        s5 = sym_schema('5,/A2/6,', reliability=1.0)
+
+        # L1 Schemas
+        ############
+
+        # C1_2: S1 > S2
+        c1_2 = sym_schema('1,/3,/(3,J),', reliability=1.0)
+
+        chains = [Chain([s1, s2])]
+        c1_2.action.controller.update(chains)
+
+        # C2_3: S2 > S3
+        c2_3 = sym_schema('2,/4,/(4,K),', reliability=1.0)
+
+        chains = [Chain([s2, s3])]
+        c2_3.action.controller.update(chains)
+
+        # C3_5: S3 > S4 > S5
+        c3_5 = sym_schema('3,/6,/(6,L),', reliability=1.0)
+
+        chains = [Chain([s3, s4, s5])]
+        c3_5.action.controller.update(chains)
+
+        # L2 Schemas
+        ############
+        # C12_23: C1_2 > C2_3
+        c12_23 = sym_schema('1,/(4,K),/M,', reliability=1.0)
+
+        chains = [Chain([c1_2, c2_3])]
+        c12_23.action.controller.update(chains)
+
+        # C23_35: C2_3 > C3_5
+        c23_35 = sym_schema('2,/(6,L),/N,', reliability=1.0)
+
+        chains = [Chain([c2_3, c3_5])]
+        c23_35.action.controller.update(chains)
+
+        # L3 Schemas
+        ############
+        c123_235 = sym_schema('1,/(6,L,N),/Z,', reliability=1.0)
+
+        chains = [Chain([c12_23, c23_35])]
+        c123_235.action.controller.update(chains)
+
+        # mock is used to directly set the pending schema
+        mock_ss = SchemaSelection(
+            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            value_strategies=[primitive_value_evaluation_strategy]
+        )
+
+        sd = mock_ss.select(schemas=[s1, c1_2, c123_235], state=sym_state('1'))
+        self.assertEqual(s1, sd.selected)
 
 
 class TestEpsilonGreedy(unittest.TestCase):

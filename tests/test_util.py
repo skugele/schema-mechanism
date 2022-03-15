@@ -1,6 +1,10 @@
+import unittest
 from unittest import TestCase
 
+import numpy as np
+
 from schema_mechanism.util import BoundedSet
+from schema_mechanism.util import equal_weights
 from test_share.test_classes import MockObservable
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
@@ -99,3 +103,28 @@ class TestBoundedSet(TestCase):
 
         # test: illegal values should raise a ValueError on add
         self.assertRaises(ValueError, lambda: self.s.add(self.illegal_values))
+
+
+class TestFunctions(unittest.TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+    def test_equal_weights(self):
+        # test: n = 0 should return an empty array
+        weights = equal_weights(0)
+
+        self.assertIsInstance(weights, np.ndarray)
+        self.assertEqual(0, len(weights))
+
+        # test: n < 0 should raise a ValueError
+        self.assertRaises(ValueError, lambda: equal_weights(-1))
+
+        # test: n >= 1 should return numpy ndarray containing n elements that sum close to 1.0
+        try:
+            for n in range(1, 100):
+                weights = equal_weights(n)
+                self.assertIsInstance(weights, np.ndarray)
+                self.assertEqual(n, len(weights))
+                self.assertAlmostEqual(1.0, sum(weights))
+        except ValueError as e:
+            self.fail(f'Unexpected exception: {str(e)}')

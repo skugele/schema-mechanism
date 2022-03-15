@@ -116,7 +116,7 @@ class State(ValueBearer):
         return hash(self._elements)
 
     def __str__(self) -> str:
-        return ','.join([str(se) for se in self._elements])
+        return ','.join([str(se) for se in self._elements]) if self._elements else None
 
 
 def held_state(s_prev: State, s_curr: State) -> frozenset[Item]:
@@ -836,6 +836,21 @@ class Action(UniqueIdMixin):
         """
         return self._label
 
+    def is_composite(self):
+        return False
+
+    def is_enabled(self, **kwargs) -> bool:
+        """ Returns whether this action is enabled.
+
+        Note: Schemas are inhibited for activation if their actions are disabled. This is primarily useful for
+              composite actions.
+
+        :param kwargs: optional keyword arguments
+
+        :return: True if enabled; False otherwise.
+        """
+        return True
+
 
 class CompositeAction(Action):
     """ "A composite action is essentially a subroutine: it is defined to be the action of achieving the designated
@@ -848,11 +863,6 @@ class CompositeAction(Action):
             self._goal_state = goal_state
             self._proximity: dict[Schema, float] = defaultdict(lambda: 0.0)
             self._components: set[Schema] = set()
-
-            # "Proximity is inversely proportionate to the expected time to reach the goal state, derived from the
-            #  expected activation time of the schemas in the relevant chain; proximity is also proportionate to those
-            #  schemas' reliability, and inversely proportionate to their cost of activation."
-            #  (See Drescher 1991, p. 60)
 
             # "each time a composite action is explicitly initiated, the controller keeps track of which component
             #  schemas are actually activated and when.... If the action successfully culminates in the goal state,
@@ -877,6 +887,15 @@ class CompositeAction(Action):
             return self._components
 
         def proximity(self, schema: Schema) -> float:
+            """ Returns the proximity (i.e., closeness) of a schema to the composite action's goal state.
+
+            "Proximity is inversely proportionate to the expected time to reach the goal state, derived from the
+             expected activation time of the schemas in the relevant chain; proximity is also proportionate to those
+             schemas' reliability, and inversely proportionate to their cost of activation." (See Drescher 1991, p. 60)
+
+            :param schema:
+            :return: a float that quantifies the schema's goal state proximity
+            """
             return self._proximity[schema]
 
         def update(self, chains: list[Chain[Schema]]) -> None:
@@ -910,6 +929,9 @@ class CompositeAction(Action):
     def __hash__(self) -> int:
         return hash(self.goal_state)
 
+    def __str__(self) -> str:
+        return str(self.controller.goal_state)
+
     @property
     def goal_state(self) -> StateAssertion:
         return self._controller.goal_state
@@ -918,7 +940,10 @@ class CompositeAction(Action):
     def controller(self) -> CompositeAction.Controller:
         return self._controller
 
-    def is_enabled(self, state: State) -> bool:
+    def is_composite(self):
+        return True
+
+    def is_enabled(self, state: State, **kwargs) -> bool:
         """
 
         "A composite action is enabled when one of its components is applicable." (See Drescher 1991, p. 90)
@@ -1129,7 +1154,6 @@ class StateAssertion(Assertion, ValueBearer):
         """
         return all({ia.is_satisfied(state, **kwargs) for ia in self})
 
-    # TODO: This should be removed
     def as_state(self) -> State:
         """ Returns a State consistent with this StateAssertion.
 
@@ -1137,7 +1161,6 @@ class StateAssertion(Assertion, ValueBearer):
         """
         return State(set(itertools.chain.from_iterable([ia.item.state_elements for ia in self.asserts])))
 
-    # TODO: This should be removed
     @staticmethod
     def from_state(state: State) -> StateAssertion:
         """ Factory method for creating state assertions that would be satisfied by the given State.
@@ -1151,17 +1174,17 @@ class StateAssertion(Assertion, ValueBearer):
     # TODO: incorrect, as the thing that it is not may actually be more valuable. The safest course for now seems to be
     # TODO: to exclude negated asserts from these calculations.
 
-    # TODO: This should be removed
+    # TODO: This should be removed (replaced by external methods)
     @property
-    def primitive_value(self):
+    def primitive_value(self) -> float:
         return sum(ia.item.primitive_value for ia in self._asserts)
 
-    # TODO: This should be removed
+    # TODO: This should be removed (replaced by external methods)
     @property
-    def delegated_value(self):
+    def delegated_value(self) -> float:
         return sum(ia.item.delegated_value for ia in self._asserts)
 
-    # TODO: This should be removed
+    # TODO: This should be removed (replaced by external methods)
     @property
     def avg_accessible_value(self) -> float:
         return sum(ia.item.avg_accessible_value for ia in self._asserts)
@@ -1657,19 +1680,26 @@ class Schema(Observer, Observable, UniqueIdMixin):
         raise NotImplementedError('Schema cost has not been implemented yet.')
 
     def is_applicable(self, state: State, **kwargs) -> bool:
-        """ A schema is applicable when its context is satisfied and there are no active overriding conditions.
+        """ Returns whether this schema is "applicable" in the given State.
 
-            “A schema is said to be applicable when its context is satisfied and no
-                 known overriding conditions obtain.” (Drescher, 1991, p.53)
+        A schema is applicable when:
+
+        (1) its context is satisfied
+        (2) its action is enabled
+        (3) there are no overriding conditions
+
+        (See Drescher 1991, pp. 53 and 90)
 
         :param state: the agent's current state
         :param kwargs: optional keyword arguments
-        :return: True if the schema is applicable in this state; False, otherwise.
+
+        :return: True if the schema is applicable in this State; False, otherwise.
         """
-        overridden = False
+        inhibited = not self.action.is_enabled(state=state)
         if self.overriding_conditions is not None:
-            overridden = self.overriding_conditions.is_satisfied(state, **kwargs)
-        return (not overridden) and self.context.is_satisfied(state, **kwargs)
+            inhibited |= self.overriding_conditions.is_satisfied(state, **kwargs)
+
+        return (not inhibited) and self.context.is_satisfied(state, **kwargs)
 
     def is_primitive(self) -> bool:
         """ Returns whether this instance is a primitive (action-only) schema.
@@ -1881,6 +1911,16 @@ class SchemaTree:
         :return: a SchemaTreeNode (if found) or raises a KeyError
         """
         return self._nodes[assertion]
+
+    def add_primitives(self, schemas: Collection[Schema]) -> None:
+        trace(f'adding primitive schemas! [{[str(s) for s in schemas]}]')
+        if not schemas:
+            raise ValueError('Schemas cannot be empty or None')
+
+        # needed because schemas to add may already exist in set reducing total new count
+        len_before_add = len(self.root.schemas_satisfied_by)
+        self.root.schemas_satisfied_by |= set(schemas)
+        self._n_schemas += len(self.root.schemas_satisfied_by) - len_before_add
 
     def add_context_spin_offs(self, source: Schema, spin_offs: Collection[Schema]) -> None:
         """ Adds context spin-off schemas to this tree.

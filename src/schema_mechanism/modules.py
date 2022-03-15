@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import itertools
+from collections import deque
 from collections.abc import Callable
 from collections.abc import Collection
 from collections.abc import Sequence
+from copy import copy
 from typing import NamedTuple
 from typing import Optional
 
@@ -27,13 +29,13 @@ from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
-from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import debug
 from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import rng
 from schema_mechanism.share import trace
 from schema_mechanism.util import Observer
+from schema_mechanism.util import equal_weights
 
 
 class SchemaMemoryStats:
@@ -79,7 +81,7 @@ class SchemaMemory(Observer):
         """
         sm = SchemaMemory()
 
-        sm._schema_tree = tree
+        sm._schema_tree = copy(tree)
         sm._schema_tree.validate(raise_on_invalid=True)
 
         # register listeners for schemas in tree
@@ -95,7 +97,6 @@ class SchemaMemory(Observer):
 
     def update_all(self,
                    selection_details: SchemaSelection.SelectionDetails,
-                   selection_state: State,
                    result_state: State) -> None:
         """ Updates schema statistics based on results of previously selected schema(s).
 
@@ -103,12 +104,11 @@ class SchemaMemory(Observer):
         interface supports a sequence of selection details. This is to
 
         :param selection_details: details corresponding to the most recently selected schema
-        :param selection_state: the environment state that was previously used for schema selection
         :param result_state: the environment state resulting from the selected schema's executed action
 
         :return: None
         """
-        applicable, schema = selection_details
+        applicable, schema, selection_state, _ = selection_details
 
         # create new and lost state element collections
         new = new_state(selection_state, result_state)
@@ -156,8 +156,10 @@ class SchemaMemory(Observer):
                      explained=explained)
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
-        return list(
-            itertools.chain.from_iterable(n.schemas_satisfied_by for n in self._schema_tree.find_all_satisfied(state)))
+        satisfied = itertools.chain.from_iterable(
+            n.schemas_satisfied_by for n in self._schema_tree.find_all_satisfied(state))
+
+        return [schema for schema in satisfied if schema.is_applicable(state)]
 
     def receive(self, **kwargs) -> None:
         source: Schema = kwargs['source']
@@ -170,6 +172,27 @@ class SchemaMemory(Observer):
         relevant_items: Collection[ItemAssertion] = kwargs['relevant_items']
 
         spin_offs = frozenset([create_spin_off(schema, spin_off_type, ia) for ia in relevant_items])
+
+        # "Whenever a bare schema spawns a spinoff schema, the mechanism determines whether the new schema's result is
+        #  novel, as opposed to its already appearing as the result component of some other schema. If the result is
+        #  novel, the schema mechanism defines a new composite action with that result as its goal state, it is the
+        #  action of achieving that result. The schema mechanism also constructs a bare schema which has that action;
+        #  that schema's extended result then can discover effects of achieving the action's goal state"
+        #      (See Drescher 1991, p. 90)
+        if schema.is_primitive() and (spin_off_type is Schema.SpinOffType.RESULT):
+            for spin_off in spin_offs:
+                if self.is_novel_result(spin_off.result):
+                    trace(f'Novel result detected: {spin_off.result}. Creating new composite action.')
+
+                    # creates and initializes a new composite action
+                    ca = CompositeAction(goal_state=spin_off.result)
+                    ca.controller.update(self.backward_chains(ca.goal_state))
+
+                    # adds a new bare schema for the new composite action
+                    ca_schema = Schema(action=ca)
+                    ca_schema.register(self)
+
+                    self._schema_tree.add_primitives([ca_schema])
 
         # register listeners for spin-offs
         for s in spin_offs:
@@ -231,15 +254,18 @@ class SchemaMemory(Observer):
             chains.extend(more_chains)
         return chains
 
+    def is_novel_result(self, result: StateAssertion) -> bool:
+        return not any({result == s.result for s in self._schema_tree.root.schemas_satisfied_by})
+
 
 # Type aliases
-SchemaEvaluationStrategy = Callable[[Sequence[Schema]], np.ndarray]
+SchemaEvaluationStrategy = Callable[[Sequence[Schema], Optional[Schema]], np.ndarray]
 MatchStrategy = Callable[[np.ndarray, float], np.ndarray]
-SelectionStrategy = Callable[[Sequence[Schema], np.ndarray], Schema]
+SelectionStrategy = Callable[[Sequence[Schema], np.ndarray], tuple[Schema, float]]
 
 
 class NoOpEvaluationStrategy:
-    def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
+    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema]) -> np.ndarray:
         return np.zeros_like(schemas)
 
 
@@ -258,22 +284,23 @@ class AbsoluteDiffMatchStrategy:
 
 
 class RandomizeSelectionStrategy:
-    def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> Schema:
-        return rng().choice(schemas, size=1)[0]
+    def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> tuple[Schema, float]:
+        selection_index = rng().uniform(0, len(schemas))
+        return schemas[selection_index], values[selection_index]
 
 
 class RandomizeBestSelectionStrategy:
-    def __init__(self, match: MatchStrategy):
+    def __init__(self, match: MatchStrategy = None):
         self.eq = match or EqualityMatchStrategy()
 
-    def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> Schema:
+    def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> tuple[Schema, float]:
         max_value = np.max(values)
 
         # randomize selection if several schemas have values within sameness threshold
         best_schemas = np.argwhere(self.eq(values, max_value)).flatten()
         selection_index = rng().choice(best_schemas, size=1)[0]
 
-        return schemas[selection_index]
+        return schemas[selection_index], values[selection_index]
 
 
 def primitive_values(schemas: Sequence[Schema]) -> np.ndarray:
@@ -298,7 +325,7 @@ def delegated_values(schemas: Sequence[Schema]) -> np.ndarray:
 
 
 # TODO: implement this
-def instrumental_values(schemas: Sequence[Schema]) -> np.ndarray:
+def instrumental_values(schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
     """
 
         "When the schema mechanism activates a schema as a link in some chain to a positively valued state, then that
@@ -310,6 +337,8 @@ def instrumental_values(schemas: Sequence[Schema]) -> np.ndarray:
          moment but not the next." (See Drescher 1991, p. 63)
 
     :param schemas:
+    :param pending:
+
     :return:
     """
     # instrumental value
@@ -320,17 +349,28 @@ def instrumental_values(schemas: Sequence[Schema]) -> np.ndarray:
     return np.zeros_like(schemas)
 
 
+# TODO: Add a class description that mentions primitive, delegated, and instrumental value, as well as pending
+# TODO: schema bias and reliability.
 class GoalPursuitEvaluationStrategy:
+    """
+        * “The goal-pursuit criterion contributes to a schema’s importance to the extent that the schema’s
+           activation helps chain to an explicit top-level goal” (Drescher, 1991, p. 61)
+        * "The Schema Mechanism uses only reliable schemas to pursue goals." (Drescher 1987, p. 292)
+    """
+
     def __init__(self):
         # TODO: There are MANY factors that influence value, and it is not clear what their relative weights should be.
         # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
         # TODO: balance between them.
         pass
 
-    def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
+    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         pv = primitive_values(schemas)
         dv = delegated_values(schemas)
-        iv = instrumental_values(schemas)
+        iv = instrumental_values(schemas, pending)
+
+        # TODO: Only reliable schemas should be used for goal pursuit. How do we do this??? Perhaps a large penalty
+        # TODO: for unreliable schemas???
 
         return pv + dv + iv
 
@@ -349,7 +389,7 @@ class EpsilonGreedyExploratoryStrategy:
             raise ValueError('Epsilon value must be between zero and one (exclusive).')
         self._epsilon = value
 
-    def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
+    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         if not schemas:
             return np.array([])
 
@@ -366,13 +406,22 @@ class EpsilonGreedyExploratoryStrategy:
 
 # TODO: implement this
 class ExploratoryEvaluationStrategy:
+    """
+        * “The exploration criterion boosts the importance of a schema to promote its activation for the sake of
+           what might be learned by that activation” (Drescher, 1991, p. 60)
+        * “To strike a balance between goal-pursuit and exploration criteria, the [schema] mechanism alternates
+           between emphasizing goal-pursuit criterion for a time, then emphasizing exploration criterion;
+           currently, the exploration criterion is emphasized most often (about 90% of the time).”
+           (Drescher, 1991, p. 61)
+    """
+
     def __init__(self):
         # TODO: There are MANY factors that influence value, and it is not clear what their relative weights should be.
         # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
         # TODO: balance between them.
         pass
 
-    def __call__(self, schemas: Sequence[Schema]) -> np.ndarray:
+    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema]) -> np.ndarray:
         # TODO: Add a mechanism for tracking recently activated schemas.
         # hysteresis - "a recently activated schema is favored for activation, providing a focus of attention"
 
@@ -407,147 +456,160 @@ class SchemaSelection:
 
         The module has the following high-level characteristics:
 
-            1.) Schemas compete for activation at each time step (i.e., for each received environmental state)
-            2.) Only one schema is activated at a time
+            1.) Schemas compete for selection at each time step (e.g., for each received environmental state)
+            2.) Only one schema is selected at a time
             3.) Schemas are chosen based on their "activation importance"
             4.) Activation importance is based on "explicit goal pursuit" and "exploration"
-
-        Explicit Goal Pursuit
-        ---------------------
-            * “The goal-pursuit criterion contributes to a schema’s importance to the extent that the schema’s
-               activation helps chain to an explicit top-level goal” (Drescher, 1991, p. 61)
-            * "The Schema Mechanism uses only reliable schemas to pursue goals." (Drescher 1987, p. 292)
-
-        Exploration
-        -----------
-            * “The exploration criterion boosts the importance of a schema to promote its activation for the sake of
-               what might be learned by that activation” (Drescher, 1991, p. 60)
-            * “To strike a balance between goal-pursuit and exploration criteria, the [schema] mechanism alternates
-               between emphasizing goal-pursuit criterion for a time, then emphasizing exploration criterion;
-               currently, the exploration criterion is emphasized most often (about 90% of the time).”
-               (Drescher, 1991, p. 61)
-
-        “A new activation selection occurs at each time unit. Even if a chain of schemas leading to some goal is in
-        progress, each next link in the chain must compete for activation. Thus, as with the execution of a composite
-        action, control may shift to an unexpected, new, better path to the same goal. Top-level selection carries
-        this opportunism one step further; here, control may even shift to a chain that leads instead to a different,
-        more important goal.” (Drescher, 1991, p. 61)
     """
 
     class SelectionDetails(NamedTuple):
         applicable: Collection[Schema]
         selected: Schema
+        selection_state: State
+        effective_value: float
 
     """
         See Drescher, 1991, section 3.4
     """
 
     def __init__(self,
-                 goal_pursuit: SchemaEvaluationStrategy = None,
-                 explore: SchemaEvaluationStrategy = None,
-                 select: SelectionStrategy = None,
-                 goal_weight: float = None,
-                 explore_weight: float = None):
+                 select: Optional[SelectionStrategy] = None,
+                 value_strategies: Optional[Collection[SchemaEvaluationStrategy]] = None,
+                 weights: Optional[Collection[float]] = None,
+                 **kwargs):
 
-        self._goal_pursuit = goal_pursuit or GoalPursuitEvaluationStrategy()
-        self._explore = explore or EpsilonGreedyExploratoryStrategy(0.9)
         self._select = select or RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0))
+        self._values = value_strategies or []
+        self._weights = weights or equal_weights(len(self._values))
 
-        self._goal_weight = goal_weight or GlobalParams().get('goal_weight')
-        self._explore_weight = explore_weight or GlobalParams().get('explore_weight')
+        if len(self._values) != len(self._weights):
+            raise ValueError('Invalid weights. Must have a weight for each evaluation strategy.')
 
-        if self._goal_weight + self._explore_weight != 1.0:
-            raise ValueError('Goal-pursuit and exploratory weights must sum to 1.0.')
+        if not np.isclose(1.0, sum(self._weights)):
+            raise ValueError('Evaluation strategy weights must sum to 1.0.')
+
+        # a stack of previously selected, non-terminated schemas with composite actions used for nested invocations
+        # of controller components with composite actions
+        self._pending_schemas: deque[Schema] = deque()
 
     @property
-    def goal_weight(self) -> float:
-        return self._goal_weight
+    def eval_strategies(self) -> Optional[Collection[SchemaEvaluationStrategy]]:
+        return self._values
 
     @property
-    def explore_weight(self) -> float:
-        return self._explore_weight
+    def eval_weights(self) -> float:
+        return self._weights
 
-    def select(self, schemas: Sequence[Schema]) -> SchemaSelection.SelectionDetails:
+    def select(self, schemas: Sequence[Schema], state: State) -> SchemaSelection.SelectionDetails:
+        """ Selects a schema for explicit activation from the supplied list of applicable schemas.
+
+        Note: If a schema with a composite action was PREVIOUSLY selected, it will also compete for selection if any
+        of its component schemas are applicable.
+
+        (See Drescher 1991, Section 3.4 for details on the selection algorithm.)
+
+        :param schemas: a list of applicable schemas that are candidates for selection
+        :param state: the selection state
+
+        :return: a SelectionDetails object that contains the selected schema and other selection-related information
+        """
         if not schemas:
             raise ValueError('Collection of applicable schemas must contain at least one schema')
 
-        # TODO: update goal/explore weights.
-        # "The schema mechanism maintains a cyclic balance between emphasizing goal-directed value and exploration
-        #  value. The emphasis is achieved by changing the weights of the relative contributions of these components
-        #  to the importance asserted by each schema. Goal-directed value is emphasized most of the time, but a
-        #  significant part of the time, goal-directed value is diluted so that only very important goals take
-        #  precedence over exploration criteria." (See Drescher, 1991, p. 66)
+        # a schema from a composite action that was previously selected for execution
+        pending = self.update_pending(state)
 
-        goal_values = self._goal_pursuit(schemas)
-        explore_values = self._explore(schemas)
+        # applicable schemas and their selection values
+        candidates = schemas
+        candidates_values = self.calc_effective_values(candidates, pending)
 
-        trace(f'selection applicable schemas: {", ".join([str(s) for s in schemas])}')
-        trace(f'selection goal-pursuit values: {goal_values}')
-        trace(f'selection exploratory values: {explore_values}')
+        # select a schema for execution. candidates will include components from any pending composite actions.
+        selected_schema, value = self._select(candidates, candidates_values)
+        debug(f'selected schema: {selected_schema} [eff. value: {value}]')
 
-        # TODO: Only reliable schemas should be used for goal pursuit. How do we do this??? Perhaps a large penalty
-        # TODO: for unreliable schemas???
-        selection_values = self.goal_weight * goal_values + self.explore_weight * explore_values
+        # interruption of a pending schema (see Drescher, 1991, p. 61)
+        if pending and (selected_schema not in pending.action.controller.components):
+            trace(f'pending schema {pending} interrupted: alternate schema chosen {str(selected_schema)}')
+            self._pending_schemas.clear()
 
-        trace(f'weighted selection values: {selection_values}')
+        # "the [explicit] activation of a schema that has a composite action entails the immediate [explicit] activation
+        #  of some component schema..." (See Drescher 1991, p. 60)
+        while selected_schema.action.is_composite():
+            # adds schema to list of pending composite action schemas
+            trace(f'adding pending schema {selected_schema}')
+            self._pending_schemas.appendleft(selected_schema)
 
-        # debug('selection values: ')
-        # for s, v in zip(schemas, selection_values):
-        #     debug(f'{s}:{float(v):.2f}')
+            applicable_components = [s for s in selected_schema.action.controller.components if s.is_applicable(state)]
 
-        # TODO: Need to increase the selection value for pending composite actions
-        # “The mechanism grants a pending schema enhanced importance for selection, so that the schema will likely
-        #  be re-selected until its completion, unless some far more important opportunity arises. Hence, there is
-        #  a kind of focus of attention that deters wild thrashing from one never-completed action to another, while
-        #  still allowing interruption for a good reason.” (Drescher, 1991, p. 62)
+            # recursive call to select. (selecting from composite action's applicable components)
+            trace(f'selecting component of {selected_schema} [recursive call to select]')
+            sd = self.select(applicable_components, state)
 
-        # "A new activation selection occurs at each time unit. Even if a chain of schemas leading to some goal is
-        #  still in progress, each next link in the chain must compete for activation." (Drescher, 1991, p. 61)
-        selected_schema = self._select(schemas, selection_values)
+            selected_schema = sd.selected
+            value = sd.effective_value
 
-        debug(f'selected schema: {selected_schema}')
+        return self.SelectionDetails(applicable=schemas,
+                                     selected=selected_schema,
+                                     selection_state=state,
+                                     effective_value=value)
 
-        # TODO: if the selected schema contains a composite action, we must do some additional work here
-        if isinstance(selected_schema.action, CompositeAction):
-            selected_schema = self._process_composite_action(selected_schema)
+    def calc_effective_values(self, schemas: Sequence[Schema], pending: Schema) -> np.ndarray:
+        return np.sum([w * v(schemas, pending) for w, v in zip(self._weights, self._values)], axis=0)
 
-        return self.SelectionDetails(applicable=schemas, selected=selected_schema)
+    def update_pending(self, state: State) -> Optional[Schema]:
+        """
 
-    def _process_composite_action(self, schema: Schema) -> Schema:
-        #####################
-        # Composite Actions #
-        #####################
+        :param state:
+        :return:
+        """
+        next_pending = None
+        while self._pending_schemas and not next_pending:
+            pending_schema = self._pending_schemas[0]
+            action = pending_schema.action
+            goal_state = pending_schema.action.goal_state
 
-        # TODO: Implement this.
-        #   “A composite action is enabled when one of its components is applicable. If a schema is applicable but
-        #    its action is not enabled, its selection for activation is inhibited; having a non-enabled action is,
-        #    in this respect, similar to having an override condition obtain.” (Drescher, 1991, p.90)
+            # sanity check
+            assert action.is_composite()
 
-        # TODO: According to Drescher 1987, only RELIABLE schemas can serve as elements of a plan. I suspect this
-        # TODO: relates to composite actions.
-        # TODO: "The Schema Mechanism uses only reliable schemas to pursue goals." (Drescher 1987, p. 292)
+            if not action.is_enabled(state=state):
+                trace(f'pending schema {pending_schema} aborted: no applicable components for state "{state}"')
+                self._pending_schemas.popleft()
+            elif goal_state.is_satisfied(state=state):
+                trace(f'pending schema {pending_schema} completed: goal state {goal_state} reached')
+                self._pending_schemas.popleft()
+            else:
+                next_pending = pending_schema
 
-        # 1.) Each link must compete for activation during each selection event
-        #
-        #   "Even if a chain of schemas leading to some goal is still in progress, each next link in the chain must
-        #    compete for activation." (Drescher, 1991, p. 61)
+        return next_pending
 
-        # 2.) Interruption/Abortion
-        #
-        #   “The mechanism also permits an executing composite action to be interrupted. Even if a schema with a
-        #    composite action is in progress, the cycle of schema selection continues at each next time unit. If the
-        #    pending schema is re-selected, its composite action proceeds to select and activate the next component
-        #    schema (which may recursively invoke yet another composite action, etc.). If, on the other hand, a schema
-        #    other than the pending schema is selected, the pending schema is aborted, its composite action terminated
-        #    prematurely.” (Drescher, 1991, p. 61)
+    # TODO: Make this a private method after testing
+    def select_from_pending(self, schema: Schema, state: State) -> tuple[Optional[Schema], float]:
+        """ Selects an applicable component from the composite Schema's controller.
 
-        # 3.) Enhanced importance of pending schemas (i.e., in-flight schemas with composite actions)
-        #
-        #   “The mechanism grants a pending schema enhanced importance for selection, so that the schema will likely
-        #    be re-selected until its completion, unless some far more important opportunity arises. Hence, there is
-        #    a kind of focus of attention that deters wild thrashing from one never-completed action to another, while
-        #    still allowing interruption for a good reason.” (Drescher, 1991, p. 62)
-        return schema
+        :param state: the selection state
+        
+        :return: the selected component and its effective value
+        """
+        controller = schema.action.controller
+        applicable_components = np.array([schema for schema in controller.components if schema.is_applicable(state)])
+
+        # only consider candidates with max goal proximity
+        proximities = np.array([controller.proximity(schema) for schema in applicable_components])
+        max_proximity = np.max(proximities)
+
+        candidates = applicable_components[np.nonzero(proximities == max_proximity)]
+        values = self.calc_effective_values(candidates, pending=schema)
+
+        selected_schema, value = self._select(candidates, values)
+        return selected_schema, value
+
+    @property
+    def pending_schema(self) -> Optional[Schema]:
+        """ Returns the pending, previously selected, non-terminated schema with a composite action (if one exists).
+
+        :return: the current pending Schema or None if one does not exist.
+        """
+        return self._pending_schemas[0] if self._pending_schemas else None
 
 
 # FIXME: Need to rethink the interaction between modules. Should I use observers or let the SchemaMechanism
@@ -562,9 +624,14 @@ class SchemaMechanism:
         self._primitive_schemas = [Schema(action=a) for a in self._primitive_actions]
 
         self._schema_memory = SchemaMemory(self._primitive_schemas)
-        self._schema_selection = SchemaSelection()
+        self._schema_selection = SchemaSelection(
+            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
+            value_strategies=[
+                GoalPursuitEvaluationStrategy(),
+                EpsilonGreedyExploratoryStrategy(0.9)
+            ],
+        )
 
-        self._selection_state: Optional[State] = None
         self._selection_details: Optional[SchemaSelection.SelectionDetails] = None
 
     @property
@@ -581,14 +648,13 @@ class SchemaMechanism:
             _ = ItemPool().get(se)
 
         # learn from results of previous actions (if any)
-        if self._selection_state and self._selection_details:
+        if self._selection_details:
             self._schema_memory.update_all(
                 selection_details=self._selection_details,
-                selection_state=self._selection_state,
                 result_state=state)
 
             for item in ReadOnlyItemPool():
-                item.update_delegated_value(selection_state=self._selection_state,
+                item.update_delegated_value(selection_state=self._selection_details.selection_state,
                                             result_state=state)
 
         # updates unconditional state value average
@@ -597,9 +663,15 @@ class SchemaMechanism:
         # determine all schemas applicable to the current state
         applicable_schemas = self._schema_memory.all_applicable(state)
 
+        # TODO: update goal/explore weights.
+        # "The schema mechanism maintains a cyclic balance between emphasizing goal-directed value and exploration
+        #  value. The emphasis is achieved by changing the weights of the relative contributions of these components
+        #  to the importance asserted by each schema. Goal-directed value is emphasized most of the time, but a
+        #  significant part of the time, goal-directed value is diluted so that only very important goals take
+        #  precedence over exploration criteria." (See Drescher, 1991, p. 66)
+
         # select a single schema from the applicable schemas
-        self._selection_details = self._schema_selection.select(applicable_schemas)
-        self._selection_state = state
+        self._selection_details = self._schema_selection.select(applicable_schemas, state)
 
         return self._selection_details.selected
 

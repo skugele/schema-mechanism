@@ -9,6 +9,7 @@ from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.func_api import sym_schema
+from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.share import GlobalParams
@@ -107,6 +108,32 @@ class TestCompositeAction(TestShared):
 
         # test: a unique id should be assigned
         self.assertIsNotNone(self.ca.uid)
+
+    def test_is_enabled(self):
+        ca = CompositeAction(goal_state=self.goal_state)
+
+        # sanity checks: verifies CompositeAction has no components
+        self.assertEqual(0, len(ca.controller.components))
+
+        # test: composite action with no composite schemas SHOULD NOT be enabled in ANY state
+        self.assertFalse(ca.is_enabled(sym_state('A')))
+        self.assertFalse(ca.is_enabled(sym_state('B')))
+        self.assertFalse(ca.is_enabled(sym_state('A,B,C,D,E,F,G')))
+
+        # adds components for next test case
+        chains = [Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d, self.s3_d_e])]
+        ca.controller.update(chains)
+
+        # sanity check: verifies CompositeAction has expected components needed for test case
+        self.assertSetEqual(set(chains[0]), ca.controller.components)
+
+        # test: composite action with applicable component (context matches State) SHOULD be enabled
+        for state in {sym_state(se) for se in 'ABCD'}:
+            self.assertTrue(ca.is_enabled(state))
+
+        # test: composite action without applicable components (context does not matches State) SHOULD NOT be enabled
+        for state in {sym_state(se) for se in 'EJ1'}:
+            self.assertFalse(ca.is_enabled(state))
 
     def test_equals(self):
         self.assertTrue(satisfies_equality_checks(obj=self.ca, other=self.other))

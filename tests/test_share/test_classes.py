@@ -1,3 +1,4 @@
+from collections import deque
 from typing import Any
 from typing import Optional
 
@@ -7,6 +8,7 @@ from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Schema
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
+from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 
@@ -36,11 +38,11 @@ class MockObservable(Observable):
 class MockSymbolicItem(SymbolicItem):
     def __init__(self,
                  source: str,
-                 primitive_value: float,
-                 avg_accessible_value: float):
+                 primitive_value: Optional[float] = None,
+                 avg_accessible_value: Optional[float] = None):
         super().__init__(source, primitive_value)
 
-        self._avg_accessible_value = avg_accessible_value
+        self._avg_accessible_value = avg_accessible_value if not None else 0.0
 
     @property
     def avg_accessible_value(self) -> float:
@@ -87,12 +89,15 @@ class MockSchema(Schema):
         super().__init__(action=action, context=context, result=result, **kwargs)
 
         self._reliability = reliability
-        self._avg_duration = avg_duration
+        self._avg_duration = avg_duration or 1.0
 
     @property
     def reliability(self) -> float:
         return super().reliability if self._reliability is None else self._reliability
 
-    @property
-    def avg_duration(self) -> float:
-        return super().avg_duration if self._avg_duration is None else self._avg_duration
+
+class MockSchemaSelection(SchemaSelection):
+    def __init__(self, pending_schemas: Optional[deque[Schema]] = None, **kwargs):
+        super().__init__(**kwargs)
+
+        self._pending_schemas = pending_schemas
