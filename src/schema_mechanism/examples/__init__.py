@@ -20,18 +20,30 @@ params.set('verbosity', Verbosity.INFO)
 
 
 def display_known_schemas(sm: SchemaMechanism) -> None:
-    info(f'number of known schemas ({len(sm.schema_memory)})')
+    info(f'known schemas (n = {len(sm.schema_memory)})')
     for s in sm.schema_memory:
-        info(f'\t{str(s)}')
+        composite = s.action.is_composite()
+        info(f'\t{str(s)} [composite? {composite}]')
+        if composite:
+            display_components(s)
+
+
+def display_components(schema: Schema) -> None:
+    if not schema.action.is_composite():
+        return
+
+    info(f'\t\tcontroller components: (n = {len(schema.action.controller.components)})')
+    for component in schema.action.controller.components:
+        info(f'\t\t\t{str(component)} [proximity: {schema.action.controller.proximity(component)}]')
 
 
 def display_item_values() -> None:
     info(f'baseline value: {GlobalStats().baseline_value}')
 
     pool = ReadOnlyItemPool()
-    info(f'number of known items: ({len(pool)})')
-    for i in sorted(pool, key=lambda i: -i.delegated_value):
-        info(f'\t{repr(i)}')
+    info(f'known items: (n = {len(pool)})')
+    for item in sorted(pool, key=lambda i: -i.delegated_value):
+        info(f'\t{repr(item)}')
 
 
 def display_schema_info(schema: Schema) -> None:

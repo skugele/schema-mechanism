@@ -2,6 +2,7 @@ import importlib
 import itertools
 from abc import ABCMeta
 from collections import Collection
+from collections import defaultdict
 from collections.abc import Iterable
 from itertools import tee
 from typing import Any
@@ -113,6 +114,15 @@ class BoundedSet(set):
         illegal_values = [v for v in values if not self.is_legal_value(v)]
         if illegal_values:
             raise ValueError(f'illegal values: {illegal_values}')
+
+
+class DefaultDictWithKeyFactory(defaultdict):
+    def __missing__(self, key):
+        if self.default_factory is None:
+            raise KeyError(key)
+        else:
+            ret = self[key] = self.default_factory(key)
+            return ret
 
 
 def cosine_sims(v: np.ndarray, state: Iterable[np.ndarray]) -> np.ndarray:

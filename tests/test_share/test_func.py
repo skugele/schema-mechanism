@@ -2,6 +2,7 @@ from collections import Hashable
 from copy import copy
 from typing import Any
 
+from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.share import GlobalParams
@@ -15,6 +16,8 @@ def common_test_setup():
     GlobalParams().set('verbosity', Verbosity.WARN)
 
     GlobalStats().reset()
+
+    CompositeAction.reset()
 
 
 def is_eq_reflexive(x: Any) -> bool:

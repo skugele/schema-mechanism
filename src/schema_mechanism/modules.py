@@ -117,35 +117,27 @@ class SchemaMemory(Observer):
         # update global statistics
         self._stats.n_updates += len(applicable)
 
-        # state transition explained by activated reliable schema (see SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
+        # True if state transition explained by activated reliable schema
+        #     (See SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
         explained = False
-
-        # TODO: Need to calculate activation for schema's with composite actions.
-        # TODO: It may be cleanest to create a new "is_activated" method on the schema class, to abstract away the
-        # TODO: differences between composite and primitive actions.
-
-        # “A composite action is considered to have been implicitly taken whenever its goal state becomes
-        #  satisfied--that is, makes a transition from Off to On--even if that composite action was never initiated by
-        #  an activated schema. Marginal attribution can thereby detect results caused by the goal state, even if the
-        #  goal state obtains due to external events.” (See Drescher, 1991, p. 91)
 
         # I'm assuming that only APPLICABLE schemas should be updated. This is based on the belief that all
         # of the probabilities within a schema are really conditioned on the context being satisfied, even
         # though this fact is implicit.
-        activated_schemas = [s for s in applicable if s.action == schema.action]
-        non_activated_schemas = [s for s in applicable if s.action != schema.action]
+        activated_schemas = [s for s in applicable if s.is_activated(schema, result_state)]
+        non_activated_schemas = [s for s in applicable if not s.is_activated(schema, result_state)]
 
-        # all activated schemas must be updated BEFORE non-activated. this supports ER_SUPPRESS_UPDATE_ON_EXPLAINED.
+        # all activated schemas must be updated BEFORE non-activated.
         for s in activated_schemas:
-            if s.action == schema.action:
-                explained |= True if is_reliable(schema) and schema.predicts_state(result_state) else False
+            # this supports SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED
+            explained |= True if is_reliable(schema) and schema.predicts_state(result_state) else False
 
-                s.update(activated=True,
-                         s_prev=selection_state,
-                         s_curr=result_state,
-                         new=new,
-                         lost=lost,
-                         explained=explained)
+            s.update(activated=True,
+                     s_prev=selection_state,
+                     s_curr=result_state,
+                     new=new,
+                     lost=lost,
+                     explained=explained)
 
         for s in non_activated_schemas:
             s.update(activated=False,
@@ -154,6 +146,12 @@ class SchemaMemory(Observer):
                      new=new,
                      lost=lost,
                      explained=explained)
+
+        # update composite action controllers
+        controllers = CompositeAction.all_satisfied_by(result_state)
+        for c in controllers:
+            chains = self.backward_chains(c.goal_state)
+            c.update(chains)
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
         satisfied = itertools.chain.from_iterable(
@@ -517,7 +515,7 @@ class SchemaSelection:
             raise ValueError('Collection of applicable schemas must contain at least one schema')
 
         # a schema from a composite action that was previously selected for execution
-        pending = self.update_pending(state)
+        pending = self._update_pending(state)
 
         # applicable schemas and their selection values
         candidates = schemas
@@ -556,12 +554,15 @@ class SchemaSelection:
     def calc_effective_values(self, schemas: Sequence[Schema], pending: Schema) -> np.ndarray:
         return np.sum([w * v(schemas, pending) for w, v in zip(self._weights, self._values)], axis=0)
 
-    def update_pending(self, state: State) -> Optional[Schema]:
-        """
+    @property
+    def pending_schema(self) -> Optional[Schema]:
+        """ Returns the pending, previously selected, non-terminated schema with a composite action (if one exists).
 
-        :param state:
-        :return:
+        :return: the current pending Schema or None if one does not exist.
         """
+        return self._pending_schemas[0] if self._pending_schemas else None
+
+    def _update_pending(self, state: State) -> Optional[Schema]:
         next_pending = None
         while self._pending_schemas and not next_pending:
             pending_schema = self._pending_schemas[0]
@@ -581,35 +582,6 @@ class SchemaSelection:
                 next_pending = pending_schema
 
         return next_pending
-
-    # TODO: Make this a private method after testing
-    def select_from_pending(self, schema: Schema, state: State) -> tuple[Optional[Schema], float]:
-        """ Selects an applicable component from the composite Schema's controller.
-
-        :param state: the selection state
-        
-        :return: the selected component and its effective value
-        """
-        controller = schema.action.controller
-        applicable_components = np.array([schema for schema in controller.components if schema.is_applicable(state)])
-
-        # only consider candidates with max goal proximity
-        proximities = np.array([controller.proximity(schema) for schema in applicable_components])
-        max_proximity = np.max(proximities)
-
-        candidates = applicable_components[np.nonzero(proximities == max_proximity)]
-        values = self.calc_effective_values(candidates, pending=schema)
-
-        selected_schema, value = self._select(candidates, values)
-        return selected_schema, value
-
-    @property
-    def pending_schema(self) -> Optional[Schema]:
-        """ Returns the pending, previously selected, non-terminated schema with a composite action (if one exists).
-
-        :return: the current pending Schema or None if one does not exist.
-        """
-        return self._pending_schemas[0] if self._pending_schemas else None
 
 
 # FIXME: Need to rethink the interaction between modules. Should I use observers or let the SchemaMechanism
@@ -714,15 +686,6 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
             if schema.result is NULL_STATE_ASSERT
             else Assertion.replicate_with(old=schema.result, new=assertion)
         )
-
-        # TODO: create CompositeAction if result is novel.
-        # TODO: construct a bare schema containing the composite action.
-        # "Whenever a bare schema spawns a spinoff schema, the mechanism determines whether the new schema's result
-        #  is novel, as opposed to its already appearing as the result component of some other schema. If the result is
-        #  novel, the schema mechanism defines a new composite action with that result as its goal state; it is the
-        #  action of achieving that result. The schema mechanism also constructs a bare schema which has that action;
-        #  that schema's extended result then can discover effects of achieving the action's goal state."
-        #      (See Drescher 1991, p. 90)
 
         return Schema(action=schema.action, context=schema.context, result=new_result)
 

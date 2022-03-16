@@ -32,6 +32,7 @@ from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import trace
 from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.stats import ItemCorrelationTest
+from schema_mechanism.util import DefaultDictWithKeyFactory
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
@@ -858,18 +859,26 @@ class CompositeAction(Action):
      state..." (See Drescher 1991, p. 59)
     """
 
+    _controller_map: dict[StateAssertion, Controller] = (
+        DefaultDictWithKeyFactory(lambda key: CompositeAction.Controller(key))
+    )
+
     class Controller:
         def __init__(self, goal_state: StateAssertion):
             self._goal_state = goal_state
             self._proximity: dict[Schema, float] = defaultdict(lambda: 0.0)
             self._components: set[Schema] = set()
+            self._descendants: set[Schema] = set()
 
-            # "each time a composite action is explicitly initiated, the controller keeps track of which component
-            #  schemas are actually activated and when.... If the action successfully culminates in the goal state,
-            #  the actual cost and duration of execution from each entry point are compared with the proximity
-            #  information stored in the slot of each component actually activated; in case of discrepancy, the stored
-            #  information is adjusted in the direction of the actual data. If the action fails to reach its goal
-            #  state, the proximity measures for the utilized components are degraded." (See Drescher 1991, p. 92)
+        def __eq__(self, other):
+            if self is other:
+                return True
+            if isinstance(other, CompositeAction.Controller):
+                return self._goal_state == other.goal_state
+            return False if other is None else NotImplemented
+
+        def __hash__(self):
+            return hash(self._goal_state)
 
         @property
         def goal_state(self) -> StateAssertion:
@@ -885,6 +894,14 @@ class CompositeAction(Action):
             :return: the set of component schemas
             """
             return self._components
+
+        @property
+        def descendants(self) -> set[Schema]:
+            """ The set of schemas that are immediate components or their descendant components.
+
+            :return: the set of descendant schemas
+            """
+            return self._descendants
 
         def proximity(self, schema: Schema) -> float:
             """ Returns the proximity (i.e., closeness) of a schema to the composite action's goal state.
@@ -905,13 +922,51 @@ class CompositeAction(Action):
             lr: float = GlobalParams().get('learning_rate')
 
             for chain in chains:
+                if not chain:
+                    continue
+
+                # sanity check: chains must lead to the controller's goal state
+                final_state = chain[-1].result.as_state()
+                if not self.goal_state.is_satisfied(final_state):
+                    raise ValueError('Invalid chain: chain should result in state that satisfies the goal state')
+
                 avg_duration_to_goal_state = 0.0
 
                 for schema in reversed(chain):
+
+                    # prevents recursion (a controller should not have itself as a component)
+                    if self.contained_in(schema):
+                        break
+
                     self._components.add(schema)
+                    self._descendants.add(schema)
+
+                    if schema.action.is_composite():
+                        self._descendants.update(schema.action.controller.descendants)
 
                     avg_duration_to_goal_state += schema.avg_duration
                     self._proximity[schema] += lr * (1.0 / avg_duration_to_goal_state - self._proximity[schema])
+
+            # TODO: Implement this...
+            # "each time a composite action is explicitly initiated, the controller keeps track of which component
+            #  schemas are actually activated and when.... If the action successfully culminates in the goal state,
+            #  the actual cost and duration of execution from each entry point are compared with the proximity
+            #  information stored in the slot of each component actually activated; in case of discrepancy, the stored
+            #  information is adjusted in the direction of the actual data. If the action fails to reach its goal
+            #  state, the proximity measures for the utilized components are degraded." (See Drescher 1991, p. 92)
+
+        def contained_in(self, schema: Schema):
+            if not schema.action.is_composite():
+                return False
+
+            if self == schema.action.controller:
+                return True
+
+            controller = schema.action.controller
+            for component in itertools.chain.from_iterable([controller.components, controller.descendants]):
+                if component.action.is_composite() and self == component.action.controller:
+                    return True
+            return False
 
     def __init__(self, goal_state: StateAssertion, **kwargs):
         super().__init__(**kwargs)
@@ -919,7 +974,7 @@ class CompositeAction(Action):
         if not goal_state:
             raise ValueError('Goal state is not optional.')
 
-        self._controller = CompositeAction.Controller(goal_state)
+        self._controller = CompositeAction._controller_map[goal_state]
 
     def __eq__(self, other) -> bool:
         if isinstance(other, CompositeAction):
@@ -952,6 +1007,18 @@ class CompositeAction(Action):
         :return:
         """
         return any({schema.is_applicable(state) for schema in self._controller.components})
+
+    @classmethod
+    def all_satisfied_by(cls, state: State) -> Collection[Controller]:
+        satisfied: list[CompositeAction.Controller] = []
+        for goal_state, controller in cls._controller_map.items():
+            if goal_state.is_satisfied(state):
+                satisfied.append(controller)
+        return satisfied
+
+    @classmethod
+    def reset(cls) -> None:
+        return cls._controller_map.clear()
 
 
 class Assertion(ABC):
@@ -1700,6 +1767,39 @@ class Schema(Observer, Observable, UniqueIdMixin):
             inhibited |= self.overriding_conditions.is_satisfied(state, **kwargs)
 
         return (not inhibited) and self.context.is_satisfied(state, **kwargs)
+
+    def is_activated(self, schema: Schema, state: State, applicable: bool = True) -> bool:
+        """ Returns whether this schema was (implicitly or explicitly) activated as a result of the last selection.
+
+        "As a side-effect of an explicit activation, other schemas whose contexts are satisfied, but which are not
+         themselves selected for activation, may have their actions initiated (if they happen to share the same
+         action as the schema that was explicitly activated.) Such schemas are said to be implicitly activated."
+         (See Drescher 1991, p. 54)
+
+        “A composite action is considered to have been implicitly taken whenever its goal state becomes
+         satisfied--that is, makes a transition from Off to On--even if that composite action was never initiated by
+         an activated schema. Marginal attribution can thereby detect results caused by the goal state, even if the
+         goal state obtains due to external events.” (See Drescher, 1991, p. 91)
+
+        :param schema: the selected schema
+        :param state: the state RESULTING from the last selected action
+        :param applicable: whether this schema was applicable during the last selection event
+
+        :return: True if this schema is activated; False otherwise.
+        """
+        if not applicable:
+            return False
+
+        # explicit activation
+        if self == schema:
+            return True
+
+        # implicit activation
+        if self.action.is_composite():
+            goal_state: StateAssertion = self.action.goal_state
+            return goal_state.is_satisfied(state)
+        else:
+            return self.action == schema.action
 
     def is_primitive(self) -> bool:
         """ Returns whether this instance is a primitive (action-only) schema.

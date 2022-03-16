@@ -366,61 +366,61 @@ class TestSchemaSelection(TestCase):
         # L0 Schemas
         ############
 
-        # S1: 1>2
-        s1 = sym_schema('1,/A1/2,', reliability=1.0)
+        # 1>2
+        s_1_2 = sym_schema('1,/A1/2,', reliability=1.0)
 
-        # S2: 2>3
-        s2 = sym_schema('2,/A2/3,', reliability=1.0)
+        # 2>3
+        s_2_3 = sym_schema('2,/A2/3,', reliability=1.0)
 
-        # S3: 3>4
-        s3 = sym_schema('3,/A3/4,', reliability=1.0)
+        # 3>4
+        s_3_4 = sym_schema('3,/A3/4,', reliability=1.0)
 
-        # S4: 4>5
-        s4 = sym_schema('4,/A1/5,', reliability=1.0)
+        # 4>5
+        s_4_5 = sym_schema('4,/A1/5,', reliability=1.0)
 
-        # S5: 5>6
-        s5 = sym_schema('5,/A2/6,', reliability=1.0)
+        # 5>6
+        s_5_6 = sym_schema('5,/A2/6,', reliability=1.0)
 
         # L1 Schemas
         ############
 
-        # C1_2: S1 > S2
-        c1_2 = sym_schema('1,/3,/(3,J),', reliability=1.0)
+        # 1>3j
+        c_1_3j = sym_schema('1,/3,/(3,J),', reliability=1.0)
 
-        chains = [Chain([s1, s2])]
-        c1_2.action.controller.update(chains)
+        chains = [Chain([s_1_2, s_2_3])]
+        c_1_3j.action.controller.update(chains)
 
-        # C2_3: S2 > S3
-        c2_3 = sym_schema('2,/4,/(4,K),', reliability=1.0)
+        # 2>4k
+        c_2_4k = sym_schema('2,/4,/(4,K),', reliability=1.0)
 
-        chains = [Chain([s2, s3])]
-        c2_3.action.controller.update(chains)
+        chains = [Chain([s_2_3, s_3_4])]
+        c_2_4k.action.controller.update(chains)
 
-        # C3_5: S3 > S4 > S5
-        c3_5 = sym_schema('3,/6,/(6,L),', reliability=1.0)
+        # 3>6l
+        c_3_6l = sym_schema('3,/6,/(6,L),', reliability=1.0)
 
-        chains = [Chain([s3, s4, s5])]
-        c3_5.action.controller.update(chains)
+        chains = [Chain([s_3_4, s_4_5, s_5_6])]
+        c_3_6l.action.controller.update(chains)
 
         # L2 Schemas
         ############
-        # C12_23: C1_2 > C2_3
-        c12_23 = sym_schema('1,/(4,K),/M,', reliability=1.0)
+        # c1_4km: s_1_2 > c_2_4k
+        c1_4km = sym_schema('1,/(4,K),/(4,K,M),', reliability=1.0)
 
-        chains = [Chain([c1_2, c2_3])]
-        c12_23.action.controller.update(chains)
+        chains = [Chain([s_1_2, c_2_4k])]
+        c1_4km.action.controller.update(chains)
 
-        # C23_35: C2_3 > C3_5
-        c23_35 = sym_schema('2,/(6,L),/N,', reliability=1.0)
+        # C23_35: c_2_4k > C3_5
+        c2_6ln = sym_schema('2,/(6,L),/(6,L,N),', reliability=1.0)
 
-        chains = [Chain([c2_3, c3_5])]
-        c23_35.action.controller.update(chains)
+        chains = [Chain([c_1_3j, c_3_6l])]
+        c2_6ln.action.controller.update(chains)
 
         # L3 Schemas
         ############
         c123_235 = sym_schema('1,/(6,L,N),/Z,', reliability=1.0)
 
-        chains = [Chain([c12_23, c23_35])]
+        chains = [Chain([s_1_2, c2_6ln])]
         c123_235.action.controller.update(chains)
 
         # mock is used to directly set the pending schema
@@ -429,8 +429,8 @@ class TestSchemaSelection(TestCase):
             value_strategies=[primitive_value_evaluation_strategy]
         )
 
-        sd = mock_ss.select(schemas=[s1, c1_2, c123_235], state=sym_state('1'))
-        self.assertEqual(s1, sd.selected)
+        sd = mock_ss.select(schemas=[s_1_2, c_1_3j, c123_235], state=sym_state('1'))
+        self.assertEqual(s_1_2, sd.selected)
 
 
 class TestEpsilonGreedy(unittest.TestCase):
