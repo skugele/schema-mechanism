@@ -340,18 +340,23 @@ def instrumental_values(schemas: Sequence[Schema], pending: Optional[Schema] = N
 
     :return:
     """
-    # instrumental value
-    ####################
-    values = np.zeros_like(schemas)
+    if not schemas and pending:
+        raise ValueError('A non-empty sequence of schemas must be provided whenever a pending schema is provided.')
 
+    values = np.zeros_like(schemas, dtype=np.float64)
+
+    # no instrumental value if pending schema not active
     if not pending:
         return values
 
-    goal_state = pending.action.goal_state
+    if not pending.action.is_composite():
+        raise ValueError('Pending schemas must have composite actions.')
 
-    # TODO: add delegated value as well once the function is implemented
+    goal_state = pending.action.goal_state
     goal_state_value = primitive_value(goal_state) + delegated_value(goal_state)
-    if primitive_value(goal_state) <= 0:
+
+    # goal state must have positive value to propagate instrumental value
+    if goal_state_value <= 0:
         return values
 
     controller = pending.action.controller
@@ -359,7 +364,7 @@ def instrumental_values(schemas: Sequence[Schema], pending: Optional[Schema] = N
         if schema in controller.components:
             proximity = controller.proximity(schema)
             cost = controller.total_cost(schema)
-            values[i] = proximity * goal_state_value - cost
+            values[i] = max(proximity * goal_state_value - cost, 0.0)
 
     return values
 
@@ -386,6 +391,12 @@ class GoalPursuitEvaluationStrategy:
 
         # TODO: Only reliable schemas should be used for goal pursuit. How do we do this??? Perhaps a large penalty
         # TODO: for unreliable schemas???
+        trace('goal pursuit selection values:')
+        trace(f'\tschemas: {[str(s) for s in schemas]}')
+        trace(f'\tpending: {[str(pending)]}')
+        trace(f'\tpv: {str(pv)}')
+        trace(f'\tdv: {str(dv)}')
+        trace(f'\tiv: {str(iv)}')
 
         return pv + dv + iv
 
@@ -617,7 +628,7 @@ class SchemaMechanism:
             select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
             value_strategies=[
                 GoalPursuitEvaluationStrategy(),
-                EpsilonGreedyExploratoryStrategy(0.9)
+                EpsilonGreedyExploratoryStrategy(0.2)
             ],
         )
 

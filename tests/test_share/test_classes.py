@@ -42,19 +42,23 @@ class MockSymbolicItem(SymbolicItem):
                  avg_accessible_value: Optional[float] = None):
         super().__init__(source, primitive_value)
 
-        self._avg_accessible_value = avg_accessible_value if not None else 0.0
+        self._mock_avg_accessible_value = avg_accessible_value
 
     @property
     def avg_accessible_value(self) -> float:
-        return self._avg_accessible_value
+        return (
+            super().avg_accessible_value
+            if self._mock_avg_accessible_value is None
+            else self._mock_avg_accessible_value
+        )
 
     @avg_accessible_value.setter
     def avg_accessible_value(self, value: float) -> None:
-        self._avg_accessible_value = value
+        self._mock_avg_accessible_value = value
 
     @property
     def delegated_value(self) -> float:
-        return self._avg_accessible_value - GlobalStats().baseline_value
+        return self.avg_accessible_value - GlobalStats().baseline_value
 
 
 class MockCompositeItem(CompositeItem):
@@ -63,19 +67,23 @@ class MockCompositeItem(CompositeItem):
                  avg_accessible_value: float):
         super().__init__(source)
 
-        self._avg_accessible_value = avg_accessible_value
+        self._mock_avg_accessible_value = avg_accessible_value
 
     @property
     def avg_accessible_value(self) -> float:
-        return self._avg_accessible_value
+        return (
+            self._mock_avg_accessible_value
+            if self._mock_avg_accessible_value
+            else super().avg_accessible_value
+        )
 
     @avg_accessible_value.setter
     def avg_accessible_value(self, value: float) -> None:
-        self._avg_accessible_value = value
+        self._mock_avg_accessible_value = value
 
     @property
     def delegated_value(self) -> float:
-        return self._avg_accessible_value - GlobalStats().baseline_value
+        return self.avg_accessible_value - GlobalStats().baseline_value
 
 
 class MockSchema(Schema):
@@ -85,15 +93,37 @@ class MockSchema(Schema):
                  result: Optional[StateAssertion] = None,
                  reliability: float = None,
                  avg_duration: float = None,
+                 cost: float = None,
                  **kwargs):
         super().__init__(action=action, context=context, result=result, **kwargs)
 
-        self._reliability = reliability
-        self._avg_duration = avg_duration or 1.0
+        self._mock_reliability = reliability
+        self._mock_avg_duration = avg_duration
+        self._mock_cost = cost
 
     @property
     def reliability(self) -> float:
-        return super().reliability if self._reliability is None else self._reliability
+        return (
+            self._mock_reliability
+            if self._mock_reliability
+            else super().reliability
+        )
+
+    @property
+    def avg_duration(self) -> float:
+        return (
+            self._mock_avg_duration
+            if self._mock_avg_duration
+            else super().avg_duration
+        )
+
+    @property
+    def cost(self) -> float:
+        return (
+            self._mock_cost
+            if self._mock_cost
+            else super().cost
+        )
 
 
 class MockSchemaSelection(SchemaSelection):
