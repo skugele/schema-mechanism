@@ -9,6 +9,7 @@ from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
+from schema_mechanism.core import primitive_value
 from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
@@ -130,7 +131,7 @@ class TestStateAssertion(TestCase):
 
     def test_primitive_value_1(self):
         # test: empty assertion should have zero total value
-        self.assertEqual(0.0, StateAssertion().primitive_value)
+        self.assertEqual(0.0, primitive_value(StateAssertion()))
 
     def test_primitive_value_2(self):
         # test: single NON-NEGATED item assertion in state assertion should have (prim. value == item's prim. value)
@@ -141,7 +142,7 @@ class TestStateAssertion(TestCase):
         self.assertFalse(ia.is_negated)
 
         sa = StateAssertion((ia,))
-        self.assertEqual(ia.item.primitive_value, sa.primitive_value)
+        self.assertEqual(ia.item.primitive_value, primitive_value(sa))
 
     def test_primitive_value_3(self):
         # test: state assertion with single NEGATED item assertion should have prim. value == 0.0
@@ -152,7 +153,7 @@ class TestStateAssertion(TestCase):
         self.assertTrue(ia.is_negated)
 
         sa = StateAssertion((ia,))
-        self.assertEqual(0.0, sa.primitive_value)
+        self.assertEqual(0.0, primitive_value(sa))
 
     def test_primitive_value_4(self):
         # test: state assertion with multiple NON-NEGATED item assertion should have prim. value == sum of item
@@ -161,7 +162,7 @@ class TestStateAssertion(TestCase):
 
         sa = StateAssertion(ias_pos)
 
-        self.assertEqual(sum(ia.item.primitive_value for ia in ias_pos), sa.primitive_value)
+        self.assertEqual(sum(ia.item.primitive_value for ia in ias_pos), primitive_value(sa))
 
     def test_primitive_value_5(self):
         # test: state assertion with multiple NEGATED item assertion should have prim. value == -(sum of item
@@ -170,7 +171,7 @@ class TestStateAssertion(TestCase):
 
         sa = StateAssertion(ias_neg)
 
-        self.assertEqual(sum(ia.item.primitive_value for ia in ias_neg), sa.primitive_value)
+        self.assertEqual(sum(ia.item.primitive_value for ia in ias_neg), primitive_value(sa))
 
     def test_primitive_value_6(self):
         # test: state assertion with negated AND non-negated item assertion should have prim. value == sum(prim. value
@@ -181,7 +182,7 @@ class TestStateAssertion(TestCase):
 
         sa = StateAssertion({*ias_pos, *ias_neg})
         expected_value = sum(ia.item.primitive_value for ia in ias_pos) - sum(ia.item.primitive_value for ia in ias_neg)
-        self.assertEqual(expected_value, sa.primitive_value)
+        self.assertEqual(expected_value, primitive_value(sa))
 
     def test_primitive_value_7(self):
         # test: NEGATED STATE ASSERTION with negated AND non-negated item assertion should have prim. value ==
@@ -195,7 +196,7 @@ class TestStateAssertion(TestCase):
                 sum(ia.item.primitive_value for ia in ias_pos) -
                 sum(ia.item.primitive_value for ia in ias_neg)
         )
-        self.assertEqual(expected_value, sa.primitive_value)
+        self.assertEqual(expected_value, primitive_value(sa))
 
     def test_iterable(self):
         count = 0

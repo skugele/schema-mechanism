@@ -1,5 +1,4 @@
 from __future__ import annotations
-from __future__ import annotations
 
 import itertools
 from abc import ABC
@@ -13,6 +12,7 @@ from collections.abc import MutableSet
 from enum import Enum
 from enum import auto
 from enum import unique
+from functools import singledispatch
 from functools import singledispatchmethod
 from typing import Any
 from typing import Optional
@@ -43,58 +43,11 @@ from schema_mechanism.util import repr_str
 StateElement = Hashable
 
 
-class Activatable(ABC):
-    @abstractmethod
-    def is_on(self, state: State, **kwargs) -> bool: ...
-
-    def is_off(self, state: State, **kwargs) -> bool:
-        return not self.is_on(state, **kwargs)
-
-
-# TODO: Better name?
-class ValueBearer(ABC):
-    @property
-    @abstractmethod
-    def primitive_value(self) -> float: ...
-
-    @property
-    @abstractmethod
-    def avg_accessible_value(self) -> float: ...
-
-    @property
-    @abstractmethod
-    def delegated_value(self) -> float: ...
-
-
-class State(ValueBearer):
+class State:
     def __init__(self, elements: Collection[StateElement]) -> None:
         super().__init__()
 
         self._elements = frozenset(elements)
-
-    @property
-    def elements(self) -> Collection[StateElement]:
-        return self._elements
-
-    @property
-    def primitive_value(self) -> float:
-        if not self._elements:
-            return 0.0
-
-        return sum(ReadOnlyItemPool().get(se).primitive_value for se in self._elements)
-
-    @property
-    def delegated_value(self) -> float:
-        if not self._elements:
-            return 0.0 - GlobalStats().baseline_value
-        return np.max([ReadOnlyItemPool().get(se).delegated_value for se in self._elements])
-
-    @property
-    def avg_accessible_value(self) -> float:
-        if not self._elements:
-            return 0.0
-        items = [ReadOnlyItemPool().get(se) for se in self._elements]
-        return np.max([i.avg_accessible_value for i in items])
 
     def __len__(self) -> int:
         return len(self._elements)
@@ -118,6 +71,10 @@ class State(ValueBearer):
 
     def __str__(self) -> str:
         return ','.join([str(se) for se in self._elements]) if self._elements else None
+
+    @property
+    def elements(self) -> Collection[StateElement]:
+        return self._elements
 
 
 def held_state(s_prev: State, s_curr: State) -> frozenset[Item]:
@@ -275,8 +232,8 @@ class DelegatedValueHelper:
             self._update_avg_accessible_val()
 
     def _update_trace_val(self, state: State) -> None:
-        s_pv = state.primitive_value
-        s_aav = state.avg_accessible_value
+        s_pv = primitive_value(state)
+        s_aav = avg_accessible_value(state)
 
         self._dv_trace_value = np.max([self._dv_trace_value, s_pv, s_aav])
         self._dv_trace_updates_remaining -= 1
@@ -293,7 +250,7 @@ class DelegatedValueHelper:
         self._dv_trace_value = -np.inf
 
 
-class Item(Activatable, ValueBearer):
+class Item:
 
     def __init__(self, source: Any, primitive_value: float = None, **kwargs) -> None:
         super().__init__()
@@ -437,7 +394,7 @@ class GlobalStats(metaclass=Singleton):
         :return: None
         """
         learning_rate = GlobalParams().get('learning_rate')
-        self._baseline += learning_rate * (state.primitive_value - self._baseline)
+        self._baseline += learning_rate * (primitive_value(state) - self._baseline)
 
     def reset(self):
         self._baseline = 0.0
@@ -803,224 +760,6 @@ NULL_EC_ITEM_STATS = ReadOnlyECItemStats()
 NULL_ER_ITEM_STATS = ReadOnlyERItemStats()
 
 
-class Action(UniqueIdMixin):
-
-    def __init__(self, label: Optional[str] = None, **kwargs):
-        super().__init__(**kwargs)
-
-        self._label = label
-
-    def __eq__(self, other):
-        if isinstance(other, Action):
-            if self._label and other._label:
-                return self._label == other._label
-            else:
-                return self._uid == other._uid
-
-        return False if other is None else NotImplemented
-
-    def __hash__(self) -> int:
-        return hash(self._label or self._uid)
-
-    def __str__(self) -> str:
-        return self._label or str(self.uid)
-
-    def __repr__(self) -> str:
-        return repr_str(self, {'uid': self.uid,
-                               'label': self.label})
-
-    @property
-    def label(self) -> Optional[str]:
-        """ A description of this action.
-
-        :return: returns the Action's label
-        """
-        return self._label
-
-    def is_composite(self):
-        return False
-
-    def is_enabled(self, **kwargs) -> bool:
-        """ Returns whether this action is enabled.
-
-        Note: Schemas are inhibited for activation if their actions are disabled. This is primarily useful for
-              composite actions.
-
-        :param kwargs: optional keyword arguments
-
-        :return: True if enabled; False otherwise.
-        """
-        return True
-
-
-class CompositeAction(Action):
-    """ "A composite action is essentially a subroutine: it is defined to be the action of achieving the designated
-     goal state, by whatever means is available. The means are given by chains of schemas that lead to the goal
-     state..." (See Drescher 1991, p. 59)
-    """
-
-    _controller_map: dict[StateAssertion, Controller] = (
-        DefaultDictWithKeyFactory(lambda key: CompositeAction.Controller(key))
-    )
-
-    class Controller:
-        def __init__(self, goal_state: StateAssertion):
-            self._goal_state = goal_state
-            self._proximity: dict[Schema, float] = defaultdict(lambda: 0.0)
-            self._components: set[Schema] = set()
-            self._descendants: set[Schema] = set()
-
-        def __eq__(self, other):
-            if self is other:
-                return True
-            if isinstance(other, CompositeAction.Controller):
-                return self._goal_state == other.goal_state
-            return False if other is None else NotImplemented
-
-        def __hash__(self):
-            return hash(self._goal_state)
-
-        @property
-        def goal_state(self) -> StateAssertion:
-            return self._goal_state
-
-        @property
-        def components(self) -> set[Schema]:
-            """ The set of schemas that are selectable in pursuit of the controller's goal state.
-
-            Note: Components are currently limited to RELIABLE schemas that chain to the controller's goal state.
-            Drescher may have also allowed UNRELIABLE schemas as components.
-
-            :return: the set of component schemas
-            """
-            return self._components
-
-        @property
-        def descendants(self) -> set[Schema]:
-            """ The set of schemas that are immediate components or their descendant components.
-
-            :return: the set of descendant schemas
-            """
-            return self._descendants
-
-        def proximity(self, schema: Schema) -> float:
-            """ Returns the proximity (i.e., closeness) of a schema to the composite action's goal state.
-
-            "Proximity is inversely proportionate to the expected time to reach the goal state, derived from the
-             expected activation time of the schemas in the relevant chain; proximity is also proportionate to those
-             schemas' reliability, and inversely proportionate to their cost of activation." (See Drescher 1991, p. 60)
-
-            :param schema:
-            :return: a float that quantifies the schema's goal state proximity
-            """
-            return self._proximity[schema]
-
-        def update(self, chains: list[Chain[Schema]]) -> None:
-            if not chains:
-                return
-
-            lr: float = GlobalParams().get('learning_rate')
-
-            for chain in chains:
-                if not chain:
-                    continue
-
-                # sanity check: chains must lead to the controller's goal state
-                final_state = chain[-1].result.as_state()
-                if not self.goal_state.is_satisfied(final_state):
-                    raise ValueError('Invalid chain: chain should result in state that satisfies the goal state')
-
-                avg_duration_to_goal_state = 0.0
-
-                for schema in reversed(chain):
-
-                    # prevents recursion (a controller should not have itself as a component)
-                    if self.contained_in(schema):
-                        break
-
-                    self._components.add(schema)
-                    self._descendants.add(schema)
-
-                    if schema.action.is_composite():
-                        self._descendants.update(schema.action.controller.descendants)
-
-                    avg_duration_to_goal_state += schema.avg_duration
-                    self._proximity[schema] += lr * (1.0 / avg_duration_to_goal_state - self._proximity[schema])
-
-            # TODO: Implement this...
-            # "each time a composite action is explicitly initiated, the controller keeps track of which component
-            #  schemas are actually activated and when.... If the action successfully culminates in the goal state,
-            #  the actual cost and duration of execution from each entry point are compared with the proximity
-            #  information stored in the slot of each component actually activated; in case of discrepancy, the stored
-            #  information is adjusted in the direction of the actual data. If the action fails to reach its goal
-            #  state, the proximity measures for the utilized components are degraded." (See Drescher 1991, p. 92)
-
-        def contained_in(self, schema: Schema):
-            if not schema.action.is_composite():
-                return False
-
-            if self == schema.action.controller:
-                return True
-
-            controller = schema.action.controller
-            for component in itertools.chain.from_iterable([controller.components, controller.descendants]):
-                if component.action.is_composite() and self == component.action.controller:
-                    return True
-            return False
-
-    def __init__(self, goal_state: StateAssertion, **kwargs):
-        super().__init__(**kwargs)
-
-        if not goal_state:
-            raise ValueError('Goal state is not optional.')
-
-        self._controller = CompositeAction._controller_map[goal_state]
-
-    def __eq__(self, other) -> bool:
-        if isinstance(other, CompositeAction):
-            return self.goal_state == other.goal_state
-        return False if other is None else NotImplemented
-
-    def __hash__(self) -> int:
-        return hash(self.goal_state)
-
-    def __str__(self) -> str:
-        return str(self.controller.goal_state)
-
-    @property
-    def goal_state(self) -> StateAssertion:
-        return self._controller.goal_state
-
-    @property
-    def controller(self) -> CompositeAction.Controller:
-        return self._controller
-
-    def is_composite(self):
-        return True
-
-    def is_enabled(self, state: State, **kwargs) -> bool:
-        """
-
-        "A composite action is enabled when one of its components is applicable." (See Drescher 1991, p. 90)
-
-        :param state:
-        :return:
-        """
-        return any({schema.is_applicable(state) for schema in self._controller.components})
-
-    @classmethod
-    def all_satisfied_by(cls, state: State) -> Collection[Controller]:
-        satisfied: list[CompositeAction.Controller] = []
-        for goal_state, controller in cls._controller_map.items():
-            if goal_state.is_satisfied(state):
-                satisfied.append(controller)
-        return satisfied
-
-    @classmethod
-    def reset(cls) -> None:
-        return cls._controller_map.clear()
-
-
 class Assertion(ABC):
     def __init__(self, negated: bool, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -1067,7 +806,7 @@ class Assertion(ABC):
         return StateAssertion(asserts=(*old, *new))
 
 
-class ItemAssertion(Assertion, ValueBearer):
+class ItemAssertion(Assertion):
 
     def __init__(self, item: Item, negated: bool = False, **kwargs) -> None:
         super().__init__(negated, **kwargs)
@@ -1126,27 +865,8 @@ class ItemAssertion(Assertion, ValueBearer):
         else:
             return self._item.is_on(state, **kwargs)
 
-    # TODO: It's not clear how to handle negative assertions. Simply subtracting the values of those items seems
-    # TODO: incorrect, as the thing that it is not may actually be more valuable. The safest course for now seems to be
-    # TODO: to exclude negated asserts from these calculations.
 
-    # TODO: This should be removed
-    @property
-    def primitive_value(self):
-        return 0.0 if self.is_negated else self._item.primitive_value
-
-    # TODO: This should be removed
-    @property
-    def delegated_value(self):
-        return 0.0 if self.is_negated else self._item.delegated_value
-
-    # TODO: This should be removed
-    @property
-    def avg_accessible_value(self) -> float:
-        return 0.0 if self.is_negated else self._item.avg_accessible_value
-
-
-class StateAssertion(Assertion, ValueBearer):
+class StateAssertion(Assertion):
 
     def __init__(self,
                  asserts: Optional[Collection[ItemAssertion, ...]] = None,
@@ -1237,25 +957,6 @@ class StateAssertion(Assertion, ValueBearer):
         """
         return StateAssertion(asserts=[ItemAssertion(ReadOnlyItemPool().get(se)) for se in state])
 
-    # TODO: It's not clear how to handle negative assertions. Simply subtracting the values of those items seems
-    # TODO: incorrect, as the thing that it is not may actually be more valuable. The safest course for now seems to be
-    # TODO: to exclude negated asserts from these calculations.
-
-    # TODO: This should be removed (replaced by external methods)
-    @property
-    def primitive_value(self) -> float:
-        return sum(ia.item.primitive_value for ia in self._asserts)
-
-    # TODO: This should be removed (replaced by external methods)
-    @property
-    def delegated_value(self) -> float:
-        return sum(ia.item.delegated_value for ia in self._asserts)
-
-    # TODO: This should be removed (replaced by external methods)
-    @property
-    def avg_accessible_value(self) -> float:
-        return sum(ia.item.avg_accessible_value for ia in self._asserts)
-
 
 NULL_STATE_ASSERT = StateAssertion()
 
@@ -1273,7 +974,7 @@ class CompositeItem(StateAssertion, Item):
             raise ValueError('Source assertion must have at least two elements')
 
         super().__init__(source=source,
-                         primitive_value=source.primitive_value,
+                         primitive_value=primitive_value(source),
                          asserts=[*source.asserts, *source.negated_asserts])
 
     @property
@@ -1580,6 +1281,277 @@ class ExtendedContext(ExtendedItemCollection):
             self._pending_relevant_items.add(item_assert)
 
 
+class Controller:
+    def __init__(self, goal_state: StateAssertion):
+        self._goal_state = goal_state
+        self._proximity: dict[Schema, float] = defaultdict(lambda: 0.0)
+        self._total_cost: dict[Schema, float] = defaultdict(lambda: 0.0)
+        self._components: set[Schema] = set()
+        self._descendants: set[Schema] = set()
+
+    def __eq__(self, other):
+        if self is other:
+            return True
+        if isinstance(other, Controller):
+            return self._goal_state == other.goal_state
+        return False if other is None else NotImplemented
+
+    def __hash__(self):
+        return hash(self._goal_state)
+
+    @property
+    def goal_state(self) -> StateAssertion:
+        return self._goal_state
+
+    @property
+    def components(self) -> set[Schema]:
+        """ The set of schemas that are selectable in pursuit of the controller's goal state.
+
+        Note: Components are currently limited to RELIABLE schemas that chain to the controller's goal state.
+        Drescher may have also allowed UNRELIABLE schemas as components.
+
+        :return: the set of component schemas
+        """
+        return self._components
+
+    @property
+    def descendants(self) -> set[Schema]:
+        """ The set of schemas that are immediate components or their descendant components.
+
+        :return: the set of descendant schemas
+        """
+        return self._descendants
+
+    def proximity(self, schema: Schema) -> float:
+        """ Returns the proximity (i.e., closeness) of a schema to the composite action's goal state.
+
+        "Proximity is inversely proportionate to the expected time to reach the goal state, derived from the
+         expected activation time of the schemas in the relevant chain; proximity is also proportionate to those
+         schemas' reliability, and inversely proportionate to their cost of activation." (See Drescher 1991, p. 60)
+
+        :param schema: a component schema
+        :return: a float that quantifies the schema's goal state proximity
+        """
+        return self._proximity[schema]
+
+    def total_cost(self, schema: Schema) -> float:
+        """ Returns the total cost that would be incurred in order to achieve the composite action's goal state.
+
+        :param schema: a component schema
+        :return: a float that quantifies the total cost
+        """
+        return self._total_cost[schema]
+
+    def update(self, chains: list[Chain[Schema]]) -> None:
+        if not chains:
+            return
+
+        # FIXME: implement incremental learning or remove this variable
+        # lr: float = GlobalParams().get('learning_rate')
+
+        for chain in chains:
+            if not chain:
+                continue
+
+            # sanity check: chains must lead to the controller's goal state
+            final_state = chain[-1].result.as_state()
+            if not self.goal_state.is_satisfied(final_state):
+                raise ValueError('Invalid chain: chain should result in state that satisfies the goal state')
+
+            avg_duration_to_goal_state = 0.0
+            total_cost_to_goal_state = 0.0
+
+            for schema in reversed(chain):
+
+                # prevents recursion (a controller should not have itself as a component)
+                if self.contained_in(schema):
+                    break
+
+                self._components.add(schema)
+                self._descendants.add(schema)
+
+                if schema.action.is_composite():
+                    self._descendants.update(schema.action.controller.descendants)
+
+                avg_duration_to_goal_state += schema.avg_duration
+                total_cost_to_goal_state += schema.cost
+
+                # FIXME: incremental learning seems to be producing undesirable results... can I make this work?
+                # self._proximity[schema] += lr * (1.0 / avg_duration_to_goal_state - self._proximity[schema])
+                self._proximity[schema] = 1.0 / avg_duration_to_goal_state
+                self._total_cost[schema] = total_cost_to_goal_state
+
+        # TODO: Implement this...
+        # "each time a composite action is explicitly initiated, the controller keeps track of which component
+        #  schemas are actually activated and when.... If the action successfully culminates in the goal state,
+        #  the actual cost and duration of execution from each entry point are compared with the proximity
+        #  information stored in the slot of each component actually activated; in case of discrepancy, the stored
+        #  information is adjusted in the direction of the actual data. If the action fails to reach its goal
+        #  state, the proximity measures for the utilized components are degraded." (See Drescher 1991, p. 92)
+
+    def contained_in(self, schema: Schema) -> bool:
+        if not schema.action.is_composite():
+            return False
+
+        if self == schema.action.controller:
+            return True
+
+        controller = schema.action.controller
+        for component in itertools.chain.from_iterable([controller.components, controller.descendants]):
+            if component.action.is_composite() and self == component.action.controller:
+                return True
+        return False
+
+
+class DummyController(Controller):
+    def __init__(self):
+        super().__init__(goal_state=NULL_STATE_ASSERT)
+
+        self._components = set()
+        self._descendants = set()
+
+    @property
+    def components(self) -> set[Schema]:
+        return self._components
+
+    @property
+    def descendants(self) -> set[Schema]:
+        return self._descendants
+
+    def contained_in(self, *args, **kwargs) -> bool:
+        return False
+
+    def update(self, *args, **kwargs) -> None:
+        raise NotImplementedError()
+
+    def proximity(self, schema: Schema) -> float:
+        return -np.inf
+
+
+NULL_CONTROLLER = DummyController()
+
+
+class Action(UniqueIdMixin):
+
+    def __init__(self, label: Optional[str] = None, **kwargs):
+        super().__init__(**kwargs)
+
+        self._label = label
+
+    def __eq__(self, other):
+        if isinstance(other, Action):
+            if self._label and other._label:
+                return self._label == other._label
+            else:
+                return self._uid == other._uid
+
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self._label or self._uid)
+
+    def __str__(self) -> str:
+        return self._label or str(self.uid)
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'uid': self.uid,
+                               'label': self.label})
+
+    @property
+    def label(self) -> Optional[str]:
+        """ A description of this action.
+
+        :return: returns the Action's label
+        """
+        return self._label
+
+    @property
+    def goal_state(self) -> StateAssertion:
+        return NULL_CONTROLLER.goal_state
+
+    @property
+    def controller(self) -> Controller:
+        return NULL_CONTROLLER
+
+    def is_composite(self):
+        return False
+
+    def is_enabled(self, **kwargs) -> bool:
+        """ Returns whether this action is enabled.
+
+        Note: Schemas are inhibited for activation if their actions are disabled. This is primarily useful for
+              composite actions.
+
+        :param kwargs: optional keyword arguments
+
+        :return: True if enabled; False otherwise.
+        """
+        return True
+
+
+class CompositeAction(Action):
+    """ "A composite action is essentially a subroutine: it is defined to be the action of achieving the designated
+     goal state, by whatever means is available. The means are given by chains of schemas that lead to the goal
+     state..." (See Drescher 1991, p. 59)
+    """
+
+    _controller_map: dict[StateAssertion, Controller] = (
+        DefaultDictWithKeyFactory(lambda key: Controller(key))
+    )
+
+    def __init__(self, goal_state: StateAssertion, **kwargs):
+        super().__init__(**kwargs)
+
+        if not goal_state:
+            raise ValueError('Goal state is not optional.')
+
+        self._controller = CompositeAction._controller_map[goal_state]
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, CompositeAction):
+            return self.goal_state == other.goal_state
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.goal_state)
+
+    def __str__(self) -> str:
+        return str(self.controller.goal_state)
+
+    @property
+    def goal_state(self) -> StateAssertion:
+        return self._controller.goal_state
+
+    @property
+    def controller(self) -> Controller:
+        return self._controller
+
+    def is_composite(self):
+        return True
+
+    def is_enabled(self, state: State, **kwargs) -> bool:
+        """
+
+        "A composite action is enabled when one of its components is applicable." (See Drescher 1991, p. 90)
+
+        :param state:
+        :return:
+        """
+        return any({schema.is_applicable(state) for schema in self._controller.components})
+
+    @classmethod
+    def all_satisfied_by(cls, state: State) -> Collection[Controller]:
+        satisfied: list[Controller] = []
+        for goal_state, controller in cls._controller_map.items():
+            if goal_state.is_satisfied(state):
+                satisfied.append(controller)
+        return satisfied
+
+    @classmethod
+    def reset(cls) -> None:
+        return cls._controller_map.clear()
+
+
 class Schema(Observer, Observable, UniqueIdMixin):
     """
     a three-component data structure used to express a prediction about the environmental state that
@@ -1639,6 +1611,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
             self._extended_result.register(self)
 
         self._avg_duration = 1.0
+        self._cost = 0.0
 
     def __eq__(self, other) -> bool:
         if isinstance(other, Schema):
@@ -1744,7 +1717,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         :return: a float quantifying the schema's cost
         """
-        raise NotImplementedError('Schema cost has not been implemented yet.')
+        return self._cost
 
     def is_applicable(self, state: State, **kwargs) -> bool:
         """ Returns whether this schema is "applicable" in the given State.
@@ -2206,54 +2179,6 @@ class SchemaTree:
         except KeyError:
             raise ValueError('Source schema does not have a corresponding tree node.')
 
-    # @property
-    # def primitive_value(self) -> float:
-    #     if not self._elements:
-    #         return 0.0
-    #
-    #     return sum(ReadOnlyItemPool().get(se).primitive_value for se in self._elements)
-    #
-    # @property
-    # def delegated_value(self) -> float:
-    #     if not self._elements:
-    #         return 0.0 - GlobalStats().baseline_value
-    #     return np.max([ReadOnlyItemPool().get(se).delegated_value for se in self._elements])
-    #
-    # @property
-    # def avg_accessible_value(self) -> float:
-    #     if not self._elements:
-    #         return 0.0
-    #     items = [ReadOnlyItemPool().get(se) for se in self._elements]
-    #     return np.max([i.avg_accessible_value for i in items])
-
-
-# @singledispatch
-# def primitive_value(other: Any) -> float:
-#     print('primitive_value(other)')
-#     return other.primitive_value
-#
-#
-# @primitive_value.register
-# def _(state: State) -> float:
-#     print('primitive_value(state)')
-#     if not state or len(state) == 0:
-#         return 0.0
-#     return sum(ReadOnlyItemPool().get(se).primitive_value for se in state)
-#
-#
-# @primitive_value.register
-# def _(assertion: Assertion) -> float:
-#     print('primitive_value(assertion)')
-#
-#
-# @primitive_value.register
-# def _(se: StateElement) -> float:
-#     print('primitive_value(stateelement)')
-#
-#
-# @primitive_value.register
-# def _(item: Item) -> float:
-#     print('primitive_value(item)')
 
 class ItemPool(metaclass=Singleton):
     """
@@ -2284,8 +2209,6 @@ class ItemPool(metaclass=Singleton):
         ItemPool._items.clear()
         ItemPool._composite_items.clear()
 
-    # TODO: can this be changed to a overloaded method for source=StateElement and source=StateAssertion using
-    # TODO: the @singledispatch decorator?
     @singledispatchmethod
     def get(self, source: Any, /, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
         raise NotImplementedError(f'Source type is not supported.')
@@ -2358,3 +2281,129 @@ class Chain(deque):
                     raise ValueError(f'Schemas contexts must be satisfied by their predecessor\'s result')
                 return False
         return True
+
+
+@singledispatch
+def primitive_value(other: Optional[Any]) -> float:
+    raise TypeError(f'Primitive value not supported for this type: {type(other)}')
+
+
+@primitive_value.register
+def _(state: State) -> float:
+    if len(state) == 0:
+        return 0.0
+    items = [ReadOnlyItemPool().get(se) for se in state]
+    return sum(i.primitive_value for i in items if i)
+
+
+@primitive_value.register
+def _(assertion: ItemAssertion) -> float:
+    if assertion.is_negated:
+        return 0.0
+    return assertion.item.primitive_value
+
+
+@primitive_value.register
+def _(assertion: StateAssertion) -> float:
+    if assertion.is_negated:
+        return 0.0
+    items = [ia.item for ia in assertion.asserts]
+    return sum(i.primitive_value for i in items)
+
+
+@primitive_value.register
+def _(se: StateElement) -> float:
+    item = ReadOnlyItemPool().get(se)
+    if not item:
+        return 0.0
+    return item.primitive_value
+
+
+@primitive_value.register
+def _(item: Item) -> float:
+    return item.primitive_value
+
+
+@singledispatch
+def delegated_value(other: Optional[Any]) -> float:
+    raise TypeError(f'Delegated value not supported for this type: {type(other)}')
+
+
+@delegated_value.register
+def _(state: State) -> float:
+    if len(state) == 0:
+        return 0.0 - GlobalStats().baseline_value
+    items = [ReadOnlyItemPool().get(se) for se in state]
+    if not items:
+        return 0.0
+
+    # FIXME: this max calculation doesn't seem right. perhaps eligibility traces are a better way to implement dv.
+    return np.max([i.delegated_value for i in items if i])
+
+
+@delegated_value.register
+def _(assertion: ItemAssertion) -> float:
+    if assertion.is_negated:
+        return 0.0 - GlobalStats().baseline_value
+    return assertion.item.delegated_value
+
+
+@delegated_value.register
+def _(assertion: StateAssertion) -> float:
+    if assertion.is_negated:
+        return 0.0
+    items = [ia.item for ia in assertion.asserts]
+    if not items:
+        return 0.0
+
+    # FIXME: this max calculation doesn't seem right. perhaps eligibility traces are a better way to implement dv.
+    return np.max([i.delegated_value for i in items if i])
+
+
+@delegated_value.register
+def _(se: StateElement) -> float:
+    item = ReadOnlyItemPool().get(se)
+    if not item:
+        return 0.0
+    return item.delegated_value
+
+
+@delegated_value.register
+def _(item: Item) -> float:
+    return item.delegated_value
+
+
+@singledispatch
+def avg_accessible_value(other: Optional[Any]) -> float:
+    raise TypeError(f'Average accessible value not supported for this type: {type(other)}')
+
+
+@avg_accessible_value.register
+def _(state: State) -> float:
+    if not state.elements:
+        return 0.0
+    items = [ReadOnlyItemPool().get(se) for se in state]
+    return np.max([i.avg_accessible_value for i in items])
+
+
+@avg_accessible_value.register
+def _(assertion: ItemAssertion) -> float:
+    return 0.0 if assertion.is_negated else assertion.item.avg_accessible_value
+
+
+@avg_accessible_value.register
+def _(assertion: StateAssertion) -> float:
+    return sum(ia.item.avg_accessible_value for ia in assertion.asserts)
+
+
+@avg_accessible_value.register
+def _(se: StateElement) -> float:
+    item = ReadOnlyItemPool().get(se)
+    if not item:
+        return 0.0
+    return item.avg_accessible_value
+
+
+@avg_accessible_value.register
+def _(item: Item) -> float:
+    return item.avg_accessible_value

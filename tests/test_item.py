@@ -13,6 +13,8 @@ from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import State
 from schema_mechanism.core import SymbolicItem
+from schema_mechanism.core import avg_accessible_value
+from schema_mechanism.core import primitive_value
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
@@ -226,8 +228,8 @@ class TestDelegatedValueHelperForNonCompositeItems(TestCase):
                 )
                 updating = self.dvh.trace_updates_remaining > 0 or self.dvh.item.is_on(ss)
 
-                s_pv = sr.primitive_value
-                s_aav = sr.avg_accessible_value
+                s_pv = primitive_value(sr)
+                s_aav = avg_accessible_value(sr)
 
                 self.dvh.update(selection_state=ss, result_state=sr)
 
@@ -420,8 +422,8 @@ class TestDelegatedValueHelperForCompositeItems(TestCase):
                 )
                 updating = self.dvh.trace_updates_remaining > 0 or self.dvh.item.is_on(ss)
 
-                s_pv = sr.primitive_value
-                s_aav = sr.avg_accessible_value
+                s_pv = primitive_value(sr)
+                s_aav = avg_accessible_value(sr)
 
                 self.dvh.update(selection_state=ss, result_state=sr)
 
@@ -505,7 +507,7 @@ class TestCompositeItem(unittest.TestCase):
 
     def test_primitive_value(self):
         # test: a item's primitive value should equal the primitive value of its source assertion
-        self.assertEqual(self.sa.primitive_value, self.item.primitive_value)
+        self.assertEqual(primitive_value(self.sa), self.item.primitive_value)
 
     def test_is_on(self):
         # item expected to be ON for these states
@@ -551,7 +553,7 @@ class TestCompositeItem(unittest.TestCase):
 
         self.assertIsInstance(item1, CompositeItem)
         self.assertEqual(sa1, item1.source)
-        self.assertEqual(sa1.primitive_value, item1.primitive_value)
+        self.assertEqual(primitive_value(sa1), item1.primitive_value)
         self.assertEqual(len_before + 1, len(self.pool))
         self.assertIn(sa1, self.pool)
 

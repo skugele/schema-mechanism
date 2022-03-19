@@ -26,9 +26,11 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
+from schema_mechanism.core import delegated_value
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
+from schema_mechanism.core import primitive_value
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import debug
 from schema_mechanism.share import is_feature_enabled
@@ -310,7 +312,7 @@ def primitive_values(schemas: Sequence[Schema]) -> np.ndarray:
     return (
         np.array([])
         if schemas is None or len(schemas) == 0
-        else np.array([s.result.primitive_value for s in schemas])
+        else np.array([primitive_value(s.result) for s in schemas])
     )
 
 
@@ -318,11 +320,10 @@ def delegated_values(schemas: Sequence[Schema]) -> np.ndarray:
     return (
         np.array([])
         if schemas is None or len(schemas) == 0
-        else np.array([s.result.delegated_value for s in schemas])
+        else np.array([delegated_value(s.result) for s in schemas])
     )
 
 
-# TODO: implement this
 def instrumental_values(schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
     """
 
@@ -341,10 +342,26 @@ def instrumental_values(schemas: Sequence[Schema], pending: Optional[Schema] = N
     """
     # instrumental value
     ####################
+    values = np.zeros_like(schemas)
 
-    # TODO: Need to implement backward chain determination to find accessible schemas before
-    # TODO: I can implement instrumental value. (See Drescher 1991, Sec. 5.1.2)
-    return np.zeros_like(schemas)
+    if not pending:
+        return values
+
+    goal_state = pending.action.goal_state
+
+    # TODO: add delegated value as well once the function is implemented
+    goal_state_value = primitive_value(goal_state) + delegated_value(goal_state)
+    if primitive_value(goal_state) <= 0:
+        return values
+
+    controller = pending.action.controller
+    for i, schema in enumerate(schemas):
+        if schema in controller.components:
+            proximity = controller.proximity(schema)
+            cost = controller.total_cost(schema)
+            values[i] = proximity * goal_state_value - cost
+
+    return values
 
 
 # TODO: Add a class description that mentions primitive, delegated, and instrumental value, as well as pending

@@ -10,6 +10,8 @@ import numpy as np
 from schema_mechanism.core import Chain
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import Schema
+from schema_mechanism.core import delegated_value
+from schema_mechanism.core import primitive_value
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import AbsoluteDiffMatchStrategy
@@ -26,12 +28,12 @@ from test_share.test_func import common_test_setup
 
 
 def primitive_value_evaluation_strategy(schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
-    values = list([s.result.primitive_value for s in schemas])
+    values = list([primitive_value(s.result) for s in schemas])
     return np.array(values)
 
 
 def delegated_value_evaluation_strategy(schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
-    values = list([s.result.delegated_value for s in schemas])
+    values = list([delegated_value(s.result) for s in schemas])
     return np.array(values)
 
 

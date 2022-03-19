@@ -6,6 +6,7 @@ import numpy as np
 
 from schema_mechanism.core import Chain
 from schema_mechanism.core import CompositeAction
+from schema_mechanism.core import Controller
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.func_api import sym_schema
@@ -77,7 +78,7 @@ class TestShared(unittest.TestCase):
         self.sm = SchemaMemory.from_tree(self.tree)
 
         self.goal_state = sym_state_assert('E')
-        self.controller = CompositeAction.Controller(self.goal_state)
+        self.controller = Controller(self.goal_state)
 
 
 class TestCompositeAction(TestShared):
@@ -217,7 +218,7 @@ class TestController(TestShared):
         super().setUp()
 
         self.goal_state = sym_state_assert('E')
-        self.controller = CompositeAction.Controller(self.goal_state)
+        self.controller = Controller(self.goal_state)
 
     def test_init(self):
         # test: components should be an empty set
@@ -305,7 +306,7 @@ class TestController(TestShared):
                 expected_proximities[schema] = np.min(
                     [expected_proximities[schema], self._calc_proximity(schema, chain)])
 
-        # test: a component's goal proximity should be its min proximity to goal if the schema appears in multiple chains
+        # test: component goal proximity should be min proximity to goal if the schema appears in multiple chains
         actual_proximities = {s: self.controller.proximity(s) for s in self.controller.components}
         for component in components:
             self.assertEqual(expected_proximities[component], actual_proximities[component])
@@ -366,7 +367,7 @@ class TestController(TestShared):
             self.assertEqual(expected_proximities[component], actual_proximities[component])
 
     def test_contained_in(self):
-        controller = CompositeAction.Controller(goal_state=sym_state_assert('S2,'))
+        controller = Controller(goal_state=sym_state_assert('S2,'))
 
         self.assertFalse(controller.contained_in(sym_schema('A,/A1/B,')))
         self.assertFalse(controller.contained_in(sym_schema('A,/S1,/B,')))
