@@ -2258,14 +2258,14 @@ def _(state: State) -> float:
     if len(state) == 0:
         return 0.0
     items = [ReadOnlyItemPool().get(se) for se in state]
-    return sum(i.primitive_value for i in items if i)
+    return sum(primitive_value(i) for i in items if i)
 
 
 @primitive_value.register
 def _(assertion: ItemAssertion) -> float:
     if assertion.is_negated:
         return 0.0
-    return assertion.item.primitive_value
+    return primitive_value(assertion.item)
 
 
 @primitive_value.register
@@ -2289,6 +2289,11 @@ def _(item: Item) -> float:
     return item.primitive_value
 
 
+@primitive_value.register
+def _(item: CompositeItem) -> float:
+    return primitive_value(item.as_state())
+
+
 @singledispatch
 def delegated_value(other: Optional[Any]) -> float:
     raise TypeError(f'Delegated value not supported for this type: {type(other)}')
@@ -2305,7 +2310,6 @@ def _(state: State) -> float:
     elif any({i is None for i in items}):
         raise ValueError(f'Unknown state elements encountered in state: {state}')
 
-    # FIXME: this max calculation doesn't seem right. perhaps eligibility traces are a better way to implement dv.
     return np.max([i.delegated_value for i in items if i])
 
 
@@ -2313,7 +2317,7 @@ def _(state: State) -> float:
 def _(assertion: ItemAssertion) -> float:
     if assertion.is_negated:
         return 0.0 - GlobalStats().baseline_value
-    return assertion.item.delegated_value
+    return delegated_value(assertion.item)
 
 
 @delegated_value.register
@@ -2324,7 +2328,6 @@ def _(assertion: StateAssertion) -> float:
     if not items:
         return 0.0
 
-    # FIXME: this max calculation doesn't seem right. perhaps eligibility traces are a better way to implement dv.
     return np.max([i.delegated_value for i in items if i])
 
 
@@ -2339,6 +2342,11 @@ def _(se: StateElement) -> float:
 @delegated_value.register
 def _(item: Item) -> float:
     return item.delegated_value
+
+
+@delegated_value.register
+def _(item: CompositeItem) -> float:
+    return delegated_value(item.as_state())
 
 
 @singledispatch

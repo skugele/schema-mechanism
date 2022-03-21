@@ -499,38 +499,57 @@ class SchemaSelection:
     """
 
     def __init__(self,
-                 select: Optional[SelectionStrategy] = None,
+                 select_strategy: Optional[SelectionStrategy] = None,
                  value_strategies: Optional[Collection[SchemaEvaluationStrategy]] = None,
                  weights: Optional[Collection[float]] = None,
                  **kwargs):
 
-        self._select = select or RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0))
-        self._values = value_strategies or []
-        self._weights = weights or equal_weights(len(self._values))
-
-        if len(self._values) != len(self._weights):
-            raise ValueError('Invalid weights. Must have a weight for each evaluation strategy.')
-
-        if not np.isclose(1.0, sum(self._weights)):
-            raise ValueError('Evaluation strategy weights must sum to 1.0.')
+        self.select_strategy: SelectionStrategy = (
+                select_strategy or RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0))
+        )
+        self.value_strategies: Collection[SchemaEvaluationStrategy] = value_strategies or []
+        self.weights = weights or equal_weights(len(self._value_strategies))
 
         # a stack of previously selected, non-terminated schemas with composite actions used for nested invocations
         # of controller components with composite actions
         self._pending_schemas: deque[Schema] = deque()
 
     @property
-    def eval_strategies(self) -> Optional[Collection[SchemaEvaluationStrategy]]:
-        return self._values
+    def select_strategy(self) -> SelectionStrategy:
+        return self._select_strategy
+
+    @select_strategy.setter
+    def select_strategy(self, value: SelectionStrategy) -> None:
+        self._select_strategy = value
 
     @property
-    def eval_weights(self) -> float:
+    def value_strategies(self) -> Collection[SchemaEvaluationStrategy]:
+        return self._value_strategies
+
+    @value_strategies.setter
+    def value_strategies(self, values: Collection[SchemaEvaluationStrategy]) -> None:
+        self._value_strategies = values
+
+    @property
+    def weights(self) -> np.ndarray:
         return self._weights
+
+    @weights.setter
+    def weights(self, value: np.ndarray) -> None:
+        if len(self._value_strategies) != len(value):
+            raise ValueError('Invalid weights. Must have a weight for each evaluation strategy.')
+        if len(value) > 0 and not np.isclose(1.0, sum(value)):
+            raise ValueError('Evaluation strategy weights must sum to 1.0.')
+        if any({w < 0.0 or w > 1.0 for w in value}):
+            raise ValueError('Evaluation strategy weights must be between 0.0 and 1.0 (inclusive).')
+
+        self._weights = value
 
     def select(self, schemas: Sequence[Schema], state: State) -> SchemaSelection.SelectionDetails:
         """ Selects a schema for explicit activation from the supplied list of applicable schemas.
 
         Note: If a schema with a composite action was PREVIOUSLY selected, it will also compete for selection if any
-        of its component schemas are applicable.
+        of its component schemas are applicable (even if its context is not currently satisfied).
 
         (See Drescher 1991, Section 3.4 for details on the selection algorithm.)
 
@@ -550,7 +569,7 @@ class SchemaSelection:
         candidates_values = self.calc_effective_values(candidates, pending)
 
         # select a schema for execution. candidates will include components from any pending composite actions.
-        selected_schema, value = self._select(candidates, candidates_values)
+        selected_schema, value = self._select_strategy(candidates, candidates_values)
         debug(f'selected schema: {selected_schema} [eff. value: {value}]')
 
         # interruption of a pending schema (see Drescher, 1991, p. 61)
@@ -579,8 +598,11 @@ class SchemaSelection:
                                      selection_state=state,
                                      effective_value=value)
 
-    def calc_effective_values(self, schemas: Sequence[Schema], pending: Schema) -> np.ndarray:
-        return np.sum([w * v(schemas, pending) for w, v in zip(self._weights, self._values)], axis=0)
+    def calc_effective_values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
+        if not self._value_strategies:
+            return np.zeros_like(schemas)
+
+        return np.sum([w * v(schemas, pending) for w, v in zip(self._weights, self._value_strategies)], axis=0)
 
     @property
     def pending_schema(self) -> Optional[Schema]:
@@ -625,7 +647,7 @@ class SchemaMechanism:
 
         self._schema_memory = SchemaMemory(self._primitive_schemas)
         self._schema_selection = SchemaSelection(
-            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
             value_strategies=[
                 GoalPursuitEvaluationStrategy(),
                 EpsilonGreedyExploratoryStrategy(0.2)

@@ -19,7 +19,6 @@ from schema_mechanism.modules import EpsilonGreedyExploratoryStrategy
 from schema_mechanism.modules import GoalPursuitEvaluationStrategy
 from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaSelection
-from schema_mechanism.modules import primitive_values
 from schema_mechanism.share import GlobalParams
 from test_share.test_classes import MockSchema
 from test_share.test_classes import MockSchemaSelection
@@ -58,23 +57,23 @@ class TestSchemaSelection(TestCase):
         self.s2 = sym_schema('/A2/', reliability=0.0)  # total pv = 0.0; total dv = 0.0
         self.s3 = sym_schema('/A3/', reliability=0.0)  # total pv = 0.0; total dv = 0.0
 
-        self.s1_c12_r3 = sym_schema('1,2/A1/3,', reliability=1.0)  # total pv = 0.95; total dv = 0.0
-        self.s1_c12_r4 = sym_schema('1,2/A1/4,', reliability=1.0)  # total pv = -1.0; total dv = 0.0
+        self.s1_c12_r3 = sym_schema('1,2/A1/3,', reliability=1.0)  # total pv = 0.95; total dv = -1.0
+        self.s1_c12_r4 = sym_schema('1,2/A1/4,', reliability=1.0)  # total pv = -1.0; total dv = 0.95
         self.s1_c12_r5 = sym_schema('1,2/A1/5,', reliability=1.0)  # total pv = 2.0; total dv = 0.0
-        self.s1_c12_r34 = sym_schema('1,2/A1/(3,4),', reliability=1.0)  # total pv = -0.05; total dv = 0.0
-        self.s1_c12_r345 = sym_schema('1,2/A1/(3,4,5),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
-        self.s1_c12_r3456 = sym_schema('1,2/A1/(3,4,5,6),', reliability=1.0)  # total pv = -1.05; total dv = 0.0
-        self.s1_c12_r345_not6 = sym_schema('1,2/A1/(3,4,5,~6),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
+        self.s1_c12_r34 = sym_schema('1,2/A1/(3,4),', reliability=1.0)  # total pv = -0.05; total dv = 0.95
+        self.s1_c12_r345 = sym_schema('1,2/A1/(3,4,5),', reliability=1.0)  # total pv = 1.95; total dv = 0.95
+        self.s1_c12_r3456 = sym_schema('1,2/A1/(3,4,5,6),', reliability=1.0)  # total pv = -1.05; total dv = 0.95
+        self.s1_c12_r345_not6 = sym_schema('1,2/A1/(3,4,5,~6),', reliability=1.0)  # total pv = 1.95; total dv = 0.95
 
         # chained schemas
-        self.s1_c12_r2 = sym_schema('1,2/A1/2,', reliability=1.0)  # total pv = 0.0; total dv = 0.0
-        self.s2_c2_r3 = sym_schema('2,/A2/3,', reliability=1.0)  # total pv = 0.95; total dv = 0.0
-        self.s3_c3_r4 = sym_schema('3,/A3/4,', reliability=1.0)  # total pv = -1.0; total dv = 0.0
-        self.s1_c4_r5 = sym_schema('4,/A1/5,', reliability=1.0)  # total pv = 2.0; total dv = 0.0
-        self.s3_c5_r24 = sym_schema('5,/A3/(2,4),', reliability=1.0)  # total pv = -1.0; total dv = 0.0
+        self.s1_c12_r2 = sym_schema('1,2/A1/2,', reliability=1.0)  # total pv = 0.0; total dv = 2.0
+        self.s2_c2_r3 = sym_schema('2,/A2/3,', reliability=1.0)  # total pv = 0.95; total dv = -1.0
+        self.s3_c3_r4 = sym_schema('3,/A3/4,', reliability=1.0)  # total pv = -1.0; total dv = 0.95
+        self.s1_c4_r5 = sym_schema('4,/A1/5,', reliability=1.0)  # total pv = 2.0; total dv = 0.95
+        self.s3_c5_r24 = sym_schema('5,/A3/(2,4),', reliability=1.0)  # total pv = -1.0; total dv = 2.0
 
         # composite action schemas
-        self.sca24_c12_r35 = sym_schema('1,2/2,4/(3,5),', reliability=1.0)  # total pv = 2.95; total dv = 0.0
+        self.sca24_c12_r35 = sym_schema('1,2/2,4/(3,5),', reliability=1.0)  # total pv = 2.95; total dv = 0.95
         self.sca24_c12_r136 = sym_schema('1,2/2,4/(1,3,6),', reliability=1.0)  # total pv = -2.05; total dv = 0.0
 
         self.chains = [Chain([self.s1_c12_r2, self.s2_c2_r3, self.s3_c3_r4, self.s1_c4_r5, self.s3_c5_r24])]
@@ -85,36 +84,59 @@ class TestSchemaSelection(TestCase):
         self.selection_state = sym_state('1,2')
 
         self.ss = SchemaSelection(
-            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
             value_strategies=[
                 GoalPursuitEvaluationStrategy(),
                 EpsilonGreedyExploratoryStrategy(0.9)
             ],
         )
 
-    def test_primitive_values(self):
-        # sanity checks
-        ###############
+    def test_init(self):
+        # test defaults
+        ss = SchemaSelection()
 
-        # None or empty list SHOULD return empty list
-        self.assertEqual(0, len(primitive_values(schemas=[])))
+        # test: a default selection strategy should be assigned if not explicitly requested
+        self.assertIsNotNone(ss.select_strategy)
 
-        # noinspection PyTypeChecker
-        self.assertEqual(0, len(primitive_values(schemas=None)))
+        # test: value strategies should be an empty collection
+        self.assertEqual(0, len(ss.value_strategies))
 
-        expected_values = [0.0, 0.95, -1.0, 2.0, -0.05, 1.95, -1.05, 1.95]
-        actual_values = primitive_values(
-            schemas=[self.s1, self.s1_c12_r3, self.s1_c12_r4, self.s1_c12_r5, self.s1_c12_r34, self.s1_c12_r345,
-                     self.s1_c12_r3456, self.s1_c12_r345_not6])
+        # test: weights should be an empty numpy array
+        self.assertTrue(np.array_equal(np.array([]), ss.weights))
 
-        for exp, act in zip(expected_values, actual_values):
-            self.assertAlmostEqual(exp, act)
+        select_strategy = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1))
+        value_strategies = [primitive_value_evaluation_strategy, delegated_value_evaluation_strategy]
+        weights = [0.4, 0.6]
 
-    def test_delegated_values(self):
-        pass
+        ss = SchemaSelection(
+            select_strategy=select_strategy,
+            value_strategies=value_strategies,
+            weights=weights
+        )
 
-    def test_instrumental_values(self):
-        pass
+        # test: initializer should set select strategy to the requested strategy
+        self.assertEqual(select_strategy, ss.select_strategy)
+
+        # test: initializer should set value strategies to the requested strategies
+        self.assertListEqual(value_strategies, list(ss.value_strategies))
+
+        # test: initializer should set weights to the requested values
+        self.assertListEqual(weights, list(ss.weights))
+
+        # test: should raise a ValueError if initializer given an invalid number of weights
+        self.assertRaises(ValueError, lambda: SchemaSelection(select_strategy, value_strategies, weights=[0.1]))
+
+        # test: should raise a ValueError if the weights do not sum to 1.0
+        self.assertRaises(ValueError, lambda: SchemaSelection(select_strategy, value_strategies, weights=[0.1, 0.2]))
+
+        # test: should raise a ValueError if any of the weights are non-positive
+        self.assertRaises(ValueError, lambda: SchemaSelection(select_strategy, value_strategies, weights=[1.8, -0.8]))
+
+        # test: weights of 0.0 and 1.0 should be allowed
+        try:
+            SchemaSelection(select_strategy, value_strategies, weights=[0.0, 1.0])
+        except ValueError as e:
+            self.fail(f'Unexpected ValueError occurred: {str(e)}')
 
     def test_select_1(self):
         # sanity checks
@@ -135,7 +157,7 @@ class TestSchemaSelection(TestCase):
         # primitive value-based selections
         ##################################
         ss = SchemaSelection(
-            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
             value_strategies=[primitive_value_evaluation_strategy]
         )
 
@@ -157,18 +179,97 @@ class TestSchemaSelection(TestCase):
 
         self.assertEqual(len(applicable_schemas), len(selections.keys()))
 
-    # TODO: Add these test cases!
     def test_calc_effective_values(self):
-        pass
+        s1 = sym_schema('/A1/1,')  # pv = 0.0
+        s2 = sym_schema('/A2/2,')  # pv = 0.0
+        s3 = sym_schema('/A1/3,')  # pv = 0.95
+        s4 = sym_schema('/A3/4,')  # pv = -1.0
+        s5 = sym_schema('/A1/5,')  # pv = 2.0
+        s6 = sym_schema('/A2/6,')  # pv = -3.0
 
-    # TODO: Add these test cases!
-    def test_selection_weights(self):
-        pass
+        self.s1_c12_r34 = sym_schema('1,2/A1/(3,4),', reliability=1.0)  # total pv = -0.05; total dv = 0.0
+        self.s1_c12_r345 = sym_schema('1,2/A1/(3,4,5),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
+        self.s1_c12_r3456 = sym_schema('1,2/A1/(3,4,5,6),', reliability=1.0)  # total pv = -1.05; total dv = 0.0
+        self.s1_c12_r345_not6 = sym_schema('1,2/A1/(3,4,5,~6),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
+
+        schemas = [s1, s2, s3, s4, s5, s6, self.s1_c12_r34, self.s1_c12_r345, self.s1_c12_r3456, self.s1_c12_r345_not6]
+
+        # testing with no evaluation strategies
+        ss = SchemaSelection(
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+            value_strategies=[],
+        )
+
+        # test: should returns array of zeros if no value strategies specified
+        self.assertTrue(np.array_equal(np.zeros_like(schemas), ss.calc_effective_values(schemas)))
+
+        # testing single evaluation strategy
+        ss = SchemaSelection(
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+            value_strategies=[primitive_value_evaluation_strategy],
+        )
+
+        expected_values = primitive_value_evaluation_strategy(schemas)
+
+        # test: primitive-only value strategy should return primitive values for each schema
+        self.assertTrue(np.array_equal(expected_values, ss.calc_effective_values(schemas, pending=None)))
+
+        # testing multiple evaluation strategies (equal weighting)
+        ss = SchemaSelection(
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+            value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
+        )
+
+        pvs = primitive_value_evaluation_strategy(schemas)
+        dvs = delegated_value_evaluation_strategy(schemas)
+        expected_values = (pvs + dvs) / 2.0
+        actual_values = ss.calc_effective_values(schemas, pending=None)
+
+        # test: should return weighted sum of evaluation strategy values
+        self.assertTrue(np.array_equal(expected_values, actual_values))
+
+        # testing multiple evaluation strategies (uneven weighting)
+        ss.weights = np.array([0.95, 0.05])
+
+        expected_values = 0.95 * pvs + 0.05 * dvs
+        actual_values = ss.calc_effective_values(schemas, pending=None)
+
+        # test: should return weighted sum of evaluation strategy values
+        self.assertTrue(np.array_equal(expected_values, actual_values))
+
+    def test_weights(self):
+        ss = SchemaSelection(
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+            value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
+        )
+
+        # test: initializer should set weights to the requested values
+        weights = [0.4, 0.6]
+        ss.weights = weights
+        self.assertListEqual(weights, list(ss.weights))
+
+        # test: should raise a ValueError if initializer given an invalid number of weights
+        with self.assertRaises(ValueError):
+            ss.weights = [1.0]
+
+        # test: should raise a ValueError if the weights do not sum to 1.0
+        with self.assertRaises(ValueError):
+            ss.weights = [0.1, 0.2]
+
+        # test: should raise a ValueError if any of the weights are non-positive
+        with self.assertRaises(ValueError):
+            ss.weights = [1.8, -0.8]
+
+        # test: weights of 0.0 and 1.0 should be allowed
+        try:
+            ss.weights = [0.0, 1.0]
+        except ValueError as e:
+            self.fail(f'Unexpected ValueError occurred: {str(e)}')
 
     def test_select_with_pending_schema_1a(self):
         # testing selection with composite action schema (scenario: composite action schema wins)
         ss = SchemaSelection(
-            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
             value_strategies=[primitive_value_evaluation_strategy],
         )
 
@@ -206,7 +307,7 @@ class TestSchemaSelection(TestCase):
     def test_select_with_pending_schema_1b(self):
         # testing selection with composite action schema (scenario: composite action schema loses)
         ss = SchemaSelection(
-            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
             value_strategies=[primitive_value_evaluation_strategy],
         )
 
@@ -427,7 +528,7 @@ class TestSchemaSelection(TestCase):
 
         # mock is used to directly set the pending schema
         mock_ss = SchemaSelection(
-            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
             value_strategies=[primitive_value_evaluation_strategy]
         )
 
