@@ -6,7 +6,6 @@ from abc import abstractmethod
 from collections import defaultdict
 from collections import deque
 from collections.abc import Collection
-from collections.abc import Hashable
 from collections.abc import Iterator
 from collections.abc import MutableSet
 from enum import Enum
@@ -25,6 +24,8 @@ from anytree import LevelOrderIter
 from anytree import NodeMixin
 from anytree import RenderTree
 
+from schema_mechanism.protocols import State
+from schema_mechanism.protocols import StateElement
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import debug
@@ -39,42 +40,6 @@ from schema_mechanism.util import Singleton
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import pairwise
 from schema_mechanism.util import repr_str
-
-StateElement = Hashable
-
-
-class State:
-    def __init__(self, elements: Collection[StateElement]) -> None:
-        super().__init__()
-
-        self._elements = frozenset(elements)
-
-    def __len__(self) -> int:
-        return len(self._elements)
-
-    def __iter__(self) -> Iterator[StateElement]:
-        yield from self._elements
-
-    def __contains__(self, element: StateElement) -> bool:
-        return element in self._elements
-
-    def __eq__(self, other: Any) -> bool:
-        if isinstance(other, State):
-            return self._elements == other._elements
-        return False if other is None else NotImplemented
-
-    def __ne__(self, other: Any) -> bool:
-        return not self.__eq__(other)
-
-    def __hash__(self) -> int:
-        return hash(self._elements)
-
-    def __str__(self) -> str:
-        return ','.join([str(se) for se in self._elements]) if self._elements else None
-
-    @property
-    def elements(self) -> Collection[StateElement]:
-        return self._elements
 
 
 def held_state(s_prev: State, s_curr: State) -> frozenset[Item]:
@@ -259,6 +224,21 @@ class Item:
         self._primitive_value = primitive_value or 0.0
         self._delegated_value_helper = DelegatedValueHelper(item=self)
 
+    # TODO: Need to be really careful with the default hash implementations which produce different values between
+    # TODO: runs. This will kill and direct serialization/deserialization of data structures that rely on hashes.
+    @abstractmethod
+    def __hash__(self) -> int:
+        pass
+
+    def __str__(self) -> str:
+        return str(self.source)
+
+    def __repr__(self) -> str:
+        return repr_str(self, {'source': str(self.source),
+                               'pv': self.primitive_value,
+                               'dv': self.delegated_value,
+                               'aav': self.avg_accessible_value, })
+
     @property
     def source(self) -> Any:
         return self._source
@@ -317,21 +297,6 @@ class Item:
 
     def is_off(self, state: State, **kwargs) -> bool:
         return not self.is_on(state, **kwargs)
-
-    # TODO: Need to be really careful with the default hash implementations which produce different values between
-    # TODO: runs. This will kill and direct serialization/deserialization of data structures that rely on hashes.
-    @abstractmethod
-    def __hash__(self) -> int:
-        pass
-
-    def __str__(self) -> str:
-        return str(self.source)
-
-    def __repr__(self) -> str:
-        return repr_str(self, {'source': str(self.source),
-                               'pv': self.primitive_value,
-                               'dv': self.delegated_value,
-                               'aav': self.avg_accessible_value, })
 
 
 class SymbolicItem(Item):
@@ -946,7 +911,7 @@ class StateAssertion(Assertion):
 
         :return: a State
         """
-        return State(set(itertools.chain.from_iterable([ia.item.state_elements for ia in self.asserts])))
+        return frozenset(itertools.chain.from_iterable([ia.item.state_elements for ia in self.asserts]))
 
     @staticmethod
     def from_state(state: State) -> StateAssertion:
@@ -961,8 +926,8 @@ class StateAssertion(Assertion):
 NULL_STATE_ASSERT = StateAssertion()
 
 
-# TODO: There may be a subtle bug here when the StateAssertion is negated and the CompositeItem containing
-# TODO: that negated assertion is included in a negated ItemAssertion or StateAssertion.s
+# TODO: There may be a subtle bug here when the StateAssertion is negated and a CompositeItem containing
+# TODO: that negated assertion is included in a negated ItemAssertion or StateAssertion.
 class CompositeItem(StateAssertion, Item):
     """ A StateAssertion wrapper that functions like an Item.
 
@@ -1011,9 +976,9 @@ class ExtendedItemCollection(Observable):
 
         self._suppressed_items: frozenset[Item] = frozenset(suppressed_items) or frozenset()
 
-        # TODO: these names are confusing... they are not items!
-        self._relevant_items: MutableSet[Assertion] = set()
-        self._new_relevant_items: MutableSet[Assertion] = set()
+        # FIXME: these names are confusing... they are not items! They are item assertions.
+        self._relevant_items: MutableSet[ItemAssertion] = set()
+        self._new_relevant_items: MutableSet[ItemAssertion] = set()
 
         self._stats: dict[Any, ItemStats] = defaultdict(lambda: self._null_member)
 
@@ -1051,7 +1016,7 @@ class ExtendedItemCollection(Observable):
     def relevant_items(self) -> frozenset[Assertion]:
         return frozenset(self._relevant_items)
 
-    def update_relevant_items(self, assertion: Assertion, suppressed: bool = False):
+    def update_relevant_items(self, assertion: ItemAssertion, suppressed: bool = False):
         if assertion not in self._relevant_items:
             self._relevant_items.add(assertion)
 
@@ -2334,8 +2299,11 @@ def _(state: State) -> float:
     if len(state) == 0:
         return 0.0 - GlobalStats().baseline_value
     items = [ReadOnlyItemPool().get(se) for se in state]
+
     if not items:
         return 0.0
+    elif any({i is None for i in items}):
+        raise ValueError(f'Unknown state elements encountered in state: {state}')
 
     # FIXME: this max calculation doesn't seem right. perhaps eligibility traces are a better way to implement dv.
     return np.max([i.delegated_value for i in items if i])
@@ -2380,7 +2348,7 @@ def avg_accessible_value(other: Optional[Any]) -> float:
 
 @avg_accessible_value.register
 def _(state: State) -> float:
-    if not state.elements:
+    if not state:
         return 0.0
     items = [ReadOnlyItemPool().get(se) for se in state]
     return np.max([i.avg_accessible_value for i in items])

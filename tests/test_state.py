@@ -1,9 +1,9 @@
+from copy import copy
 from unittest import TestCase
 
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
-from schema_mechanism.core import State
 from schema_mechanism.core import avg_accessible_value
 from schema_mechanism.core import composite_items
 from schema_mechanism.core import delegated_value
@@ -25,30 +25,30 @@ class TestState(TestCase):
         common_test_setup()
 
         # adds items to item pool
-        i1 = ItemPool().get('1', primitive_value=-1.0, avg_accessible_value=3.0, item_type=MockSymbolicItem)
-        i2 = ItemPool().get('2', primitive_value=0.0, avg_accessible_value=1.0, item_type=MockSymbolicItem)
-        i3 = ItemPool().get('3', primitive_value=1.0, avg_accessible_value=-3.0, item_type=MockSymbolicItem)
-        i4 = ItemPool().get('4', primitive_value=-1.0, avg_accessible_value=0.0, item_type=MockSymbolicItem)
-        i5 = ItemPool().get('5', primitive_value=0.0, avg_accessible_value=-1.0, item_type=MockSymbolicItem)
+        _ = ItemPool().get('1', primitive_value=-1.0, avg_accessible_value=3.0, item_type=MockSymbolicItem)
+        _ = ItemPool().get('2', primitive_value=0.0, avg_accessible_value=1.0, item_type=MockSymbolicItem)
+        _ = ItemPool().get('3', primitive_value=1.0, avg_accessible_value=-3.0, item_type=MockSymbolicItem)
+        _ = ItemPool().get('4', primitive_value=-1.0, avg_accessible_value=0.0, item_type=MockSymbolicItem)
+        _ = ItemPool().get('5', primitive_value=0.0, avg_accessible_value=-1.0, item_type=MockSymbolicItem)
 
-        self.s = State(elements=['1', '2', '3'])
-        self.s_copy = State(elements=['1', '2', '3'])
-        self.s_copy_copy = State(elements=['1', '2', '3'])
+        self.s = ('1', '2', '3')
+        self.s_copy = copy(self.s)
+        self.s_copy_copy = copy(self.s_copy)
 
-        self.s_disjoint = State(elements=['4', '5'])
-        self.s_conjoint = State(elements=['1', '2', '4'])
-        self.s_contained = State(elements=[*self.s.elements, 100])
+        self.s_disjoint = ('4', '5')
+        self.s_conjoint = ('1', '2', '4')
+        self.s_contained = (*self.s, 100)
 
-        self.s_empty = State(elements=[])
+        self.s_empty = tuple()
 
         GlobalStats(baseline_value=-1.0)
 
     def test_init(self):
-        self.assertEqual(0, len(self.s_empty.elements))
-        self.assertEqual(frozenset([]), self.s_empty.elements)
+        self.assertEqual(0, len(self.s_empty))
+        self.assertSetEqual(frozenset([]), frozenset(self.s_empty))
 
-        self.assertEqual(3, len(self.s.elements))
-        self.assertEqual(frozenset(['1', '2', '3']), self.s.elements)
+        self.assertEqual(3, len(self.s))
+        self.assertSetEqual(frozenset(['1', '2', '3']), frozenset(self.s))
 
     def test_eq(self):
         self.assertNotEqual(self.s, self.s_disjoint)

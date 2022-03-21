@@ -93,12 +93,7 @@ class TestSchemaMemory(TestCase):
         }
 
         # initialize composite schema controllers
-
-        # TODO: Change this once controller sharing is implemented!
         self.s101.action.controller.update([Chain([s1_1_r101])])
-        self.s101_r100.action.controller.update([Chain([s1_1_r101])])
-        self.s101_1_r100.action.controller.update([Chain([s1_1_r101])])
-
         self.s102.action.controller.update([])
 
         # Tree contents:

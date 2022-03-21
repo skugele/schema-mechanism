@@ -126,7 +126,7 @@ class TestDelegatedValueFunctions(unittest.TestCase):
             self.assertEqual(item.delegated_value, delegated_value(se))
 
         # test: delegated_value(state element) should return a ValueError if item does not exist in pool
-        self.assertEqual(0.0, delegated_value('UNK'))
+        self.assertRaises(ValueError, lambda: delegated_value('UNK'))
 
     # def test_dv_state(self):
     #     # test: delegated_value(state) should return the sum of state elements' primitive values
@@ -234,9 +234,9 @@ class TestInstrumentalValues(unittest.TestCase):
         self.assertRaises(ValueError, lambda: instrumental_values(schemas=schemas, pending=non_composite_pending))
 
     def test_pending_with_non_positive_goal_state_value(self):
-        i_neg = sym_item('1', primitive_value=-100.0)
-        i_zero = sym_item('2', primitive_value=0.0)
-        i_pos = sym_item('3', primitive_value=100.0)
+        _i_neg = sym_item('1', primitive_value=-100.0)
+        _i_zero = sym_item('2', primitive_value=0.0)
+        _i_pos = sym_item('3', primitive_value=100.0)
 
         schemas = [sym_schema('X,/A1/1,'), sym_schema('1,/A2/2,'), sym_schema('2,/A3/3,')]
 

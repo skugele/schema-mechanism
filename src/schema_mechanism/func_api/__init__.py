@@ -12,17 +12,17 @@ from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTreeNode
-from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
 from schema_mechanism.func_api.parser import parse
+from schema_mechanism.protocols import State
 
 
 def sym_state(str_repr: str) -> State:
     if not str_repr:
-        return State([])
-    return State([se for se in str_repr.split(',')])
+        return tuple()
+    return tuple(se for se in str_repr.split(','))
 
 
 def sym_item(str_repr: str, **kwargs) -> Item:

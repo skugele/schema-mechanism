@@ -7,7 +7,6 @@ from schema_mechanism.core import ExtendedContext
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_EC_ITEM_STATS
-from schema_mechanism.core import State
 from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.core import is_feature_enabled
@@ -75,7 +74,7 @@ class TestExtendedContext(TestCase):
                     self.assertEqual(0, value)
 
     def test_update_all_1(self):
-        state = State(sample(range(self.N_ITEMS), k=10))
+        state = tuple(sample(range(self.N_ITEMS), k=10))
 
         # update all items in this state simulating case of action taken
         self.ec.update_all(state, success=True)

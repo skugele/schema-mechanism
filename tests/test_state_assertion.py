@@ -7,7 +7,6 @@ from schema_mechanism.core import Assertion
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
-from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import primitive_value
 from schema_mechanism.func_api import sym_item_assert
@@ -244,7 +243,7 @@ class TestStateAssertion(TestCase):
 
         elapsed_time = 0
         for _ in range(n_iters):
-            state = State(sample(range(n_items), k=5))
+            state = tuple(sample(range(n_items), k=5))
             pos_asserts = [ItemAssertion(item=ItemPool().get(str(i))) for i in sample(range(0, 50), k=5)]
             neg_asserts = [ItemAssertion(item=ItemPool().get(str(i)), negated=True) for i in
                            sample(range(50, 100), k=3)]

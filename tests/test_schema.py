@@ -13,7 +13,6 @@ from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
-from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.core import lost_state
@@ -451,8 +450,8 @@ class TestSchema(TestCase):
         for i in range(n_items):
             self._item_pool.get(str(i))
 
-        s_prev = State(list(map(str, sample(range(n_items), k=n_state_elements))))
-        s_curr = State(list(map(str, sample(range(n_items), k=n_state_elements))))
+        s_prev = tuple(map(str, sample(range(n_items), k=n_state_elements)))
+        s_curr = tuple(map(str, sample(range(n_items), k=n_state_elements)))
 
         new = new_state(s_prev, s_curr)
         lost = lost_state(s_prev, s_curr)
@@ -490,7 +489,7 @@ class TestSchema(TestCase):
                    action=Action()) for _ in range(n_schemas)
         ]
 
-        state = State(sample(range(n_items), k=n_context_elements))
+        state = tuple(sample(range(n_items), k=n_context_elements))
 
         start = time()
         for s in schemas:

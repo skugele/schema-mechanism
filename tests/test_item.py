@@ -11,7 +11,6 @@ from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import DelegatedValueHelper
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
-from schema_mechanism.core import State
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.core import avg_accessible_value
 from schema_mechanism.core import primitive_value
@@ -78,14 +77,13 @@ class TestSymbolicItem(TestCase):
         n_state_elements = 25
 
         items = [SymbolicItem(str(value)) for value in range(n_items)]
-        state = State(sample(range(n_distinct_states), k=n_state_elements))
+        state = tuple(sample(range(n_distinct_states), k=n_state_elements))
 
         start = time()
         for run in range(n_runs):
             _ = map(lambda i: self.item.is_on(state), items)
         end = time()
 
-        # TODO: Need to add a test that includes an upper bound on the elapsed time
         print(f'Time for {n_runs * n_items:,} SymbolicItem.is_on calls: {end - start}s')
 
 

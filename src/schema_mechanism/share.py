@@ -155,7 +155,7 @@ class GlobalParams(metaclass=Singleton):
 
         # TODO: this registers the key names to prevent warning messages, but I need to update this with the names
         # TODO: of default classes or some other indicators later. (NOTE: circular dependency issues will ensue if
-        # TODO: I used the actual classes from schema_mechanism.core.
+        # TODO: I initialize these with the types from schema_mechanism.core).
         self._defaults['correlation_test'] = None
         self._defaults['item_type'] = None
         self._defaults['composite_item_type'] = None
