@@ -347,7 +347,7 @@ class TestSchemaSelection(TestCase):
 
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
-            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
             value_strategies=[primitive_value_evaluation_strategy],
             pending_schemas=deque([self.sca24_c12_r35])
         )
@@ -383,7 +383,7 @@ class TestSchemaSelection(TestCase):
 
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
-            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
             value_strategies=[primitive_value_evaluation_strategy],
             pending_schemas=deque([self.sca24_c12_r35])
         )
@@ -427,7 +427,7 @@ class TestSchemaSelection(TestCase):
 
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
-            select=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
             value_strategies=[primitive_value_evaluation_strategy],
             pending_schemas=deque([self.sca24_c12_r35])
         )
