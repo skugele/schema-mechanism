@@ -31,6 +31,7 @@ from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
 from schema_mechanism.core import primitive_value
+from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import debug
 from schema_mechanism.share import is_feature_enabled
@@ -369,6 +370,28 @@ def instrumental_values(schemas: Sequence[Schema], pending: Optional[Schema] = N
     return values
 
 
+def reliability_values(schemas: Sequence[Schema],
+                       pending: Optional[Schema] = None,
+                       max_penalty: Optional[float] = 1.0) -> np.ndarray:
+    """ Returns an array of values that serve to penalize unreliable schemas.
+
+    :param schemas:
+    :param pending:
+    :param max_penalty:
+    :return: an array of reliability penalty values
+    """
+    if max_penalty <= 0.0:
+        raise ValueError('Max penalty must be > 0.0')
+
+    # nans treated as 0.0 reliability
+    reliabilities = np.array([0.0 if s.reliability is np.nan else s.reliability for s in schemas])
+    return (
+        np.array([])
+        if schemas is None or len(schemas) == 0
+        else max_penalty * (np.power(reliabilities, 2) - 1.0)
+    )
+
+
 # TODO: Add a class description that mentions primitive, delegated, and instrumental value, as well as pending
 # TODO: schema bias and reliability.
 class GoalPursuitEvaluationStrategy:
@@ -388,17 +411,17 @@ class GoalPursuitEvaluationStrategy:
         pv = primitive_values(schemas)
         dv = delegated_values(schemas)
         iv = instrumental_values(schemas, pending)
+        rv = reliability_values(schemas, pending, max_penalty=GlobalParams().get('max_reliability_penalty'))
 
-        # TODO: Only reliable schemas should be used for goal pursuit. How do we do this??? Perhaps a large penalty
-        # TODO: for unreliable schemas???
         trace('goal pursuit selection values:')
         trace(f'\tschemas: {[str(s) for s in schemas]}')
         trace(f'\tpending: {[str(pending)]}')
         trace(f'\tpv: {str(pv)}')
         trace(f'\tdv: {str(dv)}')
         trace(f'\tiv: {str(iv)}')
+        trace(f'\trv: {str(rv)}')
 
-        return pv + dv + iv
+        return pv + dv + iv + rv
 
 
 class EpsilonGreedyExploratoryStrategy:
@@ -634,8 +657,6 @@ class SchemaSelection:
         return next_pending
 
 
-# FIXME: Need to rethink the interaction between modules. Should I use observers or let the SchemaMechanism
-# FIXME: orchestrate those interactions???
 class SchemaMechanism:
     def __init__(self, primitive_actions: Collection[Action], primitive_items: Collection[Item]):
         super().__init__()
@@ -650,8 +671,12 @@ class SchemaMechanism:
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
             value_strategies=[
                 GoalPursuitEvaluationStrategy(),
-                EpsilonGreedyExploratoryStrategy(0.2)
+                EpsilonGreedyExploratoryStrategy(0.4)
             ],
+            weights=[
+                GlobalParams().get('goal_weight'),
+                GlobalParams().get('explore_weight'),
+            ]
         )
 
         self._selection_details: Optional[SchemaSelection.SelectionDetails] = None

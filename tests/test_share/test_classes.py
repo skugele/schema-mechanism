@@ -39,7 +39,8 @@ class MockSymbolicItem(SymbolicItem):
     def __init__(self,
                  source: str,
                  primitive_value: Optional[float] = None,
-                 avg_accessible_value: Optional[float] = None):
+                 avg_accessible_value: Optional[float] = None,
+                 **kwargs):
         super().__init__(source, primitive_value)
 
         self._mock_avg_accessible_value = avg_accessible_value
@@ -64,7 +65,8 @@ class MockSymbolicItem(SymbolicItem):
 class MockCompositeItem(CompositeItem):
     def __init__(self,
                  source: StateAssertion,
-                 avg_accessible_value: float):
+                 avg_accessible_value: float,
+                 **kwargs):
         super().__init__(source)
 
         self._mock_avg_accessible_value = avg_accessible_value
@@ -72,9 +74,9 @@ class MockCompositeItem(CompositeItem):
     @property
     def avg_accessible_value(self) -> float:
         return (
-            self._mock_avg_accessible_value
-            if self._mock_avg_accessible_value
-            else super().avg_accessible_value
+            super().avg_accessible_value
+            if self._mock_avg_accessible_value is None
+            else self._mock_avg_accessible_value
         )
 
     @avg_accessible_value.setter
@@ -104,25 +106,25 @@ class MockSchema(Schema):
     @property
     def reliability(self) -> float:
         return (
-            self._mock_reliability
-            if self._mock_reliability
-            else super().reliability
+            super().reliability
+            if self._mock_reliability is None
+            else self._mock_reliability
         )
 
     @property
     def avg_duration(self) -> float:
         return (
-            self._mock_avg_duration
-            if self._mock_avg_duration
-            else super().avg_duration
+            super().avg_duration
+            if self._mock_avg_duration is None
+            else self._mock_avg_duration
         )
 
     @property
     def cost(self) -> float:
         return (
-            self._mock_cost
-            if self._mock_cost
-            else super().cost
+            super().cost
+            if self._mock_cost is None
+            else self._mock_cost
         )
 
 

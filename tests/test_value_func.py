@@ -16,6 +16,7 @@ from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import instrumental_values
+from schema_mechanism.modules import reliability_values
 from schema_mechanism.share import GlobalParams
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSchema
@@ -333,3 +334,45 @@ class TestInstrumentalValues(unittest.TestCase):
         actual_result = instrumental_values(schemas, pending)
 
         self.assertTrue(np.allclose(expected_result, actual_result))
+
+
+class TestReliabilityValues(unittest.TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+        GlobalParams().set('item_type', MockSymbolicItem)
+        GlobalParams().set('composite_item_type', MockCompositeItem)
+        GlobalParams().set('schema_type', MockSchema)
+
+    def test_no_schemas(self):
+        # test: should return an empty numpy array if no schemas provided and no pending
+        result = reliability_values(schemas=[], pending=None)
+        self.assertIsInstance(result, np.ndarray)
+        self.assertTrue(np.array_equal(result, np.array([])))
+
+    def test_values(self):
+        max_penalty = 10.0
+
+        # test: a reliability of 1.0 should result in penalty of 0.0
+        schemas = [sym_schema('A,/A1/B,', reliability=1.0)]
+        rvs = reliability_values(schemas, max_penalty=max_penalty)
+        self.assertTrue(np.array_equal(np.zeros_like(schemas), rvs))
+
+        # test: a reliability of 0.0 should result in max penalty
+        schemas = [sym_schema('A,/A1/B,', reliability=0.0)]
+        rvs = reliability_values(schemas, max_penalty=max_penalty)
+        self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
+
+        # test: a reliability of nan should result in max penalty
+        schemas = [sym_schema('A,/A1/B,', reliability=np.nan)]
+        rvs = reliability_values(schemas, max_penalty=max_penalty)
+        self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
+
+        # test: a reliability less than 1.0 should result in penalty greater than 0.0
+        schemas = [sym_schema('A,/A1/B,', reliability=rel) for rel in np.linspace(0.01, 1.0, endpoint=False)]
+        rvs = reliability_values(schemas, max_penalty=max_penalty)
+        self.assertTrue(all({-max_penalty < rv < 0.0 for rv in rvs}))
+
+        # test: max penalty <= 0.0 should raise a ValueError
+        self.assertRaises(ValueError, lambda: reliability_values(schemas, max_penalty=0.0))
+        self.assertRaises(ValueError, lambda: reliability_values(schemas, max_penalty=-1.0))

@@ -311,33 +311,35 @@ class TestController(TestShared):
         for component in components:
             self.assertEqual(expected_proximities[component], actual_proximities[component])
 
-    def test_multiple_updates_with_overlapping_chains(self):
-        # test: same goal proximities given same chains whether single or multiple update invocations
-        chains = [
-            Chain([self.s1_a_b, self.s3_b_c, self.s1_c_d, self.s4_d_k, self.s4_k_l, self.s3_l_e]),
-            Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d, self.s3_d_e]),
-            Chain([self.s3_c_d, self.s3_d_e]),
-            Chain([self.s1_b_e]),
-        ]
-
-        for chain in chains:
-            self.controller.update([chain])
-
-        # test: should be a component schema for each schema in each chain
-        components = list(itertools.chain.from_iterable(c for c in chains))
-        self.assertSetEqual(set(components), self.controller.components)
-        self.assertSetEqual(set(components), set(self.controller.descendants))
-
-        expected_proximities = defaultdict(lambda: np.inf)
-        for chain in chains:
-            for schema in chain:
-                expected_proximities[schema] = np.min(
-                    [expected_proximities[schema], self._calc_proximity(schema, chain)])
-
-        # test: a component's proximity should be the reciprocal of the sum of avg durations in the remaining chain
-        actual_proximities = {s: self.controller.proximity(s) for s in self.controller.components}
-        for component in components:
-            self.assertEqual(expected_proximities[component], actual_proximities[component])
+    # FIXME: the behavior was changed to replace rather than update existing components. It may be desirable to
+    # FIXME: to revert this based on additional experimentation. I am commenting out these test cases for now.
+    # def test_multiple_updates_with_overlapping_chains(self):
+    #     # test: same goal proximities given same chains whether single or multiple update invocations
+    #     chains = [
+    #         Chain([self.s1_a_b, self.s3_b_c, self.s1_c_d, self.s4_d_k, self.s4_k_l, self.s3_l_e]),
+    #         Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d, self.s3_d_e]),
+    #         Chain([self.s3_c_d, self.s3_d_e]),
+    #         Chain([self.s1_b_e]),
+    #     ]
+    #
+    #     for chain in chains:
+    #         self.controller.update([chain])
+    #
+    #     # test: should be a component schema for each schema in each chain
+    #     components = list(itertools.chain.from_iterable(c for c in chains))
+    #     self.assertSetEqual(set(components), self.controller.components)
+    #     self.assertSetEqual(set(components), set(self.controller.descendants))
+    #
+    #     expected_proximities = defaultdict(lambda: np.inf)
+    #     for chain in chains:
+    #         for schema in chain:
+    #             expected_proximities[schema] = np.min(
+    #                 [expected_proximities[schema], self._calc_proximity(schema, chain)])
+    #
+    #     # test: a component's proximity should be the reciprocal of the sum of avg durations in the remaining chain
+    #     actual_proximities = {s: self.controller.proximity(s) for s in self.controller.components}
+    #     for component in components:
+    #         self.assertEqual(expected_proximities[component], actual_proximities[component])
 
     def test_update_with_composite_action_component(self):
         schema_ca = sym_schema('A,/D,/M,')

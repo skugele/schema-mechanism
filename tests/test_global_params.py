@@ -99,6 +99,27 @@ class TestGlobalParams(unittest.TestCase):
             except ValueError:
                 pass
 
+    def test_max_reliability_penalty(self):
+        key = 'max_reliability_penalty'
+
+        # test: value should be the default before updates
+        self.assertEqual(self.gp.defaults[key], self.gp.get(key))
+
+        # test: float values greater than 0.0 should be accepted and returned
+        self.gp.set(key, 0.001)
+        self.assertEqual(0.001, self.gp.get(key))
+
+        self.gp.set(key, 100)
+        self.assertEqual(100, self.gp.get(key))
+
+        # test: values less than or equal to 0.0 should be rejected
+        for illegal_value in [0.0, -0.0001, -100]:
+            try:
+                self.gp.set(key, illegal_value)
+                self.fail('Did not raise expected ValueError on illegal value')
+            except ValueError:
+                pass
+
     def test_output_format(self):
         key = 'output_format'
 

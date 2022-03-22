@@ -10,6 +10,7 @@ from schema_mechanism.examples import display_summary
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import SchemaMechanism
+from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import info
 from schema_mechanism.share import rng
 from schema_mechanism.util import Observable
@@ -166,12 +167,16 @@ def parse_args():
 
 
 # global constants
-N_MACHINES = 3
+N_MACHINES = 2
 N_STEPS = 1000
 
 
 def run():
     args = parse_args()
+
+    GlobalParams().set('learning_rate', 0.1)
+    GlobalParams().set('dv_trace_max_len', 2)
+    GlobalParams().set('reliability_threshold', 0.8)
 
     machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.n_machines)]
     env = BanditEnvironment(machines)

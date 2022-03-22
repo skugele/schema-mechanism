@@ -140,7 +140,10 @@ class GlobalParams(metaclass=Singleton):
         # used by delegated value helper
         self._defaults['dv_trace_max_len'] = 5
 
-        # schema selection weighting
+        # used by reliability_values
+        self._defaults['max_reliability_penalty'] = 10.0
+
+        # schema selection weighting (set in SchemaMechanism)
         self._defaults['goal_weight'] = 0.6
         self._defaults['explore_weight'] = 0.4
 
@@ -168,6 +171,7 @@ class GlobalParams(metaclass=Singleton):
         self._validators['positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
+        self._validators['max_reliability_penalty'] = RangeValidator(0.0, exclude=[0.0])
         self._validators['goal_weight'] = RangeValidator(0.0, 1.0)
         self._validators['explore_weight'] = RangeValidator(0.0, 1.0)
         self._validators['verbosity'] = TypeValidator([Verbosity])

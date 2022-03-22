@@ -308,6 +308,14 @@ class SymbolicItem(Item):
 
         super().__init__(source=source, primitive_value=primitive_value, **kwargs)
 
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, SymbolicItem):
+            return self.source == other.source
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.source)
+
     @property
     def source(self) -> str:
         return super().source
@@ -318,14 +326,6 @@ class SymbolicItem(Item):
 
     def is_on(self, state: State, **kwargs) -> bool:
         return self.source in state
-
-    def __eq__(self, other: Any) -> bool:
-        if isinstance(other, SymbolicItem):
-            return self.source == other.source
-        return False if other is None else NotImplemented
-
-    def __hash__(self) -> int:
-        return hash(self.source)
 
 
 def non_composite_items(items: Collection[Item]) -> Collection[Item]:
@@ -370,6 +370,15 @@ class SchemaStats:
         self._n = 0  # total number of update events
         self._n_activated = 0
         self._n_success = 0
+
+    def __repr__(self):
+        attr_values = {
+            'n': f'{self.n:,}',
+            'n_activated': f'{self.n_activated:,}',
+            'n_success': f'{self.n_success:,}',
+        }
+
+        return repr_str(self, attr_values)
 
     def update(self, activated: bool = False, success: bool = False, count: int = 1):
         self._n += count
@@ -431,15 +440,6 @@ class SchemaStats:
         :return: the number of failures
         """
         return self._n_activated - self._n_success
-
-    def __repr__(self):
-        attr_values = {
-            'n': f'{self.n:,}',
-            'n_activated': f'{self.n_activated:,}',
-            'n_success': f'{self.n_success:,}',
-        }
-
-        return repr_str(self, attr_values)
 
 
 class ItemStats(ABC):
@@ -965,7 +965,10 @@ class CompositeItem(StateAssertion, Item):
         return hash(self.source)
 
     def __str__(self) -> str:
-        return f'({str(self.source)})'
+        return Item.__str__(self)
+
+    def __repr__(self) -> str:
+        return Item.__repr__(self)
 
 
 class ExtendedItemCollection(Observable):
@@ -1313,6 +1316,10 @@ class Controller:
 
         # FIXME: implement incremental learning or remove this variable
         # lr: float = GlobalParams().get('learning_rate')
+
+        # FIXME: this should probably be removed
+        self._components.clear()
+        self._descendants.clear()
 
         for chain in chains:
             if not chain:
