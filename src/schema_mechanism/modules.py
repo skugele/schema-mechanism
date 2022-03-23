@@ -458,10 +458,7 @@ class ExploratoryEvaluationStrategy:
     """
         * “The exploration criterion boosts the importance of a schema to promote its activation for the sake of
            what might be learned by that activation” (Drescher, 1991, p. 60)
-        * “To strike a balance between goal-pursuit and exploration criteria, the [schema] mechanism alternates
-           between emphasizing goal-pursuit criterion for a time, then emphasizing exploration criterion;
-           currently, the exploration criterion is emphasized most often (about 90% of the time).”
-           (Drescher, 1991, p. 61)
+
     """
 
     def __init__(self):
@@ -591,6 +588,10 @@ class SchemaSelection:
         candidates = schemas
         candidates_values = self.calc_effective_values(candidates, pending)
 
+        debug(f'candidates [n: {len(candidates)}]')
+        for c, v in zip(candidates, candidates_values):
+            debug(f'\t{str(c)} -> {v:.2f}')
+
         # select a schema for execution. candidates will include components from any pending composite actions.
         selected_schema, value = self._select_strategy(candidates, candidates_values)
         debug(f'selected schema: {selected_schema} [eff. value: {value}]')
@@ -716,6 +717,10 @@ class SchemaMechanism:
         #  to the importance asserted by each schema. Goal-directed value is emphasized most of the time, but a
         #  significant part of the time, goal-directed value is diluted so that only very important goals take
         #  precedence over exploration criteria." (See Drescher, 1991, p. 66)
+
+        # “To strike a balance between goal-pursuit and exploration criteria, the [schema] mechanism alternates
+        #  between emphasizing goal-pursuit criterion for a time, then emphasizing exploration criterion; currently,
+        #  the exploration criterion is emphasized most often (about 90% of the time).” (See Drescher, 1991, p. 61)
 
         # select a single schema from the applicable schemas
         self._selection_details = self._schema_selection.select(applicable_schemas, state)

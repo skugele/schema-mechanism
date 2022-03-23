@@ -177,6 +177,7 @@ def run():
     GlobalParams().set('learning_rate', 0.1)
     GlobalParams().set('dv_trace_max_len', 2)
     GlobalParams().set('reliability_threshold', 0.8)
+    GlobalParams().set('max_reliability_penalty', 100)
 
     machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.n_machines)]
     env = BanditEnvironment(machines)

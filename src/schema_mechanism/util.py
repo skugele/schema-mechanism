@@ -116,6 +116,68 @@ class BoundedSet(set):
             raise ValueError(f'illegal values: {illegal_values}')
 
 
+# TODO: move default value into global properties
+class Trace:
+    def __init__(self, decay_rate: float = 0.5, pre_allocated: int = 1000, block_size: int = 100):
+        self._decay_rate = np.float64(decay_rate)
+
+        self._indexes: dict[Any, int] = dict()
+        self._values = np.zeros(pre_allocated, dtype=np.float64)
+
+        self._last_index = 0
+        self._block_size = block_size
+
+    def __len__(self):
+        return self._last_index
+
+    @property
+    def decay_rate(self) -> float:
+        return self._decay_rate
+
+    @property
+    def block_size(self) -> int:
+        return self._block_size
+
+    @property
+    def n_allocated(self) -> int:
+        return len(self._values)
+
+    def values(self, elements: Optional[Iterable[Any]] = None) -> np.ndarray:
+        if not elements:
+            return self._values[0:self._last_index]
+
+        indexes = np.array([self._indexes[e] for e in elements])
+        return self._values[indexes]
+
+    def add(self, elements: Collection[Any]):
+        new_elements = [e for e in elements if e not in self._indexes]
+        if not new_elements:
+            return
+
+        indexes = range(self._last_index, self._last_index + len(new_elements))
+        self._indexes.update({k: v for k, v in zip(new_elements, indexes)})
+
+        # allocate a block of columns to array (as necessary)
+        blocks_needed = (len(self._indexes) - len(self._values)) // self._block_size
+        if blocks_needed > 0:
+            self._values = np.append(self._values, np.zeros((blocks_needed + 1) * self._block_size))
+
+        self._last_index += len(new_elements)
+
+    def update(self, active_set: Optional[Collection[Any]] = None):
+        active_set = active_set or np.array([])
+
+        # add any new elements
+        self.add(active_set)
+
+        # decay all values
+        self._values *= self._decay_rate
+
+        # increase value of all elements in active_set
+        indexes = [self._indexes[e] for e in active_set]
+        self._values[indexes] += 1
+
+
 class DefaultDictWithKeyFactory(defaultdict):
     def __missing__(self, key):
         if self.default_factory is None:

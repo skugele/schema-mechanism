@@ -4,6 +4,7 @@ from unittest import TestCase
 import numpy as np
 
 from schema_mechanism.util import BoundedSet
+from schema_mechanism.util import Trace
 from schema_mechanism.util import equal_weights
 from test_share.test_classes import MockObservable
 from test_share.test_classes import MockObserver
@@ -128,3 +129,109 @@ class TestFunctions(unittest.TestCase):
                 self.assertAlmostEqual(1.0, sum(weights))
         except ValueError as e:
             self.fail(f'Unexpected exception: {str(e)}')
+
+
+class TestTrace(unittest.TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+    def test_init(self):
+        tr = Trace(decay_rate=0.15, pre_allocated=250)
+
+        self.assertEqual(0.15, tr.decay_rate)
+        self.assertEqual(250, tr.n_allocated)
+
+    def test_update_with_empty_set(self):
+        tr = Trace()
+
+        # test: adding empty set should not increment length of trace
+        tr.update([])
+
+        self.assertEqual(0, len(tr))
+
+    def test_update_add_single(self):
+        tr = Trace()
+
+        # test: initial length should be 0
+        self.assertEqual(0, len(tr))
+
+        # test: adding a single element should increment length by 1
+        tr.update(['1'])
+        self.assertEqual(1, len(tr))
+
+        # test: add an element that already exists should not increment the length
+        tr.update(['1'])
+        self.assertEqual(1, len(tr))
+
+        # test: adding a new element that does not exist should increment length by 1
+        tr.update(['2'])
+        self.assertEqual(2, len(tr))
+
+    def test_update_add_multiple(self):
+        tr = Trace()
+
+        # test: adding multiple elements should increment length by the number of elements
+        e1 = {str(i) for i in range(10)}
+        tr.update(e1)
+
+        self.assertEqual(len(e1), len(tr))
+
+        # test: initial value of added elements should be 1
+        expected = np.ones(len(e1), dtype=np.float64)
+        actual = tr.values(e1)
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+        # test: adding elements that already exist should not increase the length of trace
+        tr.update(e1)
+
+        self.assertEqual(len(e1), len(tr))
+
+        # test: length of trace should only be incremented by the number of new elements
+        e2 = {str(i) for i in range(5, 10)}
+        tr.update(e2)
+
+        self.assertEqual(len(e1.union(e2)), len(tr))
+
+    def test_update_and_decay(self):
+        tr = Trace()
+
+        elements = {str(i) for i in range(10)}
+        tr.update(elements)
+
+        # test: initial update should set values in active set to one
+        expected = np.ones(len(elements), dtype=np.float64)
+        actual = tr.values(elements)
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+        # test: subsequent updates should increase the values of active set and decay others
+        active = {str(i) for i in range(0, 5)}
+        inactive = elements.difference(active)
+
+        tr.update(active)
+
+        self.assertTrue(np.alltrue(tr.values(active) > 1.0))
+        self.assertTrue(np.alltrue(tr.values(inactive) < 1.0))
+
+    def test_update_decay_to_approx_zero(self):
+        tr = Trace()
+
+        elements = [str(i) for i in range(10)]
+        tr.update(elements)
+
+        for _ in range(30):
+            tr.update()
+
+        self.assertTrue(np.allclose(tr.values(), 0.0))
+
+    def test_expand_allocated(self):
+        tr = Trace(pre_allocated=1000, block_size=100)
+
+        # sanity check
+        self.assertEqual(1000, tr.n_allocated)
+
+        tr.update([i for i in range(10_000)])
+
+        # test: after update, the number of allocated elements should be 10_000 + one extra block
+        self.assertTrue(10_000 + tr.block_size, tr.n_allocated)
