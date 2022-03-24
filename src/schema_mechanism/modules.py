@@ -38,6 +38,7 @@ from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import rng
 from schema_mechanism.share import trace
 from schema_mechanism.util import Observer
+from schema_mechanism.util import Trace
 from schema_mechanism.util import equal_weights
 
 
@@ -453,7 +454,47 @@ class EpsilonGreedyExploratoryStrategy:
         return values
 
 
-# TODO: implement this
+def habituation_exploratory_value(schemas: Sequence[Schema],
+                                  trace: Trace[Action],
+                                  multiplier: Optional[float] = None,
+                                  pending: Optional[Schema] = None) -> np.ndarray:
+    """ Modulates the selection value of actions based on the recency and frequency of their selection.
+
+    The selection value of actions that have been chosen many times recently and/or frequently is decreased
+    (implementing "habituation") and boosts the value of actions that have been under-represented in recent selections.
+
+    See also:
+        (1) "a schema that has recently been activated many times becomes partly suppressed (habituation), preventing
+             a small number of schemas from persistently dominating the mechanism's activity."
+             (See Drescher, 1991, p. 66.)
+
+        (2) "schemas with underrepresented actions receive enhanced exploration value." (See Drescher, 1991, p. 67.)
+
+    :param schemas:
+    :param trace:
+    :param multiplier:
+    :param pending:
+    :return:
+    """
+    if trace is None:
+        raise ValueError('An action trace must be provided.')
+
+    multiplier = multiplier or 1.0
+    if multiplier <= 0.0:
+        raise ValueError('Multiplier must be a positive number.')
+
+    if not schemas:
+        return np.array([])
+
+    actions = [s.action for s in schemas]
+    trace_values = trace.values(actions)
+    median_trace_value = np.median(trace_values)
+
+    values = -multiplier * (trace_values - median_trace_value)
+
+    return np.round(values, 2)
+
+
 class ExploratoryEvaluationStrategy:
     """
         * “The exploration criterion boosts the importance of a schema to promote its activation for the sake of
@@ -468,6 +509,7 @@ class ExploratoryEvaluationStrategy:
         pass
 
     def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema]) -> np.ndarray:
+
         # TODO: Add a mechanism for tracking recently activated schemas.
         # hysteresis - "a recently activated schema is favored for activation, providing a focus of attention"
 
@@ -475,26 +517,22 @@ class ExploratoryEvaluationStrategy:
         # "Other factors being equal, a more frequently used schema is favored for selection over a less used schema"
         # (See Drescher, 1991, p. 67)
 
-        # TODO: Add a mechanism for suppressing schema selection for schemas that have been activated too often
-        # TODO: recently.
-
-        # TODO: What does "partly suppressed" mean in the quote below? A reduction in their activation importance?
-
-        # habituation - "a schema that has recently been activated many times becomes partly suppressed, preventing
-        #                a small number of schemas from persistently dominating the mechanism's activity"
-
-        # TODO: Add a mechanism to track the frequency of activation over schema actions. (Is this purely based on
-        # TODO: frequency, or recency as well???
-        # "schemas with underrepresented actions receive enhanced exploration value." (See Drescher, 1991, p. 67)
-
         # TODO: It's not clear what this means? Does this apply to depth of spin-off, nesting of composite actions,
         # TODO: inclusion of synthetic items, etc.???
         # "a component of exploration value promotes underrepresented levels of actions, where a structure's level is
         # defined as follows: primitive items and actions are of level zero; any structure defined in terms of other
         # structures is of one greater level than the maximum of those structures' levels." (See Drescher, 1991, p. 67)
 
-        # FIXME
-        return rng().integers(0, 100, len(schemas))
+        hab_v = habituation_exploratory_value(schemas=schemas,
+                                              trace=GlobalStats().action_trace,
+                                              multiplier=GlobalParams().get('habituation_multiplier'))
+
+        trace('exploratory selection values:')
+        trace(f'\tschemas: {[str(s) for s in schemas]}')
+        trace(f'\tpending: {[str(pending)]}')
+        trace(f'\thab_v: {str(hab_v)}')
+
+        return hab_v
 
 
 class SchemaSelection:
@@ -672,7 +710,8 @@ class SchemaMechanism:
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
             value_strategies=[
                 GoalPursuitEvaluationStrategy(),
-                EpsilonGreedyExploratoryStrategy(0.4)
+                ExploratoryEvaluationStrategy(),
+                # EpsilonGreedyExploratoryStrategy(0.4)
             ],
             weights=[
                 GlobalParams().get('goal_weight'),
@@ -704,6 +743,12 @@ class SchemaMechanism:
             for item in ReadOnlyItemPool():
                 item.update_delegated_value(selection_state=self._selection_details.selection_state,
                                             result_state=state)
+
+            selected = self._selection_details.selected
+
+            GlobalStats().action_trace.update([selected.action])
+            GlobalStats().schema_trace.update([selected])
+            GlobalStats().state_trace.update([state])
 
         # updates unconditional state value average
         GlobalStats().update_baseline(state)

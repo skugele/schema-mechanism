@@ -3,6 +3,7 @@ import unittest
 
 import numpy as np
 
+from schema_mechanism.core import Action
 from schema_mechanism.core import Chain
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
@@ -15,9 +16,11 @@ from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
+from schema_mechanism.modules import habituation_exploratory_value
 from schema_mechanism.modules import instrumental_values
 from schema_mechanism.modules import reliability_values
 from schema_mechanism.share import GlobalParams
+from schema_mechanism.util import Trace
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSchema
 from test_share.test_classes import MockSymbolicItem
@@ -376,3 +379,103 @@ class TestReliabilityValues(unittest.TestCase):
         # test: max penalty <= 0.0 should raise a ValueError
         self.assertRaises(ValueError, lambda: reliability_values(schemas, max_penalty=0.0))
         self.assertRaises(ValueError, lambda: reliability_values(schemas, max_penalty=-1.0))
+
+
+class TestActionFrequencyExploratoryValue(unittest.TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+        self.actions = [Action(f'A{i}') for i in range(11)]
+        self.schemas = [sym_schema(f'/A{i}/') for i in range(11)]
+
+        self.tr: Trace[Action] = Trace()
+
+        # elements 0-4 should have value of 0.25
+        self.tr.update(self.actions)
+
+        # element 5 should have value value of 0.75
+        self.tr.update(self.actions[5:])
+
+        # elements 6-10 should have value of 1.75
+        self.tr.update(self.actions[6:])
+
+        # sanity checks
+        self.assertTrue(np.array_equal(0.25 * np.ones_like(self.actions[0:5]), self.tr.values(self.actions[0:5])))
+        self.assertTrue(np.array_equal(np.array([0.75]), self.tr.values([self.actions[5]])))
+        self.assertTrue(np.array_equal(1.75 * np.ones_like(self.actions[6:]), self.tr.values(self.actions[6:])))
+
+    # noinspection PyTypeChecker
+    def test_no_trace(self):
+        # test: no trace or trace with
+        self.assertRaises(ValueError, lambda: habituation_exploratory_value(schemas=[], trace=None))
+
+    def test_empty_schemas_list(self):
+        # test: empty schemas list should return empty numpy array
+        expected = np.array([])
+        actual = habituation_exploratory_value(schemas=[], trace=self.tr)
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+    def test_single_action(self):
+        # test: single action should have zero value
+        expected = np.zeros(1)
+        actual = habituation_exploratory_value(schemas=[self.schemas[0]], trace=self.tr)
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+    def test_multiple_actions_same_value(self):
+        # test: multiple actions with same trace value should return zeros
+
+        schemas = self.schemas[:5]
+
+        expected = np.zeros_like(schemas)
+        actual = habituation_exploratory_value(schemas=schemas, trace=self.tr)
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+    def test_multiple_actions_different_values_contains_median(self):
+        values = habituation_exploratory_value(schemas=self.schemas, trace=self.tr)
+
+        # sanity check
+        self.assertTrue(np.median(values) in values)
+
+        # test: actions with trace values equal to median should have zero value
+        self.assertEqual(np.zeros(1), values[5])
+
+        # test: actions with trace values below median should have positive value
+        self.assertTrue(np.alltrue(values[:5] > 0.0))
+
+        # test: actions with trace values above median should have negative value
+        self.assertTrue(np.alltrue(values[6:] < 0.0))
+
+    def test_multiple_actions_different_values_does_not_contain_median(self):
+        values = habituation_exploratory_value(schemas=self.schemas[1:], trace=self.tr)
+
+        # sanity check
+        self.assertTrue(np.median(values) not in values)
+
+        # test: actions with trace values below median should have positive value
+        self.assertTrue(np.alltrue(values[:5] > 0.0))
+
+        # test: actions with trace values above median should have negative value
+        self.assertTrue(np.alltrue(values[5:] < 0.0))
+
+    def test_unknown_values(self):
+        # test: schemas with unknown actions should have maximal value
+        schemas = [*self.schemas, sym_schema('/UNK/')]
+        values = habituation_exploratory_value(schemas=schemas, trace=self.tr)
+
+        self.assertEqual(np.max(values), values[-1])
+
+    def test_multiplier(self):
+        mult = 8.0
+
+        values = habituation_exploratory_value(schemas=self.schemas,
+                                               trace=self.tr,
+                                               multiplier=None)
+
+        values_with_mult = habituation_exploratory_value(schemas=self.schemas,
+                                                         trace=self.tr,
+                                                         multiplier=mult)
+
+        self.assertTrue(np.array_equal(values * mult, values_with_mult))

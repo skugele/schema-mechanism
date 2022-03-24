@@ -225,6 +225,57 @@ class TestTrace(unittest.TestCase):
 
         self.assertTrue(np.allclose(tr.values(), 0.0))
 
+    def test_values(self):
+        tr = Trace()
+
+        elements = [str(i) for i in range(10)]
+
+        # all elements should be 1.0 after update
+        tr.update(elements)
+
+        # test: value for single element
+        selection = [elements[0]]
+        values = tr.values(selection)
+
+        self.assertEqual(len(selection), len(values))
+        self.assertEqual(1, values)
+
+        # test: value for multiple elements (all distinct)
+        selection = elements[0:3]
+        values = tr.values(selection)
+
+        self.assertEqual(len(selection), len(values))
+        self.assertTrue(np.array_equal(np.ones_like(values), values))
+
+        # test: value for multiple elements (with repeats)
+        selection = [elements[0], elements[0], elements[5], elements[0], elements[7], elements[5]]
+        values = tr.values(selection)
+
+        self.assertEqual(len(selection), len(values))
+        self.assertTrue(np.array_equal(np.ones_like(values), values))
+
+        # test: all values returned if elements is None or empty
+        for values in map(lambda e: tr.values(e), [None, list()]):
+            self.assertEqual(len(elements), len(values))
+            self.assertTrue(np.array_equal(np.ones_like(values), values))
+
+        # test: values should be zero for unknown elements
+        selection = ['101', '102', '103']
+        self.assertTrue(np.array_equal(np.zeros_like(selection, dtype=np.float64), tr.values(selection)))
+
+    def test_contains(self):
+        tr = Trace()
+
+        elements = [str(i) for i in range(10)]
+        tr.update(elements)
+
+        for e in elements:
+            self.assertIn(e, tr)
+
+        elements_not_in = [str(i) for i in range(10, 20)]
+        for e in elements_not_in:
+            self.assertNotIn(e, tr)
+
     def test_expand_allocated(self):
         tr = Trace(pre_allocated=1000, block_size=100)
 
@@ -235,3 +286,14 @@ class TestTrace(unittest.TestCase):
 
         # test: after update, the number of allocated elements should be 10_000 + one extra block
         self.assertTrue(10_000 + tr.block_size, tr.n_allocated)
+
+    def test_blah(self):
+        tr = Trace(decay_rate=0.8)
+
+        elements = [str(i) for i in range(5)]
+        tr.update(elements)
+
+        for _ in range(100):
+            tr.update(elements[0])
+
+        print(tr.values())

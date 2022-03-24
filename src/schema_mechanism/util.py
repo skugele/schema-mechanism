@@ -6,8 +6,10 @@ from collections import defaultdict
 from collections.abc import Iterable
 from itertools import tee
 from typing import Any
+from typing import Generic
 from typing import Optional
 from typing import Type
+from typing import TypeVar
 
 import numpy as np
 import sklearn.metrics as sk_metrics
@@ -116,12 +118,14 @@ class BoundedSet(set):
             raise ValueError(f'illegal values: {illegal_values}')
 
 
-# TODO: move default value into global properties
-class Trace:
+T = TypeVar('T')
+
+
+class Trace(Generic[T]):
     def __init__(self, decay_rate: float = 0.5, pre_allocated: int = 1000, block_size: int = 100):
         self._decay_rate = np.float64(decay_rate)
 
-        self._indexes: dict[Any, int] = dict()
+        self._indexes: dict[T, int] = defaultdict(lambda: self._missing_index())
         self._values = np.zeros(pre_allocated, dtype=np.float64)
 
         self._last_index = 0
@@ -129,6 +133,9 @@ class Trace:
 
     def __len__(self):
         return self._last_index
+
+    def __contains__(self, item: T) -> bool:
+        return item in self._indexes
 
     @property
     def decay_rate(self) -> float:
@@ -142,14 +149,14 @@ class Trace:
     def n_allocated(self) -> int:
         return len(self._values)
 
-    def values(self, elements: Optional[Iterable[Any]] = None) -> np.ndarray:
+    def values(self, elements: Optional[Iterable[T]] = None) -> np.ndarray:
         if not elements:
             return self._values[0:self._last_index]
 
         indexes = np.array([self._indexes[e] for e in elements])
         return self._values[indexes]
 
-    def add(self, elements: Collection[Any]):
+    def add(self, elements: Collection[T]):
         new_elements = [e for e in elements if e not in self._indexes]
         if not new_elements:
             return
@@ -164,7 +171,7 @@ class Trace:
 
         self._last_index += len(new_elements)
 
-    def update(self, active_set: Optional[Collection[Any]] = None):
+    def update(self, active_set: Optional[Collection[T]] = None):
         active_set = active_set or np.array([])
 
         # add any new elements
@@ -176,6 +183,11 @@ class Trace:
         # increase value of all elements in active_set
         indexes = [self._indexes[e] for e in active_set]
         self._values[indexes] += 1
+
+    def _missing_index(self) -> int:
+        next_index = self._last_index
+        self._last_index += 1
+        return next_index
 
 
 class DefaultDictWithKeyFactory(defaultdict):

@@ -37,6 +37,7 @@ from schema_mechanism.util import DefaultDictWithKeyFactory
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
+from schema_mechanism.util import Trace
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import pairwise
 from schema_mechanism.util import repr_str
@@ -337,8 +338,24 @@ def composite_items(items: Collection[Item]) -> Collection[Item]:
 
 
 class GlobalStats(metaclass=Singleton):
-    def __init__(self, baseline_value: Optional[float] = None) -> None:
+    def __init__(self, baseline_value: Optional[float] = None):
         self._baseline = baseline_value or 0.0
+
+        self._action_trace: Trace[Action] = Trace(decay_rate=GlobalParams().get('habituation_decay_rate'))
+        self._schema_trace: Trace[Schema] = Trace()
+        self._state_trace: Trace[State] = Trace()
+
+    @property
+    def action_trace(self) -> Trace[Action]:
+        return self._action_trace
+
+    @property
+    def schema_trace(self) -> Trace[Schema]:
+        return self._schema_trace
+
+    @property
+    def state_trace(self) -> Trace[State]:
+        return self._state_trace
 
     @property
     def baseline_value(self) -> float:

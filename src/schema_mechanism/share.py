@@ -143,6 +143,10 @@ class GlobalParams(metaclass=Singleton):
         # used by reliability_values
         self._defaults['max_reliability_penalty'] = 10.0
 
+        # used by reliability_values
+        self._defaults['habituation_decay_rate'] = 0.8
+        self._defaults['habituation_multiplier'] = 10.0
+
         # schema selection weighting (set in SchemaMechanism)
         self._defaults['goal_weight'] = 0.6
         self._defaults['explore_weight'] = 0.4
