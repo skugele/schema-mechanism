@@ -20,7 +20,7 @@ from schema_mechanism.modules import habituation_exploratory_value
 from schema_mechanism.modules import instrumental_values
 from schema_mechanism.modules import reliability_values
 from schema_mechanism.share import GlobalParams
-from schema_mechanism.util import Trace
+from schema_mechanism.util import AccumulatingTrace
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSchema
 from test_share.test_classes import MockSymbolicItem
@@ -381,14 +381,14 @@ class TestReliabilityValues(unittest.TestCase):
         self.assertRaises(ValueError, lambda: reliability_values(schemas, max_penalty=-1.0))
 
 
-class TestActionFrequencyExploratoryValue(unittest.TestCase):
+class TestHabituationExploratoryValue(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
         self.actions = [Action(f'A{i}') for i in range(11)]
         self.schemas = [sym_schema(f'/A{i}/') for i in range(11)]
 
-        self.tr: Trace[Action] = Trace()
+        self.tr: AccumulatingTrace[Action] = AccumulatingTrace()
 
         # elements 0-4 should have value of 0.25
         self.tr.update(self.actions)
@@ -400,9 +400,20 @@ class TestActionFrequencyExploratoryValue(unittest.TestCase):
         self.tr.update(self.actions[6:])
 
         # sanity checks
-        self.assertTrue(np.array_equal(0.25 * np.ones_like(self.actions[0:5]), self.tr.values(self.actions[0:5])))
-        self.assertTrue(np.array_equal(np.array([0.75]), self.tr.values([self.actions[5]])))
-        self.assertTrue(np.array_equal(1.75 * np.ones_like(self.actions[6:]), self.tr.values(self.actions[6:])))
+        expected = 0.25 * np.ones_like(self.actions[0:5])
+        actual = self.tr.values[self.tr.indexes(self.actions[0:5])]
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+        expected = np.array([0.75])
+        actual = self.tr.values[self.tr.indexes([self.actions[5]])]
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+        expected = 1.75 * np.ones_like(self.actions[6:])
+        actual = self.tr.values[self.tr.indexes(self.actions[6:])]
+
+        self.assertTrue(np.array_equal(expected, actual))
 
     # noinspection PyTypeChecker
     def test_no_trace(self):
@@ -461,11 +472,9 @@ class TestActionFrequencyExploratoryValue(unittest.TestCase):
         self.assertTrue(np.alltrue(values[5:] < 0.0))
 
     def test_unknown_values(self):
-        # test: schemas with unknown actions should have maximal value
+        # test: schemas with unknown actions should raise ValueError
         schemas = [*self.schemas, sym_schema('/UNK/')]
-        values = habituation_exploratory_value(schemas=schemas, trace=self.tr)
-
-        self.assertEqual(np.max(values), values[-1])
+        self.assertRaises(ValueError, lambda: habituation_exploratory_value(schemas=schemas, trace=self.tr))
 
     def test_multiplier(self):
         mult = 8.0

@@ -1,3 +1,4 @@
+from abc import ABC
 from collections import deque
 from typing import Any
 from typing import Optional
@@ -5,6 +6,7 @@ from typing import Optional
 from schema_mechanism.core import Action
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import Item
 from schema_mechanism.core import Schema
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
@@ -14,8 +16,8 @@ from schema_mechanism.util import Observer
 
 
 class MockObserver(Observer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
         self.messages = []
 
@@ -35,15 +37,30 @@ class MockObservable(Observable):
     pass
 
 
+class MockItem(Item, ABC):
+    def __init__(self,
+                 source: Any,
+                 primitive_value: Optional[float] = None,
+                 avg_accessible_value: Optional[float] = None,
+                 delegated_value: Optional[float] = None,
+                 **kwargs):
+        super().__init__(source, primitive_value, **kwargs)
+
+        self._mock_avg_accessible_value = avg_accessible_value
+        self._mock_delegated_value = delegated_value
+
+
 class MockSymbolicItem(SymbolicItem):
     def __init__(self,
                  source: str,
                  primitive_value: Optional[float] = None,
                  avg_accessible_value: Optional[float] = None,
+                 delegated_value: Optional[float] = None,
                  **kwargs):
-        super().__init__(source, primitive_value)
+        super().__init__(source, primitive_value, **kwargs)
 
         self._mock_avg_accessible_value = avg_accessible_value
+        self._mock_delegated_value = delegated_value
 
     @property
     def avg_accessible_value(self) -> float:
@@ -59,17 +76,26 @@ class MockSymbolicItem(SymbolicItem):
 
     @property
     def delegated_value(self) -> float:
+        if self._mock_delegated_value is not None:
+            return self._mock_delegated_value
+
         return self.avg_accessible_value - GlobalStats().baseline_value
+
+    @delegated_value.setter
+    def delegated_value(self, value) -> None:
+        self._mock_delegated_value = value
 
 
 class MockCompositeItem(CompositeItem):
     def __init__(self,
                  source: StateAssertion,
                  avg_accessible_value: float,
+                 delegated_value: Optional[float] = None,
                  **kwargs):
-        super().__init__(source)
+        super().__init__(source, **kwargs)
 
         self._mock_avg_accessible_value = avg_accessible_value
+        self._mock_delegated_value = delegated_value
 
     @property
     def avg_accessible_value(self) -> float:
@@ -85,7 +111,14 @@ class MockCompositeItem(CompositeItem):
 
     @property
     def delegated_value(self) -> float:
+        if self._mock_delegated_value is not None:
+            return self._mock_delegated_value
+
         return self.avg_accessible_value - GlobalStats().baseline_value
+
+    @delegated_value.setter
+    def delegated_value(self, value) -> None:
+        self._mock_delegated_value = value
 
 
 class MockSchema(Schema):

@@ -287,15 +287,15 @@ class TestDelegatedValueHelperForCompositeItems(TestCase):
         self.items = {
 
             # MockSymbolicItems with fixed, pre-defined, avg accessible values
-            'A': sym_item('A', primitive_value=0.0, avg_accessible_value=0.0),
-            'B': sym_item('B', primitive_value=1.0, avg_accessible_value=2.0),
-            'C': sym_item('C', primitive_value=5.0, avg_accessible_value=-1.0),
-            'D': sym_item('D', primitive_value=1.0, avg_accessible_value=6.0),
-            'E': sym_item('E', primitive_value=-2.0, avg_accessible_value=4.0),
-            'F': sym_item('F', primitive_value=-5.0, avg_accessible_value=0.0),
-            'G': sym_item('G', primitive_value=9.0, avg_accessible_value=1.0),
-            'H': sym_item('H', primitive_value=-3.0, avg_accessible_value=12.0),
-            'Z': sym_item('Z', primitive_value=0.0, avg_accessible_value=0.0),
+            'A': sym_item('A', item_type=MockSymbolicItem, primitive_value=0.0, avg_accessible_value=0.0),
+            'B': sym_item('B', item_type=MockSymbolicItem, primitive_value=1.0, avg_accessible_value=2.0),
+            'C': sym_item('C', item_type=MockSymbolicItem, primitive_value=5.0, avg_accessible_value=-1.0),
+            'D': sym_item('D', item_type=MockSymbolicItem, primitive_value=1.0, avg_accessible_value=6.0),
+            'E': sym_item('E', item_type=MockSymbolicItem, primitive_value=-2.0, avg_accessible_value=4.0),
+            'F': sym_item('F', item_type=MockSymbolicItem, primitive_value=-5.0, avg_accessible_value=0.0),
+            'G': sym_item('G', item_type=MockSymbolicItem, primitive_value=9.0, avg_accessible_value=1.0),
+            'H': sym_item('H', item_type=MockSymbolicItem, primitive_value=-3.0, avg_accessible_value=12.0),
+            'Z': sym_item('Z', item_type=MockSymbolicItem, primitive_value=0.0, avg_accessible_value=0.0),
 
         }
 

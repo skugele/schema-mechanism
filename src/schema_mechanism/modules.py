@@ -21,7 +21,6 @@ from schema_mechanism.core import Item
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
-from schema_mechanism.core import ReadOnlyItemPool
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import State
@@ -37,8 +36,8 @@ from schema_mechanism.share import debug
 from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import rng
 from schema_mechanism.share import trace
+from schema_mechanism.util import AccumulatingTrace
 from schema_mechanism.util import Observer
-from schema_mechanism.util import Trace
 from schema_mechanism.util import equal_weights
 
 
@@ -189,6 +188,8 @@ class SchemaMemory(Observer):
                     # creates and initializes a new composite action
                     ca = CompositeAction(goal_state=spin_off.result)
                     ca.controller.update(self.backward_chains(ca.goal_state))
+
+                    GlobalStats().action_trace.add([ca])
 
                     # adds a new bare schema for the new composite action
                     ca_schema = Schema(action=ca)
@@ -425,6 +426,7 @@ class GoalPursuitEvaluationStrategy:
         return pv + dv + iv + rv
 
 
+# TODO: Need to implement epsilon decay
 class EpsilonGreedyExploratoryStrategy:
     def __init__(self, epsilon: float = None):
         self._epsilon = epsilon
@@ -446,7 +448,7 @@ class EpsilonGreedyExploratoryStrategy:
         values = np.zeros_like(schemas)
 
         # determine if taking exploratory or goal-directed action
-        is_exploratory = rng().uniform(0.0, 1.0) < self._epsilon
+        is_exploratory = rng().uniform(0.0, 1.0) < self.epsilon
 
         # randomly select winning schema if exploratory action and set value to np.inf
         if is_exploratory:
@@ -455,7 +457,7 @@ class EpsilonGreedyExploratoryStrategy:
 
 
 def habituation_exploratory_value(schemas: Sequence[Schema],
-                                  trace: Trace[Action],
+                                  trace: AccumulatingTrace[Action],
                                   multiplier: Optional[float] = None,
                                   pending: Optional[Schema] = None) -> np.ndarray:
     """ Modulates the selection value of actions based on the recency and frequency of their selection.
@@ -487,7 +489,7 @@ def habituation_exploratory_value(schemas: Sequence[Schema],
         return np.array([])
 
     actions = [s.action for s in schemas]
-    trace_values = trace.values(actions)
+    trace_values = trace.values[trace.indexes(actions)]
     median_trace_value = np.median(trace_values)
 
     values = -multiplier * (trace_values - median_trace_value)
@@ -646,6 +648,10 @@ class SchemaSelection:
             trace(f'adding pending schema {selected_schema}')
             self._pending_schemas.appendleft(selected_schema)
 
+            # TODO: This is ugly. Need to update the action trace for the pending composite action. Not sure where
+            # TODO: to do this if not here....
+            GlobalStats().action_trace.update([selected_schema.action])
+
             applicable_components = [s for s in selected_schema.action.controller.components if s.is_applicable(state)]
 
             # recursive call to select. (selecting from composite action's applicable components)
@@ -711,7 +717,7 @@ class SchemaMechanism:
             value_strategies=[
                 GoalPursuitEvaluationStrategy(),
                 ExploratoryEvaluationStrategy(),
-                # EpsilonGreedyExploratoryStrategy(0.4)
+                # EpsilonGreedyExploratoryStrategy(0.8)
             ],
             weights=[
                 GlobalParams().get('goal_weight'),
@@ -720,6 +726,9 @@ class SchemaMechanism:
         )
 
         self._selection_details: Optional[SchemaSelection.SelectionDetails] = None
+
+        # initialize traces
+        GlobalStats().action_trace.add(self._primitive_actions)
 
     @property
     def schema_memory(self) -> SchemaMemory:
@@ -740,15 +749,11 @@ class SchemaMechanism:
                 selection_details=self._selection_details,
                 result_state=state)
 
-            for item in ReadOnlyItemPool():
-                item.update_delegated_value(selection_state=self._selection_details.selection_state,
-                                            result_state=state)
-
             selected = self._selection_details.selected
+            selection_state = self._selection_details.selection_state
 
             GlobalStats().action_trace.update([selected.action])
-            GlobalStats().schema_trace.update([selected])
-            GlobalStats().state_trace.update([state])
+            GlobalStats().delegated_value_helper.update(selection_state=selection_state, result_state=state)
 
         # updates unconditional state value average
         GlobalStats().update_baseline(state)

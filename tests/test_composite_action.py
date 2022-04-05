@@ -153,28 +153,80 @@ class TestCompositeAction(TestShared):
 
         self.assertRaises(ValueError, lambda: ca.controller.update([Chain([sym_schema('/A,/1,')])]))
 
-    def test_update_basic_tests_3(self):
-        # test: chains that contain schemas with the same composite action as the controller should be ignored
-        ca = CompositeAction(goal_state=sym_state_assert('S'))
+    # FIXME: Uncomment this test case if/when controller components with composite actions are supported
+    # def test_update_basic_tests_3(self):
+    #     # test: chains that contain schemas with the same composite action as the controller should be ignored
+    #     ca = CompositeAction(goal_state=sym_state_assert('S'))
+    #
+    #     ca.controller.update([Chain([sym_schema('/S,/S,')])])
+    #     self.assertSetEqual(set(), ca.controller.components)
 
-        ca.controller.update([Chain([sym_schema('/S,/S,')])])
-        self.assertSetEqual(set(), ca.controller.components)
+    # FIXME: Uncomment this test case if/when controller components with composite actions are supported
+    # def test_update_basic_tests_4(self):
+    #     # test: chains that contain schemas with the same composite action as the controller should be ignored
+    #     ca = CompositeAction(goal_state=sym_state_assert('S2'))
+    #
+    #     schema_ca = sym_schema('A,/D,/M,')
+    #     chains = [
+    #         Chain([sym_schema('A,/S2,/B,'), self.s2_b_c, self.s3_c_d]),
+    #     ]
+    #     schema_ca.action.controller.update(chains)
+    #
+    #     schema_term = sym_schema('M,/A1/S2,')
+    #     ca.controller.update([Chain([schema_ca, schema_term])])
+    #
+    #     # test: only schema_term should be added (part of chain that occurs after the recursive schema)
+    #     self.assertSetEqual({schema_term}, ca.controller.components)
 
-    def test_update_basic_tests_4(self):
-        # test: chains that contain schemas with the same composite action as the controller should be ignored
-        ca = CompositeAction(goal_state=sym_state_assert('S2'))
-
-        schema_ca = sym_schema('A,/D,/M,')
-        chains = [
-            Chain([sym_schema('A,/S2,/B,'), self.s2_b_c, self.s3_c_d]),
-        ]
-        schema_ca.action.controller.update(chains)
-
-        schema_term = sym_schema('M,/A1/S2,')
-        ca.controller.update([Chain([schema_ca, schema_term])])
-
-        # test: only schema_term should be added (part of chain that occurs after the recursive schema)
-        self.assertSetEqual({schema_term}, ca.controller.components)
+    # FIXME: Uncomment this test case if/when controller components with composite actions are supported
+    # def test_update_component_with_controller_containing_parent_action(self):
+    #     # 1st composite action schema
+    #     s1 = sym_schema('M1,P/M1,/P,')
+    #
+    #     # s1's components
+    #     s1_c1 = sym_schema('/sit[M1]/M1,', reliability=1.0)
+    #     s1_c2 = sym_schema('/M1,P/M1,P', reliability=1.0)
+    #     s1_c3 = sym_schema('S,/sit[M1]/M1,', reliability=1.0)
+    #     s1_c4 = sym_schema('/stand/S,', reliability=1.0)
+    #
+    #     chains = [
+    #         Chain([s1_c1]),
+    #         Chain([s1_c2]),
+    #         Chain([s1_c4, s1_c3]),
+    #     ]
+    #     s1.action.controller.update(chains)
+    #
+    #     self.assertSetEqual({s1_c1, s1_c3,s1_c4 }, set(s1.action.controller.components))
+    #
+    #     # 2nd composite action schema
+    #     s2 = sym_schema('/M1,P/M1,P')
+    #
+    #     # s2's components
+    #     s2_c1 = sym_schema('/stand/S,', reliability=1.0)
+    #     s2_c2 = sym_schema('M1,/P,/M1,P', reliability=1.0)
+    #     s2_c3 = sym_schema('/sit[M1]/M1,', reliability=1.0)
+    #     s2_c4 = sym_schema('S,/sit[M1]/M1,', reliability=1.0)
+    #     s2_c5 = sym_schema('M1,/deposit/M1,P', reliability=1.0)
+    #
+    #     chains = [
+    #         Chain([s2_c3, s2_c5]),
+    #         Chain([s2_c3, s2_c2]),
+    #         Chain([s2_c1, s2_c4, s2_c5]),
+    #     ]
+    #     s2.action.controller.update(chains)
+    #
+    #     # 3rd composite action schema
+    #     s3 = sym_schema('M1,/P,/M1,P')
+    #
+    #     # s3's components
+    #     s3_c1 = sym_schema('M1,P/M1,/P,', reliability=1.0)
+    #
+    #     chains = [
+    #         Chain([s3_c1]),
+    #     ]
+    #     s3.action.controller.update(chains)
+    #
+    #     s3.is_applicable(sym_state('M1,P'))
 
     def test_equals(self):
         self.assertTrue(satisfies_equality_checks(obj=self.ca, other=self.other))
@@ -341,53 +393,86 @@ class TestController(TestShared):
     #     for component in components:
     #         self.assertEqual(expected_proximities[component], actual_proximities[component])
 
-    def test_update_with_composite_action_component(self):
-        schema_ca = sym_schema('A,/D,/M,')
-        chains = [
-            Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d]),
-            Chain([self.s1_a_b, self.s2_b_c, self.s1_c_d]),
-        ]
-        schema_ca.action.controller.update(chains)
+    # FIXME: Uncomment this test case if/when controller components with composite actions are supported
+    # def test_update_with_composite_action_component(self):
+    #     schema_ca = sym_schema('A,/D,/M,')
+    #     chains = [
+    #         Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d]),
+    #         Chain([self.s1_a_b, self.s2_b_c, self.s1_c_d]),
+    #     ]
+    #     schema_ca.action.controller.update(chains)
+    #
+    #     chains = [Chain([schema_ca, self.s3_d_e])]
+    #     self.controller.update(chains)
+    #
+    #     # test: single link chain should result in a single component schema
+    #     self.assertSetEqual({*chains[0]}, set(self.controller.components))
+    #     self.assertSetEqual({*chains[0]}.union(schema_ca.action.controller.descendants),
+    #                         set(self.controller.descendants))
+    #
+    #     # test: a component's proximity should be the reciprocal of the sum of avg durations in the remaining chain
+    #     expected_proximities = defaultdict(lambda: np.inf)
+    #     for chain in chains:
+    #         for schema in chain:
+    #             expected_proximities[schema] = np.min(
+    #                 [expected_proximities[schema], self._calc_proximity(schema, chain)])
+    #
+    #     actual_proximities = {s: self.controller.proximity(s) for s in self.controller.components}
+    #     for component in self.controller.components:
+    #         self.assertEqual(expected_proximities[component], actual_proximities[component])
 
-        chains = [Chain([schema_ca, self.s3_d_e])]
-        self.controller.update(chains)
+    # FIXME: Uncomment this test case if/when controller components with composite actions are supported
+    # def test_contained_in(self):
+    #     controller = Controller(goal_state=sym_state_assert('S2,'))
+    #
+    #     self.assertFalse(controller.contained_in(sym_schema('A,/A1/B,')))
+    #     self.assertFalse(controller.contained_in(sym_schema('A,/S1,/B,')))
+    #
+    #     schema_ca = sym_schema('A,/D,/M,')
+    #     chains = [
+    #         Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d]),
+    #         Chain([self.s1_a_b, self.s2_b_c, self.s1_c_d]),
+    #     ]
+    #     schema_ca.action.controller.update(chains)
+    #
+    #     self.assertFalse(controller.contained_in(schema_ca))
+    #
+    #     schema_ca = sym_schema('A,/D,/M,')
+    #     schema_ca.action.controller.update([Chain([sym_schema('1,/S2,/2,'), sym_schema('2,/A2/D,')])])
+    #
+    #     self.assertTrue(controller.contained_in(sym_schema('1,/S2,/2,')))
+    #     self.assertTrue(controller.contained_in(schema_ca))
 
-        # test: single link chain should result in a single component schema
-        self.assertSetEqual({*chains[0]}, set(self.controller.components))
-        self.assertSetEqual({*chains[0]}.union(schema_ca.action.controller.descendants),
-                            set(self.controller.descendants))
+    def test_bug(self):
 
-        # test: a component's proximity should be the reciprocal of the sum of avg durations in the remaining chain
-        expected_proximities = defaultdict(lambda: np.inf)
-        for chain in chains:
-            for schema in chain:
-                expected_proximities[schema] = np.min(
-                    [expected_proximities[schema], self._calc_proximity(schema, chain)])
-
-        actual_proximities = {s: self.controller.proximity(s) for s in self.controller.components}
-        for component in self.controller.components:
-            self.assertEqual(expected_proximities[component], actual_proximities[component])
-
-    def test_contained_in(self):
-        controller = Controller(goal_state=sym_state_assert('S2,'))
-
-        self.assertFalse(controller.contained_in(sym_schema('A,/A1/B,')))
-        self.assertFalse(controller.contained_in(sym_schema('A,/S1,/B,')))
-
-        schema_ca = sym_schema('A,/D,/M,')
-        chains = [
-            Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d]),
-            Chain([self.s1_a_b, self.s2_b_c, self.s1_c_d]),
-        ]
-        schema_ca.action.controller.update(chains)
-
-        self.assertFalse(controller.contained_in(schema_ca))
-
-        schema_ca = sym_schema('A,/D,/M,')
-        schema_ca.action.controller.update([Chain([sym_schema('1,/S2,/2,'), sym_schema('2,/A2/D,')])])
-
-        self.assertTrue(controller.contained_in(sym_schema('1,/S2,/2,')))
-        self.assertTrue(controller.contained_in(schema_ca))
+        pass
+        # M1,P/M1/P's Components:
+        # {Schema} /sit(M1)/M1 [rel: 0.77]
+        # {Schema} /M1,P/M1,P [rel: 1.0]
+        # {Schema} S/sit(M1)/M1 [rel: 1.0]
+        # {Schema} /stand/S [rel: 1.0]
+        #
+        # /M1,P/M1,P's Components:
+        # {Schema} /stand/S [rel: 1.0]
+        # {Schema} M1/P/M1,P [rel: 1.0]
+        # {Schema} /sit(M1)/M1 [rel: 0.77]
+        # {Schema} S/sit(M1)/M1 [rel: 1.0]
+        # {Schema} M1/deposit/M1,P [rel: 1.0]
+        #
+        # M1/P/M1,P's Components:
+        # {Schema} S/sit(M2)/M2 [rel: 1.0]
+        # {Schema} /deposit/P [rel: 0.72]
+        # {Schema} /stand/S [rel: 1.0]
+        # {Schema} M2,P/M2/P [rel: 0.78]
+        # {Schema} M2/deposit/M2,P [rel: 1.0]
+        # {Schema} S/sit(M0)/M0 [rel: 1.0]
+        # {Schema} M0/deposit/P [rel: 1.0]
+        # {Schema} /sit(M1)/M1 [rel: 0.77]
+        # {Schema} S/sit(M1)/M1 [rel: 1.0]
+        # {Schema} M1/deposit/M1,P [rel: 1.0]
+        # {Schema} M2/deposit/P [rel: 1.0]
+        # {Schema} M1,P/M1/P [rel: 0.6]
+        # {Schema} M1/deposit/P [rel: 1.0]
 
     def _calc_proximity(self, schema: Schema, chain: Chain) -> float:
         start = chain.index(schema)

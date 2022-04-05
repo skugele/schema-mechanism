@@ -3,8 +3,8 @@ from unittest import TestCase
 
 import numpy as np
 
+from schema_mechanism.util import AccumulatingTrace
 from schema_mechanism.util import BoundedSet
-from schema_mechanism.util import Trace
 from schema_mechanism.util import equal_weights
 from test_share.test_classes import MockObservable
 from test_share.test_classes import MockObserver
@@ -136,13 +136,13 @@ class TestTrace(unittest.TestCase):
         common_test_setup()
 
     def test_init(self):
-        tr = Trace(decay_rate=0.15, pre_allocated=250)
+        tr = AccumulatingTrace(decay_rate=0.15, pre_allocated=250)
 
         self.assertEqual(0.15, tr.decay_rate)
         self.assertEqual(250, tr.n_allocated)
 
     def test_update_with_empty_set(self):
-        tr = Trace()
+        tr = AccumulatingTrace()
 
         # test: adding empty set should not increment length of trace
         tr.update([])
@@ -150,7 +150,7 @@ class TestTrace(unittest.TestCase):
         self.assertEqual(0, len(tr))
 
     def test_update_add_single(self):
-        tr = Trace()
+        tr = AccumulatingTrace()
 
         # test: initial length should be 0
         self.assertEqual(0, len(tr))
@@ -168,17 +168,17 @@ class TestTrace(unittest.TestCase):
         self.assertEqual(2, len(tr))
 
     def test_update_add_multiple(self):
-        tr = Trace()
+        tr = AccumulatingTrace()
 
         # test: adding multiple elements should increment length by the number of elements
-        e1 = {str(i) for i in range(10)}
+        e1 = [str(i) for i in range(10)]
         tr.update(e1)
 
         self.assertEqual(len(e1), len(tr))
 
         # test: initial value of added elements should be 1
         expected = np.ones(len(e1), dtype=np.float64)
-        actual = tr.values(e1)
+        actual = tr.values[tr.indexes(e1)]
 
         self.assertTrue(np.array_equal(expected, actual))
 
@@ -188,34 +188,34 @@ class TestTrace(unittest.TestCase):
         self.assertEqual(len(e1), len(tr))
 
         # test: length of trace should only be incremented by the number of new elements
-        e2 = {str(i) for i in range(5, 10)}
+        e2 = np.array([str(i) for i in range(5, 10)])
         tr.update(e2)
 
-        self.assertEqual(len(e1.union(e2)), len(tr))
+        self.assertEqual(len(set(e1).union(e2)), len(tr))
 
     def test_update_and_decay(self):
-        tr = Trace()
+        tr = AccumulatingTrace()
 
-        elements = {str(i) for i in range(10)}
+        elements = [str(i) for i in range(10)]
         tr.update(elements)
 
         # test: initial update should set values in active set to one
         expected = np.ones(len(elements), dtype=np.float64)
-        actual = tr.values(elements)
+        actual = tr.values[tr.indexes(elements)]
 
         self.assertTrue(np.array_equal(expected, actual))
 
         # test: subsequent updates should increase the values of active set and decay others
-        active = {str(i) for i in range(0, 5)}
-        inactive = elements.difference(active)
+        active = [str(i) for i in range(0, 5)]
+        inactive = list(set(elements).difference(active))
 
         tr.update(active)
 
-        self.assertTrue(np.alltrue(tr.values(active) > 1.0))
-        self.assertTrue(np.alltrue(tr.values(inactive) < 1.0))
+        self.assertTrue(np.alltrue(tr.values[tr.indexes(active)] > 1.0))
+        self.assertTrue(np.alltrue(tr.values[tr.indexes(inactive)] < 1.0))
 
     def test_update_decay_to_approx_zero(self):
-        tr = Trace()
+        tr = AccumulatingTrace()
 
         elements = [str(i) for i in range(10)]
         tr.update(elements)
@@ -223,48 +223,10 @@ class TestTrace(unittest.TestCase):
         for _ in range(30):
             tr.update()
 
-        self.assertTrue(np.allclose(tr.values(), 0.0))
-
-    def test_values(self):
-        tr = Trace()
-
-        elements = [str(i) for i in range(10)]
-
-        # all elements should be 1.0 after update
-        tr.update(elements)
-
-        # test: value for single element
-        selection = [elements[0]]
-        values = tr.values(selection)
-
-        self.assertEqual(len(selection), len(values))
-        self.assertEqual(1, values)
-
-        # test: value for multiple elements (all distinct)
-        selection = elements[0:3]
-        values = tr.values(selection)
-
-        self.assertEqual(len(selection), len(values))
-        self.assertTrue(np.array_equal(np.ones_like(values), values))
-
-        # test: value for multiple elements (with repeats)
-        selection = [elements[0], elements[0], elements[5], elements[0], elements[7], elements[5]]
-        values = tr.values(selection)
-
-        self.assertEqual(len(selection), len(values))
-        self.assertTrue(np.array_equal(np.ones_like(values), values))
-
-        # test: all values returned if elements is None or empty
-        for values in map(lambda e: tr.values(e), [None, list()]):
-            self.assertEqual(len(elements), len(values))
-            self.assertTrue(np.array_equal(np.ones_like(values), values))
-
-        # test: values should be zero for unknown elements
-        selection = ['101', '102', '103']
-        self.assertTrue(np.array_equal(np.zeros_like(selection, dtype=np.float64), tr.values(selection)))
+        self.assertTrue(np.allclose(tr.values, 0.0))
 
     def test_contains(self):
-        tr = Trace()
+        tr = AccumulatingTrace()
 
         elements = [str(i) for i in range(10)]
         tr.update(elements)
@@ -277,7 +239,7 @@ class TestTrace(unittest.TestCase):
             self.assertNotIn(e, tr)
 
     def test_expand_allocated(self):
-        tr = Trace(pre_allocated=1000, block_size=100)
+        tr = AccumulatingTrace(pre_allocated=1000, block_size=100)
 
         # sanity check
         self.assertEqual(1000, tr.n_allocated)
@@ -286,14 +248,3 @@ class TestTrace(unittest.TestCase):
 
         # test: after update, the number of allocated elements should be 10_000 + one extra block
         self.assertTrue(10_000 + tr.block_size, tr.n_allocated)
-
-    def test_blah(self):
-        tr = Trace(decay_rate=0.8)
-
-        elements = [str(i) for i in range(5)]
-        tr.update(elements)
-
-        for _ in range(100):
-            tr.update(elements[0])
-
-        print(tr.values())

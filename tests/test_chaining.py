@@ -304,6 +304,28 @@ class TestBackwardChaining(unittest.TestCase):
         chains = self.sm.backward_chains(goal_state=sym_state_assert('~E,'))
         self.assertSetEqual(set(expected_chains), set(chains))
 
+    def test_chains_with_composite_actions(self):
+        # primitives with composite actions
+        se = sym_schema('/E,/')
+
+        self.tree.add_primitives([se])
+
+        se_e = sym_schema('/E,/E,')
+        self.tree.add_result_spin_offs(se, spin_offs=[se_e])
+
+        # add context spin-offs
+        se_d_e = sym_schema('D,/E,/E,', reliability=1.0)
+        self.tree.add_context_spin_offs(se_e, spin_offs=[se_d_e])
+
+        chains = self.sm.backward_chains(goal_state=sym_state_assert('E,'))
+
+        expected_chains = [
+            Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d, self.s3_d_e]),
+            Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d, se_d_e]),
+        ]
+
+        self.assertSetEqual(set(expected_chains), set(chains))
+
 
 class TestChain(unittest.TestCase):
     def setUp(self) -> None:

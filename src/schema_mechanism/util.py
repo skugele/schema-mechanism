@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib
 import itertools
 from abc import ABCMeta
@@ -10,6 +12,7 @@ from typing import Generic
 from typing import Optional
 from typing import Type
 from typing import TypeVar
+from typing import Union
 
 import numpy as np
 import sklearn.metrics as sk_metrics
@@ -29,7 +32,6 @@ class UniqueIdMixin:
 
     @classmethod
     def _gen_uid(cls) -> int:
-        # FIXME: not thread safe
         cls._last_uid += 1
         return cls._last_uid
 
@@ -121,15 +123,20 @@ class BoundedSet(set):
 T = TypeVar('T')
 
 
-class Trace(Generic[T]):
-    def __init__(self, decay_rate: float = 0.5, pre_allocated: int = 1000, block_size: int = 100):
-        self._decay_rate = np.float64(decay_rate)
+class AssociativeArrayList(Generic[T]):
+    def __init__(self, pre_allocated: int = 1000, block_size: int = 100):
+        self._pre_allocated = pre_allocated
+        self._block_size = block_size
 
+        # map of hashable objects to their values array index
         self._indexes: dict[T, int] = defaultdict(lambda: self._missing_index())
+
         self._values = np.zeros(pre_allocated, dtype=np.float64)
 
         self._last_index = 0
-        self._block_size = block_size
+
+    def __iter__(self) -> T:
+        yield from self._indexes.keys()
 
     def __len__(self):
         return self._last_index
@@ -137,9 +144,29 @@ class Trace(Generic[T]):
     def __contains__(self, item: T) -> bool:
         return item in self._indexes
 
-    @property
-    def decay_rate(self) -> float:
-        return self._decay_rate
+    def __getitem__(self, key: T) -> np.ndarray:
+        if key not in self._indexes:
+            self.add([key])
+
+        index = self._indexes[key]
+        return np.array([self._values[index]])
+
+    def __setitem__(self, key: T, value: float) -> None:
+        if key not in self._indexes:
+            self.add([key])
+
+        index = self._indexes[key]
+        self._values[index] = value
+
+    def __delitem__(self, key: T):
+        if key not in self._indexes:
+            raise IndexError(f'Key does not exist: {key}')
+
+        index = self._indexes[key]
+        del self._indexes[key]
+
+        self._values = np.append(self._values[:index], self._values[index + 1:])
+        self._last_index -= 1
 
     @property
     def block_size(self) -> int:
@@ -149,12 +176,26 @@ class Trace(Generic[T]):
     def n_allocated(self) -> int:
         return len(self._values)
 
-    def values(self, elements: Optional[Iterable[T]] = None) -> np.ndarray:
-        if not elements:
-            return self._values[0:self._last_index]
+    def keys(self) -> np.ndarray:
+        keys = list(self._indexes.keys())
+        return np.array(keys)
 
-        indexes = np.array([self._indexes[e] for e in elements])
-        return self._values[indexes]
+    @property
+    def values(self) -> np.ndarray:
+        """ Returns the active portion of the values array. """
+        return self._values[:self._last_index]
+
+    @values.setter
+    def values(self, values: np.ndarray) -> None:
+        self._values = values
+
+    def items(self) -> (T, float):
+        """ An iterator over registered objects and their values. """
+        for key in self.keys():
+            index = self._indexes[key]
+            value = self._values[index]
+
+            yield key, value
 
     def add(self, elements: Collection[T]):
         new_elements = [e for e in elements if e not in self._indexes]
@@ -164,33 +205,94 @@ class Trace(Generic[T]):
         indexes = range(self._last_index, self._last_index + len(new_elements))
         self._indexes.update({k: v for k, v in zip(new_elements, indexes)})
 
-        # allocate a block of columns to array (as necessary)
-        blocks_needed = (len(self._indexes) - len(self._values)) // self._block_size
+        # allocate a new block of elements (as necessary)
+        overflow = len(self._indexes) - len(self._values)
+        blocks_needed = overflow // self._block_size + 1 if overflow else 0
         if blocks_needed > 0:
-            self._values = np.append(self._values, np.zeros((blocks_needed + 1) * self._block_size))
+            self._values = np.append(self._values, np.zeros(blocks_needed * self._block_size))
 
         self._last_index += len(new_elements)
 
-    def update(self, active_set: Optional[Collection[T]] = None):
-        active_set = active_set or np.array([])
+    def update(self, other: Union[AssociativeArrayList, dict]) -> None:
+        for key in other:
+            if key not in self:
+                self.add(key)
 
-        # add any new elements
-        self.add(active_set)
+            index = self._indexes[key]
+            self._values[index] = other[key]
 
-        # decay all values
-        self._values *= self._decay_rate
+    def clear(self) -> None:
+        self._indexes.clear()
+        self._values = np.zeros(self._pre_allocated, dtype=np.float64)
 
-        # increase value of all elements in active_set
-        indexes = [self._indexes[e] for e in active_set]
-        self._values[indexes] += 1
+        self._last_index = 0
 
     def _missing_index(self) -> int:
         next_index = self._last_index
         self._last_index += 1
         return next_index
 
+    def indexes(self, keys: Collection[T], add_missing: bool = False) -> np.ndarray:
+        if keys is None:
+            return np.array([])
+
+        unknown_keys = [k for k in keys if k not in self._indexes]
+        if unknown_keys:
+            if not add_missing:
+                raise ValueError(f'Encountered unknown keys: {unknown_keys}')
+
+            self.add(unknown_keys)
+
+        indexes = np.array([self._indexes[k] for k in keys if k in self._indexes])
+        return indexes
+
+
+# TODO: Add a abstract base class or protocol that can be used generically for different types of traces (e.g.,
+#       accumulating and replacing).
+class Trace:
+    pass
+
+
+class AccumulatingTrace(AssociativeArrayList):
+    """ Implements a generic-type accumulating trace. """
+
+    def __init__(self, decay_rate: float = 0.5, **kwargs):
+        super().__init__(**kwargs)
+
+        self._decay_rate = np.float64(decay_rate)
+
+    @property
+    def decay_rate(self) -> float:
+        """ The trace decay rate, lambda, (0.0 <= lambda <= 1.0).
+
+        (See Sutton and Barto 2018, Chapter 12.)
+        """
+        return self._decay_rate
+
+    @decay_rate.setter
+    def decay_rate(self, value: float) -> None:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(f'Decay rate must be between 0.0 and 1.0 inclusive.')
+
+        self._decay_rate = value
+
+    def update(self, active_set: Optional[Collection[T]] = None):
+        active_set = np.array(active_set) if active_set is not None else np.array([])
+
+        # add any new elements
+        self.add(active_set)
+
+        # decay all values
+        self.values *= self._decay_rate
+
+        # increase value of all elements in active_set
+        indexes = self.indexes(active_set)
+        if len(indexes) > 0:
+            self.values[indexes] += 1
+
 
 class DefaultDictWithKeyFactory(defaultdict):
+    # noinspection PyArgumentList
     def __missing__(self, key):
         if self.default_factory is None:
             raise KeyError(key)

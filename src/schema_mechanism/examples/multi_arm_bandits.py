@@ -156,7 +156,7 @@ def parse_args():
     """ Parses command line arguments.
     :return: argparse parser with parsed command line args
     """
-    parser = argparse.ArgumentParser(description='Godot AI Bridge (GAB) - DEMO Environment Action Client')
+    parser = argparse.ArgumentParser(description='Multi-Armed Bandit Example Environment (Schema Mechanism)')
 
     parser.add_argument('--n_machines', type=int, required=False, default=N_MACHINES,
                         help=f'the id of the agent to which this action will be sent (default: {N_MACHINES})')
@@ -167,17 +167,23 @@ def parse_args():
 
 
 # global constants
-N_MACHINES = 2
-N_STEPS = 1000
+N_MACHINES = 4
+N_STEPS = 5000
 
 
 def run():
     args = parse_args()
 
     GlobalParams().set('learning_rate', 0.1)
-    GlobalParams().set('dv_trace_max_len', 2)
-    GlobalParams().set('reliability_threshold', 0.8)
-    GlobalParams().set('max_reliability_penalty', 100)
+    GlobalParams().set('dv_trace_max_len', 3)
+    GlobalParams().set('reliability_threshold', 0.7)
+    GlobalParams().set('habituation_decay_rate', 0.95)
+    GlobalParams().set('habituation_multiplier', 15.0)
+    GlobalParams().set('max_reliability_penalty', 0.1)
+    GlobalParams().set('goal_weight', 0.1)
+    GlobalParams().set('explore_weight', 0.9)
+    GlobalParams().set('dv_discount_factor', 0.7)
+    GlobalParams().set('dv_decay_rate', 0.5)
 
     machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.n_machines)]
     env = BanditEnvironment(machines)

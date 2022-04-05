@@ -33,11 +33,12 @@ from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import trace
 from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.stats import ItemCorrelationTest
+from schema_mechanism.util import AccumulatingTrace
+from schema_mechanism.util import AssociativeArrayList
 from schema_mechanism.util import DefaultDictWithKeyFactory
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 from schema_mechanism.util import Singleton
-from schema_mechanism.util import Trace
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import pairwise
 from schema_mechanism.util import repr_str
@@ -216,6 +217,84 @@ class DelegatedValueHelper:
         self._dv_trace_value = -np.inf
 
 
+# TODO: Is there a useful base class for the DVHelpers?
+class EligibilityTraceDelegatedValueHelper:
+    def __init__(self, discount_factor: float, trace_decay: float):
+        self.discount_factor = discount_factor
+
+        # note: eligibility traces usually multiply the decay rate by the discount factor. At the moment, it seems
+        #       cleaner to disentangle these factors, but I may want to change this in the future.
+        self._eligibility_trace = AccumulatingTrace(decay_rate=trace_decay)
+        self._delegated_values = AssociativeArrayList()
+
+    @property
+    def discount_factor(self) -> float:
+        """ A factor that quantifies the reduction in value per step for future rewards (0 <= Discount <= 1).
+
+        A discount factor of 0.0 places no value on future rewards. As a result, delegated value will also be zero. A
+        value of 1.0 values future and current rewards equally.
+        """
+        return self._discount_factor
+
+    @discount_factor.setter
+    def discount_factor(self, value: float) -> None:
+        # TODO: Add range changing on setter
+        self._discount_factor = value
+
+    @property
+    def eligibility_trace(self) -> AccumulatingTrace:
+        return self._eligibility_trace
+
+    def delegated_value(self, item: Item) -> float:
+        """ Returns the delegated value for the requested item.
+
+        (For a discussion of delegated value see Drescher 1991, p. 63.)
+
+        :return: the Item's current delegated value
+        """
+        index = self._delegated_values.indexes([item], add_missing=True)[0]
+        return self._delegated_values.values[index]
+
+    def update(self,
+               selection_state: State,
+               result_state: State,
+               **kwargs) -> None:
+        """ Updates delegated-value-related statistics based on the selection and result states.
+
+        :param selection_state: the state from which the last schema was selected (i.e., an action taken)
+        :param result_state: the state that immediately followed the provided selection state
+        :param kwargs: optional keyword arguments
+        :return: None
+        """
+
+        # FIXME: this is horribly inefficient. Must find a better way.
+        active_items = [item for item in ReadOnlyItemPool() if item.is_on(state=selection_state, **kwargs)]
+
+        # updating eligibility trace (decay all items, increase active items)
+        self._eligibility_trace.update(active_items)
+
+        # the value accessible from the current state
+        target = self.effective_state_value(selection_state, result_state)
+
+        # incremental update of delegated values towards target
+        lr = GlobalParams().get('learning_rate')
+        for item in ReadOnlyItemPool():
+            tv = self._eligibility_trace[item]
+            if tv > 0.0:
+                err = target - self._delegated_values[item]
+                self._delegated_values[item] = self._delegated_values[item] + lr * err * tv
+
+    def effective_state_value(self, selection_state: State, result_state: State) -> float:
+        # only include the value of items that were not On in the selection state
+        new_items = new_state(selection_state, result_state)
+
+        pv = sum(item.primitive_value for item in new_items)
+        dv = sum(item.delegated_value for item in new_items)
+
+        # the delegated value accessible from the current state
+        return self.discount_factor * (pv + self.discount_factor * dv)
+
+
 class Item:
 
     def __init__(self, source: Any, primitive_value: float = None, **kwargs) -> None:
@@ -223,7 +302,7 @@ class Item:
 
         self._source = source
         self._primitive_value = primitive_value or 0.0
-        self._delegated_value_helper = DelegatedValueHelper(item=self)
+        self._delegated_value_helper: EligibilityTraceDelegatedValueHelper = GlobalStats().delegated_value_helper
 
     # TODO: Need to be really careful with the default hash implementations which produce different values between
     # TODO: runs. This will kill and direct serialization/deserialization of data structures that rely on hashes.
@@ -270,11 +349,11 @@ class Item:
 
     @property
     def avg_accessible_value(self) -> float:
-        return self._delegated_value_helper.avg_accessible_value
+        return self._delegated_value_helper.delegated_value(self)
 
     @property
     def delegated_value(self) -> float:
-        return self._delegated_value_helper.delegated_value
+        return self._delegated_value_helper.delegated_value(self)
 
     def update_delegated_value(self,
                                selection_state: State,
@@ -341,21 +420,20 @@ class GlobalStats(metaclass=Singleton):
     def __init__(self, baseline_value: Optional[float] = None):
         self._baseline = baseline_value or 0.0
 
-        self._action_trace: Trace[Action] = Trace(decay_rate=GlobalParams().get('habituation_decay_rate'))
-        self._schema_trace: Trace[Schema] = Trace()
-        self._state_trace: Trace[State] = Trace()
+        self._dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=GlobalParams().get('dv_discount_factor'),
+            trace_decay=GlobalParams().get('dv_decay_rate'))
+
+        self._action_trace: AccumulatingTrace[Action] = AccumulatingTrace(
+            decay_rate=GlobalParams().get('habituation_decay_rate'))
 
     @property
-    def action_trace(self) -> Trace[Action]:
+    def delegated_value_helper(self) -> EligibilityTraceDelegatedValueHelper:
+        return self._dv_helper
+
+    @property
+    def action_trace(self) -> AccumulatingTrace[Action]:
         return self._action_trace
-
-    @property
-    def schema_trace(self) -> Trace[Schema]:
-        return self._schema_trace
-
-    @property
-    def state_trace(self) -> Trace[State]:
-        return self._state_trace
 
     @property
     def baseline_value(self) -> float:
@@ -1293,7 +1371,8 @@ class Controller:
         """ The set of schemas that are selectable in pursuit of the controller's goal state.
 
         Note: Components are currently limited to RELIABLE schemas that chain to the controller's goal state.
-        Drescher may have also allowed UNRELIABLE schemas as components.
+        Drescher may have also allowed UNRELIABLE schemas as components. Components are also limited to be schemas
+        with primitive actions (i.e., composite action schemas are not currently supported).
 
         :return: the set of component schemas
         """
@@ -1352,15 +1431,24 @@ class Controller:
 
             for schema in reversed(chain):
 
-                # prevents recursion (a controller should not have itself as a component)
-                if self.contained_in(schema):
+                # FIXME: Current implementation is limited to controller component schemas with primitive actions only.
+                # FIXME: Allowing components with composite actions results in difficult to correct RecursionErrors.
+
+                # early terminate chain processing if composite action schema encountered
+                if schema.action.is_composite():
                     break
+
+                # FIXME: Uncomment this if/when components with composite actions are supported
+                # prevents recursion (a controller should not have itself as a component)
+                # if self.contained_in(schema):
+                #     break
 
                 self._components.add(schema)
                 self._descendants.add(schema)
 
-                if schema.action.is_composite():
-                    self._descendants.update(schema.action.controller.descendants)
+                # FIXME: Uncomment this if/when components with composite actions are supported
+                # if schema.action.is_composite():
+                #     self._descendants.update(schema.action.controller.descendants)
 
                 avg_duration_to_goal_state += schema.avg_duration
                 total_cost_to_goal_state += schema.cost
