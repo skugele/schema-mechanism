@@ -31,6 +31,7 @@ from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import debug
 from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import trace
+from schema_mechanism.stats import CorrelationTable
 from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.stats import ItemCorrelationTest
 from schema_mechanism.util import AccumulatingTrace
@@ -402,7 +403,7 @@ class SymbolicItem(Item):
 
     @property
     def state_elements(self) -> set[str]:
-        return {super().source}
+        return {self.source}
 
     def is_on(self, state: State, **kwargs) -> bool:
         return self.source in state
@@ -552,22 +553,22 @@ class ItemStats(ABC):
 
     @property
     def positive_correlation_stat(self) -> float:
-        return self.correlation_test.positive_corr_statistic(self.as_array())
+        return self.correlation_test.positive_corr_statistic(self.as_table())
 
     @property
     def negative_correlation_stat(self) -> float:
-        return self.correlation_test.negative_corr_statistic(self.as_array())
+        return self.correlation_test.negative_corr_statistic(self.as_table())
 
     @property
     def positive_correlation(self) -> bool:
-        return self.correlation_test.positive_corr_statistic(self.as_array()) >= self.positive_correlation_threshold
+        return self.correlation_test.positive_corr_statistic(self.as_table()) >= self.positive_correlation_threshold
 
     @property
     def negative_correlation(self) -> bool:
-        return self.correlation_test.negative_corr_statistic(self.as_array()) >= self.negative_correlation_threshold
+        return self.correlation_test.negative_corr_statistic(self.as_table()) >= self.negative_correlation_threshold
 
     @abstractmethod
-    def as_array(self) -> np.ndarray:
+    def as_table(self) -> CorrelationTable:
         pass
 
     @abstractmethod
@@ -645,11 +646,8 @@ class ECItemStats(ItemStats):
     def n_fail_and_off(self) -> int:
         return self._n_fail_and_off
 
-    def as_array(self) -> np.ndarray:
-        return np.array([
-            [self.n_success_and_on, self.n_fail_and_on],
-            [self.n_success_and_off, self.n_fail_and_off],
-        ])
+    def as_table(self) -> CorrelationTable:
+        return self.n_success_and_on, self.n_fail_and_on, self.n_success_and_off, self.n_fail_and_off
 
     def __eq__(self, other) -> bool:
         if isinstance(other, ECItemStats):
@@ -747,11 +745,11 @@ class ERItemStats(ItemStats):
         elif not on and not activated:
             self._n_off_and_not_activated += count
 
-    def as_array(self) -> np.ndarray:
-        return np.array([
-            [self.n_on_and_activated, self.n_off_and_activated],
-            [self.n_on_and_not_activated, self.n_off_and_not_activated]
-        ])
+    def as_table(self) -> CorrelationTable:
+        return (self.n_on_and_activated,
+                self.n_off_and_activated,
+                self.n_on_and_not_activated,
+                self.n_off_and_not_activated)
 
     def __eq__(self, other) -> bool:
         if isinstance(other, ERItemStats):

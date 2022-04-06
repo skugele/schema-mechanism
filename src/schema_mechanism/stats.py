@@ -1,56 +1,48 @@
 from __future__ import annotations
-from __future__ import annotations
-from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
-from typing import Iterable
+from functools import cache
+from functools import lru_cache
 
 import numpy as np
 from scipy import stats as stats
 
+CorrelationTable = tuple[int, int, int, int]
+
 
 class ItemCorrelationTest(ABC):
 
+    @classmethod
     @abstractmethod
-    def positive_corr_statistic(self, table: Iterable) -> float:
+    def positive_corr_statistic(cls, table: CorrelationTable) -> float:
         pass
 
+    @classmethod
     @abstractmethod
-    def negative_corr_statistic(self, table: Iterable) -> float:
+    def negative_corr_statistic(cls, table: CorrelationTable) -> float:
         pass
-
-    def validate_data(self, data: Iterable) -> np.ndarray:
-        """ Raises a ValueError if data cannot be interpreted as a 2x2 array of integers.
-
-        :param data: the iterable to validate
-        :return: True if valid table; False otherwise.
-        """
-        table = np.array(data)
-        if not (table.shape == (2, 2) and np.issubdtype(table.dtype, int)):
-            raise ValueError('invalid data: must be interpretable as a 2x2 array of integers')
-        return table
 
 
 class DrescherCorrelationTest(ItemCorrelationTest):
 
-    def positive_corr_statistic(self, table: Iterable) -> float:
+    @classmethod
+    @cache
+    def positive_corr_statistic(cls, table: CorrelationTable) -> float:
         """ Returns the part-to-part ratio Pr(A | X) : Pr(A | not X)
 
-        Input data should be a 2x2 table of the form: [[N(A,X), N(not A,X)], [N(A,not X), N(not A,not X)]],
+        Input data should be an integer tuple of the form: [[N(A,X), N(not A,X)], [N(A,not X), N(not A,not X)]],
         where N(A,X) is the number of events that are both A AND X
 
         :return: the ratio as a float, or numpy.NAN if division by zero
         """
-        # raises ValueError
-        table = self.validate_data(table)
 
         try:
-            n_x = np.sum(table[0, :])
-            n_not_x = np.sum(table[1, :])
+            n_x = table[0] + table[1]
+            n_not_x = table[2] + table[3]
 
-            n_a_and_x = table[0, 0]
-            n_a_and_not_x = table[1, 0]
+            n_a_and_x = table[0]
+            n_a_and_not_x = table[2]
 
             if n_x == 0 or n_not_x == 0:
                 return 0.0
@@ -70,23 +62,23 @@ class DrescherCorrelationTest(ItemCorrelationTest):
         except ZeroDivisionError:
             return 0.0
 
-    def negative_corr_statistic(self, table: Iterable) -> float:
+    @classmethod
+    @cache
+    def negative_corr_statistic(cls, table: CorrelationTable) -> float:
         """ Returns the part-to-part ratio Pr(not A | X) : Pr(not A | not X)
 
-        Input data should be a 2x2 table of the form: [[N(A,X), N(not A,X)], [N(A,not X), N(not A,not X)]],
+        Input data should be an integer tuple of the form: [N(A,X), N(not A,X), N(A,not X), N(not A,not X)],
         where N(A,X) is the number of events that are both A AND X
 
         :return: the ratio as a float, or numpy.NAN if division by zero
         """
-        # raises ValueError
-        table = self.validate_data(table)
 
         try:
-            n_x = np.sum(table[0, :])
-            n_not_x = np.sum(table[1, :])
+            n_x = table[0] + table[1]
+            n_not_x = table[2] + table[3]
 
-            n_not_a_and_x = table[0, 1]
-            n_not_a_and_not_x = table[1, 1]
+            n_not_a_and_x = table[1]
+            n_not_a_and_not_x = table[3]
 
             if n_x == 0 or n_not_x == 0:
                 return 0.0
@@ -109,59 +101,59 @@ class DrescherCorrelationTest(ItemCorrelationTest):
 
 class BarnardExactCorrelationTest(ItemCorrelationTest):
 
-    def positive_corr_statistic(self, table: Iterable) -> float:
+    @classmethod
+    @cache
+    def positive_corr_statistic(cls, table: CorrelationTable) -> float:
         """
 
         :param table:
         :return:
         """
-        # raises ValueError
-        table = self.validate_data(table)
+        array = np.array([table[0:2], table[2:]])
+        return 1.0 - stats.barnard_exact(array, alternative='greater').pvalue
 
-        return 1.0 - stats.barnard_exact(table, alternative='greater').pvalue
-
-    def negative_corr_statistic(self, table: Iterable) -> float:
+    @classmethod
+    @cache
+    def negative_corr_statistic(cls, table: CorrelationTable) -> float:
         """
 
         :param table:
         :return:
         """
-        # raises ValueError
-        table = self.validate_data(table)
-
-        return 1.0 - stats.barnard_exact(table, alternative='less').pvalue
+        array = np.array([table[0:2], table[2:]])
+        return 1.0 - stats.barnard_exact(array, alternative='less').pvalue
 
 
 class FisherExactCorrelationTest(ItemCorrelationTest):
 
-    def positive_corr_statistic(self, table: Iterable) -> float:
+    @classmethod
+    @lru_cache(maxsize=100000)
+    def positive_corr_statistic(cls, table: CorrelationTable) -> float:
         """
 
         :param table:
         :return:
         """
-        # raises ValueError
-        table = self.validate_data(table)
-
-        _, p_value = stats.fisher_exact(table, alternative='greater')
+        array = np.array([table[0:2], table[2:]])
+        _, p_value = stats.fisher_exact(array, alternative='greater')
         return 1.0 - p_value
 
-    def negative_corr_statistic(self, table: Iterable) -> float:
+    @classmethod
+    @lru_cache(maxsize=100000)
+    def negative_corr_statistic(cls, table: CorrelationTable) -> float:
         """
 
         :param table:
         :return:
         """
-        # raises ValueError
-        table = self.validate_data(table)
-
-        _, p_value = stats.fisher_exact(table, alternative='less')
+        array = np.array([table[0:2], table[2:]])
+        _, p_value = stats.fisher_exact(array, alternative='less')
         return 1.0 - p_value
 
 
-def positive_correlation(table: Iterable, test: ItemCorrelationTest, threshold: float) -> bool:
+def positive_correlation(table: CorrelationTable, test: ItemCorrelationTest, threshold: float) -> bool:
     return test.positive_corr_statistic(table) >= threshold
 
 
-def negative_correlation(table: Iterable, test: ItemCorrelationTest, threshold: float) -> bool:
+def negative_correlation(table: CorrelationTable, test: ItemCorrelationTest, threshold: float) -> bool:
     return test.negative_corr_statistic(table) >= threshold
