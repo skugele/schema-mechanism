@@ -8,63 +8,66 @@ from schema_mechanism.func_api import sym_item
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import info
-# Wumpus @ (6,3); Agent starts @ (1,8) facing 'W'
-from schema_mechanism.stats import FisherExactCorrelationTest
 
-agent_spec = WumpusWorldAgent(position=(1, 8), direction='W', n_arrows=0)
-wumpus_spec = Wumpus(position=(6, 3), health=2)
+# Wumpus @ (6,3); Agent starts @ (1,8) facing 'W'
+
+agent_spec = WumpusWorldAgent(position=(1, 1), direction='E', n_arrows=0)
+wumpus_spec = Wumpus(position=(3, 1), health=2)
 world = """
-wwwwwwwwww
-w........w 
-w.wwa.wwww
-w.ppwwwppw
-w.pwww..ew
-w.pgpw.ppw
-w...w..www
-w..ww.wwpw
-w.......aw
-wwwwwwwwww
+wwwwww
+w....w 
+ww..ew
+w....w
+wwwwww
 """
+# world = """
+# wwwwwwwwww
+# w........w
+# w.wwa.wwww
+# w.ppwwwppw
+# w.pwww..ew
+# w.pgpw.ppw
+# w...w..www
+# w..ww.wwpw
+# w.......aw
+# wwwwwwwwww
+# """
 
 # global constants
 N_EPISODES = 5000
 
 if __name__ == "__main__":
 
-    GlobalParams().set('learning_rate', 0.25)
-    GlobalParams().set('reliability_threshold', 0.8)
+    GlobalParams().set('learning_rate', 0.01)
+    GlobalParams().set('reliability_threshold', 0.9)
     GlobalParams().set('habituation_decay_rate', 0.95)
-    GlobalParams().set('habituation_multiplier', 100.0)
+    GlobalParams().set('habituation_multiplier', 10.0)
     GlobalParams().set('max_reliability_penalty', 10.0)
     GlobalParams().set('goal_weight', 0.1)
     GlobalParams().set('explore_weight', 0.9)
-    GlobalParams().set('dv_discount_factor', 0.9)
-    GlobalParams().set('dv_decay_rate', 0.3)
+    GlobalParams().set('dv_discount_factor', 0.5)
+    GlobalParams().set('dv_decay_rate', 0.8)
+    GlobalParams().set('positive_correlation_threshold', 0.99)
+    GlobalParams().set('composite_action_min_baseline_advantage', 5.0)
 
-    env = WumpusWorldMDP(world, agent_spec, wumpus_spec)
+    # GlobalParams().set('correlation_test', DrescherCorrelationTest())
+
+    # env = WumpusWorldMDP(world, agent_spec, wumpus_spec)
+    env = WumpusWorldMDP(worldmap=world, agent=agent_spec, wumpus=None)
 
     n_episodes = 0
 
-    item_wumpus_wounded = sym_item('EVENT[WUMPUS WOUNDED]', primitive_value=250.0)
-    item_wumpus_dead = sym_item('EVENT[WUMPUS DEAD]', primitive_value=500.0)
-    item_agent_escaped = sym_item('EVENT[AGENT ESCAPED]', primitive_value=1000.0)
-    item_agent_dead = sym_item('AGENT.HEALTH=0', primitive_value=-10000.0)
-
-    items_has_gold = []
-    for n_gold in range(0, 5):
-        items_has_gold.append(sym_item(f'AGENT.HAS[GOLD:{n_gold}]', primitive_value=n_gold * 100.0))
-
-    items_has_arrows = []
-    for n_arrows in range(0, 5):
-        items_has_arrows.append(sym_item(f'AGENT.HAS[ARROWS:{n_arrows}]', primitive_value=n_arrows * 10.0))
+    # item_wumpus_wounded = sym_item('EVENT[WUMPUS WOUNDED]', primitive_value=250.0)
+    # item_wumpus_dead = sym_item('EVENT[WUMPUS DEAD]', primitive_value=500.0)
+    item_agent_escaped = sym_item('EVENT[AGENT ESCAPED]', primitive_value=100.0)
+    # item_agent_dead = sym_item('EVENT[AGENT DEAD]', primitive_value=-10000.0)
+    # item_agent_dead = sym_item('AGENT.HEALTH=0', primitive_value=-10000.0)
+    # items_has_gold = (sym_item(f'AGENT.HAS[GOLD]', primitive_value=500.0))
 
     items = [
-        item_wumpus_dead,
-        item_wumpus_wounded,
-        item_agent_dead,
+        # item_agent_dead,
         item_agent_escaped,
-        *items_has_gold,
-        *items_has_arrows
+        # items_has_gold,
     ]
 
     sm = SchemaMechanism(primitive_actions=env.actions, primitive_items=items)
@@ -81,25 +84,38 @@ if __name__ == "__main__":
         while not is_terminal:
             env.render()
 
-            info(f'state[{n}]: {state}')
+            info(f'selection state[{n}]: {state}')
 
-            # TODO: action should be chosen using the SchemaMechanism
-            schema = sm.select(state)
+            selection_details = sm.select(state)
+
+            current_composite_schema = sm.schema_selection.pending_schema
+            if current_composite_schema:
+                info(f'active composite action schema: {current_composite_schema} ')
+
+            terminated_composite_schemas = selection_details.terminated_pending
+
+            if terminated_composite_schemas:
+                info(f'terminated schemas:')
+                i = 1
+                for pending_details in terminated_composite_schemas:
+                    info(f'schema [{i}]: {pending_details.schema}')
+                    info(f'selection state [{i}]: {pending_details.selection_state}')
+                    info(f'status [{i}]: {pending_details.status}')
+                    info(f'duration [{i}]: {pending_details.duration}')
+                i += 1
+
+            schema = selection_details.selected
             info(f'selected schema[{n}]: {schema}')
 
-            action = schema.action
-            info(f'action[{n}]: {action}')
+            state, is_terminal = env.step(schema.action)
 
-            # Observe next state and reward
-            state, is_terminal = env.step(action)
+            sm.learn(selection_details, result_state=state)
 
             n += 1
 
-            print(f'n_schemas: {len(sm.schema_memory)}')
-            print(
-                f'cache info (positive_corr_statistic): {FisherExactCorrelationTest.positive_corr_statistic.cache_info()}')
-            print(
-                f'cache info (negative_corr_statistic): {FisherExactCorrelationTest.negative_corr_statistic.cache_info()}')
+            # display_item_values()
+
+        display_summary(sm)
 
     end_time = time()
 

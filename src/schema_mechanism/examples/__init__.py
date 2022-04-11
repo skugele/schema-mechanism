@@ -16,7 +16,7 @@ random.seed(RANDOM_SEED)
 # set random seed for reproducibility
 params = GlobalParams()
 params.set('rng_seed', RANDOM_SEED)
-params.set('verbosity', Verbosity.INFO)
+params.set('verbosity', Verbosity.DEBUG)
 
 
 def display_known_schemas(sm: SchemaMechanism) -> None:

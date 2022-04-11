@@ -34,12 +34,14 @@ from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
 from schema_mechanism.core import primitive_value
 from schema_mechanism.core import value
+from schema_mechanism.protocols import DecayStrategy
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import debug
 from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import rng
 from schema_mechanism.share import trace
+from schema_mechanism.strategies import GeometricDecayStrategy
 from schema_mechanism.util import AccumulatingTrace
 from schema_mechanism.util import Observer
 from schema_mechanism.util import equal_weights
@@ -497,10 +499,10 @@ class GoalPursuitEvaluationStrategy:
         return pv + dv + iv + rv + fv
 
 
-# TODO: Need to implement epsilon decay
 class EpsilonGreedyExploratoryStrategy:
-    def __init__(self, epsilon: float = None):
+    def __init__(self, epsilon: float = None, decay_strategy: Optional[DecayStrategy] = None):
         self._epsilon = epsilon
+        self._decay_strategy = decay_strategy
 
     @property
     def epsilon(self) -> float:
@@ -518,12 +520,21 @@ class EpsilonGreedyExploratoryStrategy:
 
         values = np.zeros_like(schemas)
 
+        # bypass epsilon greedy when schemas selected by a composite action's controller
+        if pending:
+            return values
+
         # determine if taking exploratory or goal-directed action
         is_exploratory = rng().uniform(0.0, 1.0) < self.epsilon
 
         # randomly select winning schema if exploratory action and set value to np.inf
         if is_exploratory:
             values[rng().choice(len(schemas))] = np.inf
+
+        # decay epsilon if decay strategy set
+        if self._decay_strategy:
+            self.epsilon = self._decay_strategy.decay(self.epsilon)
+
         return values
 
 
@@ -579,7 +590,11 @@ class ExploratoryEvaluationStrategy:
         # TODO: There are MANY factors that influence value, and it is not clear what their relative weights should be.
         # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
         # TODO: balance between them.
-        pass
+        self._eps_greedy = EpsilonGreedyExploratoryStrategy(
+            epsilon=GlobalParams().get('epsilon'),
+            decay_strategy=GeometricDecayStrategy(
+                rate=GlobalParams().get('epsilon_decay_rate'),
+                minimum=GlobalParams().get('epsilon_min')))
 
     def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema]) -> np.ndarray:
         # TODO: Add a mechanism for tracking recently activated schemas.
@@ -599,10 +614,15 @@ class ExploratoryEvaluationStrategy:
                                               trace=GlobalStats().action_trace,
                                               multiplier=GlobalParams().get('habituation_multiplier'))
 
+        eps_v = self._eps_greedy(schemas=schemas)
+
         trace('exploratory selection values:')
         trace(f'\tschemas: {[str(s) for s in schemas]}')
         trace(f'\tpending: {[str(pending)]}')
         trace(f'\thab_v: {str(hab_v)}')
+        trace(f'\teps_v: {str(eps_v)}')
+
+        debug(f'epsilon = {self._eps_greedy.epsilon}')
 
         return hab_v
 
@@ -858,12 +878,11 @@ class SchemaMechanism:
             value_strategies=[
                 GoalPursuitEvaluationStrategy(),
                 ExploratoryEvaluationStrategy(),
-                EpsilonGreedyExploratoryStrategy(0.5)
             ],
-            # weights=[
-            #     GlobalParams().get('goal_weight'),
-            #     GlobalParams().get('explore_weight'),
-            # ]
+            weights=[
+                GlobalParams().get('goal_weight'),
+                GlobalParams().get('explore_weight'),
+            ]
         )
 
         # TODO: update goal/explore weights.

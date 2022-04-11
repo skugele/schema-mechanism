@@ -167,7 +167,7 @@ def agent_takes_damage(mdp):
         print("Agent fell in pit!")
         return True
 
-    elif is_alive(mdp.wumpus) and mdp.agent.position == mdp.wumpus.position:
+    elif mdp.wumpus and is_alive(mdp.wumpus) and mdp.agent.position == mdp.wumpus.position:
         print("Agent attacked by Wumpus!")
         return True
 
@@ -229,24 +229,18 @@ def use_exit(mdp):
 
 
 # Actions Definitions
-n_actions = 7
-actions = range(n_actions)
-
 MOVE_FORWARD = Action('MOVE[FORWARD]')
 TURN_LEFT = Action('TURN[LEFT]')
 TURN_RIGHT = Action('TURN[RIGHT]')
-PICKUP_GOLD = Action('PICKUP[GOLD]')
-PICKUP_ARROW = Action('PICKUP[ARROW]')
-FIRE_ARROW = Action('FIRE[ARROW]')
+# PICKUP_GOLD = Action('PICKUP[GOLD]')
+# PICKUP_ARROW = Action('PICKUP[ARROW]')
+# FIRE_ARROW = Action('FIRE[ARROW]')
 USE_EXIT = Action('USE[EXIT]')
 
 actions_dict = {
     MOVE_FORWARD: move_forward,
     TURN_LEFT: lambda mdp: mdp.agent.turn_left(),
     TURN_RIGHT: lambda mdp: mdp.agent.turn_right(),
-    PICKUP_GOLD: pickup_gold,
-    PICKUP_ARROW: pickup_arrow,
-    FIRE_ARROW: fire_arrow,
     USE_EXIT: use_exit
 }
 
@@ -254,11 +248,29 @@ actions_avail_dict = {
     MOVE_FORWARD: lambda mdp: not pos_in_front_of(mdp.agent) in mdp.env.locations_of(WALL),
     TURN_LEFT: lambda mdp: True,
     TURN_RIGHT: lambda mdp: True,
-    PICKUP_GOLD: lambda mdp: mdp.agent.position in mdp.env.locations_of(GOLD),
-    PICKUP_ARROW: lambda mdp: mdp.agent.position in mdp.env.locations_of(ARROW),
-    FIRE_ARROW: lambda mdp: mdp.agent.n_arrows > 0,
     USE_EXIT: lambda mdp: mdp.agent.position in mdp.env.locations_of(EXIT)
 }
+
+
+# actions_dict = {
+#     MOVE_FORWARD: move_forward,
+#     TURN_LEFT: lambda mdp: mdp.agent.turn_left(),
+#     TURN_RIGHT: lambda mdp: mdp.agent.turn_right(),
+#     PICKUP_GOLD: pickup_gold,
+#     PICKUP_ARROW: pickup_arrow,
+#     FIRE_ARROW: fire_arrow,
+#     USE_EXIT: use_exit
+# }
+#
+# actions_avail_dict = {
+#     MOVE_FORWARD: lambda mdp: not pos_in_front_of(mdp.agent) in mdp.env.locations_of(WALL),
+#     TURN_LEFT: lambda mdp: True,
+#     TURN_RIGHT: lambda mdp: True,
+#     PICKUP_GOLD: lambda mdp: mdp.agent.position in mdp.env.locations_of(GOLD),
+#     PICKUP_ARROW: lambda mdp: mdp.agent.position in mdp.env.locations_of(ARROW),
+#     FIRE_ARROW: lambda mdp: mdp.agent.n_arrows > 0,
+#     USE_EXIT: lambda mdp: mdp.agent.position in mdp.env.locations_of(EXIT)
+# }
 
 
 def available_actions(obs):
@@ -293,14 +305,13 @@ class WorldState(NamedTuple):
 
 def get_agent_observation(world: WumpusWorld, agent: WumpusWorldAgent, wumpus: Wumpus) -> State:
     state_elements = [
-        f'AGENT.X={agent.position[0]}',
-        f'AGENT.Y={agent.position[1]}',
+        f'AGENT.POSITION={agent.position[0]};{agent.position[1]}',
         f'AGENT.DIR={agent.direction}',
-        f'AGENT.HEALTH={agent.health}',
+        # f'AGENT.HEALTH={agent.health}',
 
         # agent's possessions
-        f'AGENT.HAS[ARROWS:{agent.n_arrows}]',
-        f'AGENT.HAS[GOLD:{agent.n_gold}]',
+        # f'AGENT.HAS[ARROWS:{agent.n_arrows}]',
+        # f'AGENT.HAS[GOLD:{agent.n_gold}]',
     ]
 
     # objects/entities in agent's cell
@@ -315,7 +326,7 @@ def get_agent_observation(world: WumpusWorld, agent: WumpusWorldAgent, wumpus: W
     ##############
 
     # Wumpus is dead
-    if not is_alive(wumpus):
+    if wumpus and not is_alive(wumpus):
         state_elements.append('EVENT[WUMPUS DEAD]')
 
     # agent has escaped
@@ -327,7 +338,11 @@ def get_agent_observation(world: WumpusWorld, agent: WumpusWorldAgent, wumpus: W
 
 class WumpusWorldMDP:
 
-    def __init__(self, worldmap: str, agent: WumpusWorldAgent, wumpus: Wumpus, randomized_start: bool = False) -> None:
+    def __init__(self,
+                 worldmap: str,
+                 agent: WumpusWorldAgent,
+                 wumpus: Optional[Wumpus] = None,
+                 randomized_start: bool = False) -> None:
         """Initialize a WumpusWorldMDP for the specified WumpusWorld and MDP attributes.
 
         :param worldmap: a string representations that depicts the wumpus world and its objects
@@ -363,7 +378,9 @@ class WumpusWorldMDP:
 
         # Add agent and wumpus
         displayed_cells[self.agent.position] = AGENT
-        displayed_cells[self.wumpus.position] = WUMPUS
+
+        if self.wumpus:
+            displayed_cells[self.wumpus.position] = WUMPUS
 
         print(displayed_cells)
 
@@ -389,6 +406,7 @@ class WumpusWorldMDP:
         if self.randomized_start:
             self.agent.position = choice(self.env.locations_of(FREE))
 
-        self.wumpus = copy.deepcopy(self.wumpus_spec)
+        if self.wumpus_spec:
+            self.wumpus = copy.deepcopy(self.wumpus_spec)
 
         return self.state, self.is_terminal

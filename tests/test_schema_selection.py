@@ -22,6 +22,7 @@ from schema_mechanism.modules import PendingStatus
 from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import GlobalParams
+from schema_mechanism.strategies import GeometricDecayStrategy
 from test_share.test_classes import MockSchema
 from test_share.test_classes import MockSchemaSelection
 from test_share.test_classes import MockSymbolicItem
@@ -623,7 +624,14 @@ class TestEpsilonGreedy(unittest.TestCase):
         self.eps_even_chance = EpsilonGreedyExploratoryStrategy(epsilon=0.5)
 
         self.schema = sym_schema('1,2/A/3,4')
-        self.schemas = [sym_schema('1,2/A/3,4'), sym_schema('1,2/A/3,5'), sym_schema('1,2/A/3,6')]
+
+        # schema with a composite action
+        self.ca_schema = sym_schema('1,2/S1,/5,7')
+
+        self.schemas = [self.schema,
+                        self.ca_schema,
+                        sym_schema('1,2/A/3,5'),
+                        sym_schema('1,2/A/3,6')]
 
     def test_init(self):
         epsilon = 0.1
@@ -675,3 +683,35 @@ class TestEpsilonGreedy(unittest.TestCase):
         values = self.eps_never_explore(self.schemas)
         self.assertIsInstance(values, np.ndarray)
         self.assertListEqual(list(np.zeros_like(self.schemas)), list(values))
+
+    def test_epsilon_decay(self):
+        epsilon = 1.0
+        rate = 0.99
+
+        decay_strategy = GeometricDecayStrategy(rate=rate)
+        eps_greedy = EpsilonGreedyExploratoryStrategy(epsilon=epsilon, decay_strategy=decay_strategy)
+
+        prev_epsilon = epsilon
+        for _ in range(100):
+            _ = eps_greedy(schemas=self.schemas)
+            self.assertEqual(decay_strategy.decay(prev_epsilon), eps_greedy.epsilon)
+            prev_epsilon = eps_greedy.epsilon
+
+    def test_epsilon_decay_to_minimum(self):
+        epsilon = 1.0
+        minimum = 0.5
+
+        decay_strategy = GeometricDecayStrategy(rate=0.99, minimum=minimum)
+        eps_greedy = EpsilonGreedyExploratoryStrategy(epsilon=epsilon, decay_strategy=decay_strategy)
+
+        for _ in range(100):
+            _ = eps_greedy(schemas=self.schemas)
+
+        self.assertEqual(minimum, eps_greedy.epsilon)
+
+    def test_pending_bypass(self):
+        # test: epsilon greedy values SHOULD all be zero when a pending schema is provided
+        expected = np.zeros_like(self.schemas)
+        actual = self.eps_always_explore(self.schemas, pending=self.schema)
+
+        self.assertTrue(np.array_equal(expected, actual))

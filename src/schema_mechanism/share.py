@@ -157,6 +157,11 @@ class GlobalParams(metaclass=Singleton):
         self._defaults['habituation_decay_rate'] = 0.95
         self._defaults['habituation_multiplier'] = 10.0
 
+        # used by epsilon greedy exploratory
+        self._defaults['epsilon'] = 1.0
+        self._defaults['epsilon_decay_rate'] = 0.999
+        self._defaults['epsilon_min'] = 0.01
+
         # schema selection weighting (set in SchemaMechanism)
         self._defaults['goal_weight'] = 0.6
         self._defaults['explore_weight'] = 0.4
@@ -196,6 +201,9 @@ class GlobalParams(metaclass=Singleton):
         self._validators['backward_chains_max_len'] = MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
         self._validators['backward_chains_update_frequency'] = RangeValidator(0.0, 1.0)
         self._validators['composite_action_min_baseline_advantage'] = TypeValidator([float])
+        self._validators['epsilon'] = RangeValidator(0.0, 1.0)
+        self._validators['epsilon_decay_rate'] = RangeValidator(0.0, 1.0, exclude=[0.0, 1.0])
+        self._validators['epsilon_min'] = RangeValidator(low=0.0)
 
         # TODO: is there any way to do validators for:
         # TODO:    correlation_test,
