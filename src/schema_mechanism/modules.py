@@ -286,12 +286,14 @@ def schema_succeeded(applicable: bool, activated: bool, satisfied: bool) -> bool
     return applicable and activated and satisfied
 
 
+# TODO: Move these into protocols?
 # Type aliases
 SchemaEvaluationStrategy = Callable[[Sequence[Schema], Optional[Schema]], np.ndarray]
 MatchStrategy = Callable[[np.ndarray, float], np.ndarray]
 SelectionStrategy = Callable[[Sequence[Schema], np.ndarray], tuple[Schema, float]]
 
 
+# TODO: Move these into strategies?
 class NoOpEvaluationStrategy:
     def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema]) -> np.ndarray:
         return np.zeros_like(schemas)
