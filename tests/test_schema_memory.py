@@ -2,6 +2,8 @@ from unittest import TestCase
 from unittest.mock import ANY
 from unittest.mock import MagicMock
 
+import numpy as np
+
 from schema_mechanism.core import Action
 from schema_mechanism.core import Chain
 from schema_mechanism.core import Schema
@@ -28,6 +30,10 @@ class TestSchemaMemory(TestCase):
 
         # allows direct setting of reliability (only reliable schemas are eligible for chaining)
         GlobalParams().set('schema_type', MockSchema)
+        GlobalParams().set('backward_chains_update_frequency', 1.0)
+
+        # always create composite actions for novel results
+        GlobalParams().set('composite_action_min_baseline_advantage', -np.inf)
 
         s1 = sym_schema('/A1/')
         s2 = sym_schema('/A2/')
@@ -213,6 +219,7 @@ class TestSchemaMemory(TestCase):
             applicable=applicable_schemas,
             selected=selected_schema,
             selection_state=selection_state,
+            terminated_pending=[],
             effective_value=1.0  # value fabricated. does not matter for test
         )
 
@@ -224,16 +231,30 @@ class TestSchemaMemory(TestCase):
         for s in applicable_schemas:
             s.update.assert_called()
 
+            # test: activated SHOULD be True if schema's action equals selected schema's action
             if s.action == selected_schema.action:
-                s.update.assert_called_with(activated=True, s_prev=ANY, s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
+                s.update.assert_called_with(activated=True, succeeded=ANY, s_prev=ANY,
+                                            s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
 
+            # test: activated SHOULD be False if schema's action equals selected schema's action
             else:
-                s.update.assert_called_with(activated=False, s_prev=ANY, s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
+                s.update.assert_called_with(activated=False, succeeded=ANY, s_prev=ANY,
+                                            s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
 
+            # test: succeeded SHOULD be True if schema's result is satisfied and schema is activated
+            if (s.is_activated(selected_schema, selection_state, applicable=True)
+                    and s.result.is_satisfied(result_state)):
+                s.update.assert_called_with(succeeded=True, activated=ANY, s_prev=ANY,
+                                            s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
+
+            # test: succeeded SHOULD be False if schema's result is not satisfied or schema is not activated
+            else:
+                s.update.assert_called_with(succeeded=False, activated=ANY, s_prev=ANY,
+                                            s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
+
+        # test: update SHOULD NOT be called for non-applicable schemas
         for s in non_applicable_schemas:
             s.update.assert_not_called()
-
-        self.assertEqual(self.sm.stats.n_updates, len(applicable_schemas))
 
     def test_receive_1(self):
         # create a context spin-off

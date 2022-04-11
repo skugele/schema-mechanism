@@ -17,6 +17,8 @@ from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import AbsoluteDiffMatchStrategy
 from schema_mechanism.modules import EpsilonGreedyExploratoryStrategy
 from schema_mechanism.modules import GoalPursuitEvaluationStrategy
+from schema_mechanism.modules import PendingDetails
+from schema_mechanism.modules import PendingStatus
 from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import GlobalParams
@@ -75,11 +77,14 @@ class TestSchemaSelection(TestCase):
         # composite action schemas
         self.sca24_c12_r35 = sym_schema('1,2/2,4/(3,5),', reliability=1.0)  # total pv = 2.95; total dv = 0.95
         self.sca24_c12_r136 = sym_schema('1,2/2,4/(1,3,6),', reliability=1.0)  # total pv = -2.05; total dv = 0.0
+        self.sca5_c2_r35 = sym_schema('2,/5,/(3,5),', reliability=1.0)  # total pv = 2.95; total dv = 0.95
 
-        self.chains = [Chain([self.s1_c12_r2, self.s2_c2_r3, self.s3_c3_r4, self.s1_c4_r5, self.s3_c5_r24])]
+        self.sca24_chains = [Chain([self.s1_c12_r2, self.s2_c2_r3, self.s3_c3_r4, self.s1_c4_r5, self.s3_c5_r24])]
+        self.sca24_c12_r35.action.controller.update(self.sca24_chains)
+        self.sca24_c12_r136.action.controller.update(self.sca24_chains)
 
-        self.sca24_c12_r35.action.controller.update(self.chains)
-        self.sca24_c12_r136.action.controller.update(self.chains)
+        self.sca5_chains = [Chain([self.s1_c12_r2, self.s2_c2_r3, self.s3_c3_r4, self.s1_c4_r5])]
+        self.sca5_c2_r35.action.controller.update(self.sca5_chains)
 
         self.selection_state = sym_state('1,2')
 
@@ -301,8 +306,11 @@ class TestSchemaSelection(TestCase):
         # test: pending schema should be selected
         sd = ss.select(applicable, state=sym_state('1,2'))
 
+        # test: the pending schema should be set as the composite action schema
         self.assertIs(schema_with_ca, ss.pending_schema)
-        self.assertIs(self.s2_c2_r3, sd.selected)
+
+        # test: a schema should have been selected from the composite action's component schemas
+        self.assertIn(sd.selected, ss.pending_schema.action.controller.components)
 
     def test_select_with_pending_schema_1b(self):
         # testing selection with composite action schema (scenario: composite action schema loses)
@@ -336,8 +344,11 @@ class TestSchemaSelection(TestCase):
         for exp, act in zip(expected_values, actual_values):
             self.assertAlmostEqual(exp, act)
 
-        # test: pending schema should be selected
+        # test: pending schema should NOT be selected
         sd = ss.select(applicable, state=sym_state('1,2'))
+
+        # test: terminated pending list in selection details should be empty
+        self.assertEqual(0, len(sd.terminated_pending))
 
         self.assertIs(self.s1_c12_r5, sd.selected)
         self.assertIs(None, ss.pending_schema)
@@ -349,7 +360,7 @@ class TestSchemaSelection(TestCase):
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
             value_strategies=[primitive_value_evaluation_strategy],
-            pending_schemas=deque([self.sca24_c12_r35])
+            pending_schemas=deque([PendingDetails(schema=self.sca24_c12_r35, selection_state=sym_state('2'))])
         )
 
         # sanity check: pending schema set
@@ -385,7 +396,7 @@ class TestSchemaSelection(TestCase):
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
             value_strategies=[primitive_value_evaluation_strategy],
-            pending_schemas=deque([self.sca24_c12_r35])
+            pending_schemas=deque([PendingDetails(schema=self.sca24_c12_r35, selection_state=sym_state('2'))])
         )
 
         # sanity check: pending schema set
@@ -411,6 +422,12 @@ class TestSchemaSelection(TestCase):
             # current state does NOT satisfy a controller component
             if state == selection_states[-1]:
 
+                self.assertEqual(1, len(sd.terminated_pending))
+
+                # test: most recent entry in pending list should contain this pending schema with ABORTED status
+                self.assertEqual(self.sca24_c12_r35, sd.terminated_pending[-1].schema)
+                self.assertEqual(PendingStatus.ABORTED, sd.terminated_pending[-1].status)
+
                 # test: pending schema should be set to None if no applicable controller components
                 self.assertEqual(None, mock_ss.pending_schema)
 
@@ -424,24 +441,84 @@ class TestSchemaSelection(TestCase):
 
     def test_select_with_pending_schema_4(self):
         # testing the interruption of a pending schema (alternative schema with much higher value)
+        pending = self.sca24_c12_r35
 
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
             value_strategies=[primitive_value_evaluation_strategy],
-            pending_schemas=deque([self.sca24_c12_r35])
+            pending_schemas=deque([PendingDetails(schema=pending, selection_state=sym_state('2'))])
         )
 
         # sanity check: pending schema set
-        self.assertIs(mock_ss.pending_schema, self.sca24_c12_r35)
+        self.assertIs(mock_ss.pending_schema, pending)
 
         _ = ItemPool().get('HIGH', item_type=MockSymbolicItem, primitive_value=np.inf, avg_accessible_value=np.inf)
         s_high = sym_schema('2,/A2/HIGH,', reliability=1.0)
 
         # satisfies context of component self.s2_c2_r3 and high-value alternative
         sd = mock_ss.select([self.s2_c2_r3, s_high], sym_state('2'))
-        self.assertIs(s_high, sd.selected)
+
+        # test: selected schema should not be a component of the pending schema
+        self.assertNotIn(sd.selected, pending.action.controller.components)
+
+        # test: there should be no pending schema set in SchemaSelection after losing the last selection
         self.assertIs(None, mock_ss.pending_schema)
+
+        # test: most recent entry in pending list should contain this pending schema with INTERRUPTED status
+        self.assertEqual(pending, sd.terminated_pending[-1].schema)
+        self.assertEqual(PendingStatus.INTERRUPTED, sd.terminated_pending[-1].status)
+
+    def test_select_with_pending_schema_5(self):
+        # testing the interruption of a pending schema for another composite action (alternative has higher value)
+        pending = self.sca24_c12_r136
+
+        # mock is used to directly set the pending schema
+        mock_ss = MockSchemaSelection(
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            value_strategies=[primitive_value_evaluation_strategy],
+            pending_schemas=deque([PendingDetails(schema=pending, selection_state=sym_state('2'))])
+        )
+
+        # sanity check: pending schema set
+        self.assertIs(mock_ss.pending_schema, pending)
+
+        # satisfies context pending schema, higher-value alternative sca24_c12_r35, and non-composite component s2_c2_r3
+        sd = mock_ss.select([pending, self.s2_c2_r3, self.sca24_c12_r35], sym_state('1,2'))
+
+        # test: there should be new pending schema set in SchemaSelection
+        self.assertIs(self.sca24_c12_r35, mock_ss.pending_schema)
+
+        # test: there should be 1 interrupted schema in terminated list
+        self.assertEqual(1, len(sd.terminated_pending))
+        self.assertEqual(PendingStatus.INTERRUPTED, sd.terminated_pending[0].status)
+
+    def test_select_with_pending_schema_6(self):
+        # testing completed pending schema followed by immediate selection of another composite action schema
+        pending = self.sca24_c12_r136
+
+        # mock is used to directly set the pending schema
+        mock_ss = MockSchemaSelection(
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
+            value_strategies=[primitive_value_evaluation_strategy],
+            pending_schemas=deque([PendingDetails(schema=pending, selection_state=sym_state('2'))])
+        )
+
+        # sanity check: pending schema set
+        self.assertIs(mock_ss.pending_schema, pending)
+
+        # satisfies context of component self.s2_c2_r3 and high-value alternative
+        sd = mock_ss.select([pending, self.s2_c2_r3, self.sca5_c2_r35], sym_state('2,4'))
+
+        # test: there should be a new pending schema set in SchemaSelection
+        self.assertIs(self.sca5_c2_r35, mock_ss.pending_schema)
+
+        # test: there should be a single entry in selection detail's terminated pending list for completed schema
+        self.assertEqual(1, len(sd.terminated_pending))
+
+        # test: oldest entry in pending list should contain previous pending schema with INTERRUPTED status
+        self.assertEqual(pending, sd.terminated_pending[0].schema)
+        self.assertEqual(PendingStatus.COMPLETED, sd.terminated_pending[0].status)
 
     # FIXME: Uncomment this if/when components with composite actions are supported
     # def test_select_with_nested_pending_schemas(self):

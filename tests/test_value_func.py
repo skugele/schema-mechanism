@@ -18,6 +18,7 @@ from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import habituation_exploratory_value
 from schema_mechanism.modules import instrumental_values
+from schema_mechanism.modules import pending_focus_values
 from schema_mechanism.modules import reliability_values
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.util import AccumulatingTrace
@@ -488,3 +489,79 @@ class TestHabituationExploratoryValue(unittest.TestCase):
                                                          multiplier=mult)
 
         self.assertTrue(np.array_equal(values * mult, values_with_mult))
+
+
+class TestPendingFocusValue(unittest.TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+        self.sa1_a_b = sym_schema('A,/A1/B,')
+        self.sa2_b_c = sym_schema('B,/A2/C,')
+        self.sa3_c_s1 = sym_schema('C,/A3/S1,')
+        self.sa4_c_s2 = sym_schema('C,/A4/S2,')
+
+        # schemas with composite actions
+        self.s_s1 = sym_schema('/S1,/')
+        self.s_s2 = sym_schema('/S2,/')
+
+        self.s_s1.action.controller.update([
+            Chain([self.sa1_a_b, self.sa2_b_c, self.sa3_c_s1])
+        ])
+
+        self.s_s2.action.controller.update([
+            Chain([self.sa1_a_b, self.sa2_b_c, self.sa4_c_s2])
+        ])
+
+        self.schemas = [
+            self.sa1_a_b,
+            self.sa2_b_c,
+            self.sa3_c_s1,
+            self.sa4_c_s2,
+            self.s_s1,
+            self.s_s2,
+        ]
+
+    def test_no_schemas(self):
+        # test: an empty array should be returned if not schemas supplied
+        self.assertTrue(np.array_equal(np.array([]), pending_focus_values(schemas=[])))
+
+    def test_no_pending(self):
+        # test: schemas should have no focus value if there is no active pending schema
+        expected = np.zeros_like(self.schemas)
+        actual = pending_focus_values(schemas=self.schemas, pending=None)
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+    def test_initial_component_values(self):
+        max_value = pending_focus_values.max_focus
+        pending = self.s_s1
+        pending_components = pending.action.controller.components
+
+        values = pending_focus_values(schemas=self.schemas, pending=pending)
+        for schema, value in zip(self.schemas, values):
+            # test: components of the active pending schema should initially have max focus
+            if schema in pending_components:
+                self.assertEqual(max_value, value)
+
+            # test: other schemas should have zero focus value
+            else:
+                self.assertEqual(0.0, value)
+
+    def test_unbounded_reduction_in_value(self):
+        pending = self.s_s1
+        schemas = pending.action.controller.components
+
+        values = pending_focus_values(schemas=schemas, pending=pending)
+        diff = 0.0
+        for n in range(1, 20):
+            new_values = pending_focus_values(schemas=schemas, pending=pending)
+            new_diff = values - new_values
+
+            # test: new values should be strictly less than previous values
+            self.assertTrue(np.alltrue(new_values < values))
+
+            # test: the differences between subsequent values should increase
+            self.assertTrue(np.alltrue(new_diff > diff))
+
+            values = new_values
+            diff = new_diff

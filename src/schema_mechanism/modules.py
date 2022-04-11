@@ -6,6 +6,9 @@ from collections.abc import Callable
 from collections.abc import Collection
 from collections.abc import Sequence
 from copy import copy
+from dataclasses import dataclass
+from enum import Enum
+from enum import auto
 from typing import NamedTuple
 from typing import Optional
 
@@ -30,6 +33,7 @@ from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
 from schema_mechanism.core import primitive_value
+from schema_mechanism.core import value
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import debug
@@ -39,11 +43,6 @@ from schema_mechanism.share import trace
 from schema_mechanism.util import AccumulatingTrace
 from schema_mechanism.util import Observer
 from schema_mechanism.util import equal_weights
-
-
-class SchemaMemoryStats:
-    def __init__(self):
-        self.n_updates = 0
 
 
 class SchemaMemory(Observer):
@@ -58,8 +57,6 @@ class SchemaMemory(Observer):
 
             for schema in primitives:
                 schema.register(self)
-
-        self._stats: SchemaMemoryStats = SchemaMemoryStats()
 
     def __len__(self) -> int:
         return self._schema_tree.n_schemas
@@ -94,10 +91,7 @@ class SchemaMemory(Observer):
 
         return sm
 
-    @property
-    def stats(self) -> SchemaMemoryStats:
-        return self._stats
-
+    # TODO: this method is too complicated. I need to refactor it into multiple methods.
     def update_all(self,
                    selection_details: SchemaSelection.SelectionDetails,
                    result_state: State) -> None:
@@ -111,14 +105,11 @@ class SchemaMemory(Observer):
 
         :return: None
         """
-        applicable, schema, selection_state, _ = selection_details
+        applicable, schema, pending_list, selection_state, _ = selection_details
 
         # create new and lost state element collections
         new = new_state(selection_state, result_state)
         lost = lost_state(selection_state, result_state)
-
-        # update global statistics
-        self._stats.n_updates += len(applicable)
 
         # True if state transition explained by activated reliable schema
         #     (See SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
@@ -134,8 +125,12 @@ class SchemaMemory(Observer):
         for s in activated_schemas:
             # this supports SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED
             explained |= True if is_reliable(schema) and schema.predicts_state(result_state) else False
+            succeeded = schema_succeeded(applicable=True,
+                                         activated=True,
+                                         satisfied=s.result.is_satisfied(result_state))
 
             s.update(activated=True,
+                     succeeded=succeeded,
                      s_prev=selection_state,
                      s_curr=result_state,
                      new=new,
@@ -144,17 +139,39 @@ class SchemaMemory(Observer):
 
         for s in non_activated_schemas:
             s.update(activated=False,
+                     succeeded=False,  # success requires implicit or explicit activation
                      s_prev=selection_state,
                      s_curr=result_state,
                      new=new,
                      lost=lost,
                      explained=explained)
 
+        # process terminated_pending
+        for pending_details in selection_details.terminated_pending:
+
+            pending_schema = pending_details.schema
+            pending_selection_state = pending_details.selection_state
+            pending_status = pending_details.status
+
+            if pending_status in [PendingStatus.ABORTED, PendingStatus.INTERRUPTED]:
+                # TODO: I am not positive this is correct. I may need to revisit the correct way to update these
+                # TODO: temporarily extended actions (i.e. composite actions).
+                pending_schema.update(
+                    activated=True,
+                    succeeded=False,  # success requires implicit or explicit activation
+                    s_prev=pending_selection_state,
+                    s_curr=result_state,
+                    new=new_state(pending_selection_state, result_state),
+                    lost=lost_state(pending_selection_state, result_state),
+                    explained=explained)
+
+        # TODO: there must be a better way to choose when to perform an update than this randomized mess.
         # update composite action controllers
         controllers = CompositeAction.all_satisfied_by(result_state)
         for c in controllers:
-            chains = self.backward_chains(c.goal_state)
-            c.update(chains)
+            if rng().uniform(0.0, 1.0) < GlobalParams().get('backward_chains_update_frequency'):
+                chains = self.backward_chains(c.goal_state, max_len=GlobalParams().get('backward_chains_max_len'))
+                c.update(chains)
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
         satisfied = itertools.chain.from_iterable(
@@ -167,43 +184,6 @@ class SchemaMemory(Observer):
 
         if isinstance(source, Schema):
             self._receive_from_schema(schema=source, **kwargs)
-
-    def _receive_from_schema(self, schema: Schema, **kwargs) -> None:
-        spin_off_type: Schema.SpinOffType = kwargs['spin_off_type']
-        relevant_items: Collection[ItemAssertion] = kwargs['relevant_items']
-
-        spin_offs = frozenset([create_spin_off(schema, spin_off_type, ia) for ia in relevant_items])
-
-        # "Whenever a bare schema spawns a spinoff schema, the mechanism determines whether the new schema's result is
-        #  novel, as opposed to its already appearing as the result component of some other schema. If the result is
-        #  novel, the schema mechanism defines a new composite action with that result as its goal state, it is the
-        #  action of achieving that result. The schema mechanism also constructs a bare schema which has that action;
-        #  that schema's extended result then can discover effects of achieving the action's goal state"
-        #      (See Drescher 1991, p. 90)
-        if schema.is_primitive() and (spin_off_type is Schema.SpinOffType.RESULT):
-            for spin_off in spin_offs:
-                if self.is_novel_result(spin_off.result):
-                    trace(f'Novel result detected: {spin_off.result}. Creating new composite action.')
-
-                    # creates and initializes a new composite action
-                    ca = CompositeAction(goal_state=spin_off.result)
-                    ca.controller.update(self.backward_chains(ca.goal_state))
-
-                    GlobalStats().action_trace.add([ca])
-
-                    # adds a new bare schema for the new composite action
-                    ca_schema = Schema(action=ca)
-                    ca_schema.register(self)
-
-                    self._schema_tree.add_primitives([ca_schema])
-
-        # register listeners for spin-offs
-        for s in spin_offs:
-            s.register(self)
-
-        debug(f'creating spin-offs for schema {str(schema)}: {",".join([str(s) for s in spin_offs])}')
-
-        self._schema_tree.add(schema, spin_offs, spin_off_type)
 
     def backward_chains(self,
                         goal_state: StateAssertion,
@@ -259,6 +239,51 @@ class SchemaMemory(Observer):
 
     def is_novel_result(self, result: StateAssertion) -> bool:
         return not any({result == s.result for s in self._schema_tree.root.schemas_satisfied_by})
+
+    def _receive_from_schema(self, schema: Schema, **kwargs) -> None:
+        spin_off_type: Schema.SpinOffType = kwargs['spin_off_type']
+        relevant_items: Collection[ItemAssertion] = kwargs['relevant_items']
+
+        spin_offs = frozenset([create_spin_off(schema, spin_off_type, ia) for ia in relevant_items])
+
+        # "Whenever a bare schema spawns a spinoff schema, the mechanism determines whether the new schema's result is
+        #  novel, as opposed to its already appearing as the result component of some other schema. If the result is
+        #  novel, the schema mechanism defines a new composite action with that result as its goal state, it is the
+        #  action of achieving that result. The schema mechanism also constructs a bare schema which has that action;
+        #  that schema's extended result then can discover effects of achieving the action's goal state"
+        #      (See Drescher 1991, p. 90)
+        if schema.is_primitive() and (spin_off_type is Schema.SpinOffType.RESULT):
+            for spin_off in spin_offs:
+                if self.is_novel_result(spin_off.result):
+                    min_adv = GlobalParams().get('composite_action_min_baseline_advantage')
+                    if value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
+                        continue
+
+                    trace(f'Novel result detected: {spin_off.result}. Creating new composite action.')
+
+                    # creates and initializes a new composite action
+                    ca = CompositeAction(goal_state=spin_off.result)
+                    ca.controller.update(self.backward_chains(ca.goal_state))
+
+                    GlobalStats().action_trace.add([ca])
+
+                    # adds a new bare schema for the new composite action
+                    ca_schema = Schema(action=ca)
+                    ca_schema.register(self)
+
+                    self._schema_tree.add_primitives([ca_schema])
+
+        # register listeners for spin-offs
+        for s in spin_offs:
+            s.register(self)
+
+        debug(f'creating spin-offs for schema {str(schema)}: {",".join([str(s) for s in spin_offs])}')
+
+        self._schema_tree.add(schema, spin_offs, spin_off_type)
+
+
+def schema_succeeded(applicable: bool, activated: bool, satisfied: bool) -> bool:
+    return applicable and activated and satisfied
 
 
 # Type aliases
@@ -372,6 +397,48 @@ def instrumental_values(schemas: Sequence[Schema], pending: Optional[Schema] = N
     return values
 
 
+class PendingFocusCalculator:
+    """ A functor that returns values intended to provide a temporary selection focus on the current pending schema.
+    This value quickly vanishes and becomes aversion if the pending schema's goal state fails to obtain after some
+    number of component executions.
+    """
+
+    def __init__(self, max_focus: float = None, focus_exp: float = None) -> None:
+        self._active_pending: Optional[Schema] = None
+        self._n: int = 0
+
+        # TODO: Add global parameters for range of focus values
+        self.max_focus = max_focus or 100.0
+        self.focus_exp = focus_exp or 1.5
+
+    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
+        if schemas is None or len(schemas) == 0:
+            return np.array([])
+
+        values = np.zeros(len(schemas), dtype=np.float64)
+        if not pending:
+            self._active_pending = None
+            return values
+
+        if pending != self._active_pending:
+            self._active_pending = pending
+            self._n = 0
+
+        focus_value = self.max_focus - self.focus_exp ** self._n + 1
+
+        # TODO: how can I do this more efficiently?
+        for i, schema in enumerate(schemas):
+            if schema in self._active_pending.action.controller.components:
+                values[i] = focus_value
+
+        self._n += 1
+
+        return values
+
+
+pending_focus_values = PendingFocusCalculator()
+
+
 def reliability_values(schemas: Sequence[Schema],
                        pending: Optional[Schema] = None,
                        max_penalty: Optional[float] = 1.0) -> np.ndarray:
@@ -414,6 +481,7 @@ class GoalPursuitEvaluationStrategy:
         dv = delegated_values(schemas)
         iv = instrumental_values(schemas, pending)
         rv = reliability_values(schemas, pending, max_penalty=GlobalParams().get('max_reliability_penalty'))
+        fv = pending_focus_values(schemas, pending)
 
         trace('goal pursuit selection values:')
         trace(f'\tschemas: {[str(s) for s in schemas]}')
@@ -422,8 +490,9 @@ class GoalPursuitEvaluationStrategy:
         trace(f'\tdv: {str(dv)}')
         trace(f'\tiv: {str(iv)}')
         trace(f'\trv: {str(rv)}')
+        trace(f'\tfv: {str(fv)}')
 
-        return pv + dv + iv + rv
+        return pv + dv + iv + rv + fv
 
 
 # TODO: Need to implement epsilon decay
@@ -511,7 +580,6 @@ class ExploratoryEvaluationStrategy:
         pass
 
     def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema]) -> np.ndarray:
-
         # TODO: Add a mechanism for tracking recently activated schemas.
         # hysteresis - "a recently activated schema is favored for activation, providing a focus of attention"
 
@@ -537,6 +605,21 @@ class ExploratoryEvaluationStrategy:
         return hab_v
 
 
+class PendingStatus(Enum):
+    IN_PROGRESS = auto()  # indicates that the schema was selected and is still active
+    INTERRUPTED = auto()  # indicates that a non-component schema was selected (despite having applicable components)
+    ABORTED = auto()  # indicates that no component schemas were applicable
+    COMPLETED = auto()  # indicates that the goal state was reached
+
+
+@dataclass
+class PendingDetails:
+    schema: Schema
+    selection_state: State
+    status: PendingStatus = PendingStatus.IN_PROGRESS
+    duration: int = 0
+
+
 class SchemaSelection:
     """ A module responsible for the selection of a schema from a set of applicable schemas.
 
@@ -551,6 +634,7 @@ class SchemaSelection:
     class SelectionDetails(NamedTuple):
         applicable: Collection[Schema]
         selected: Schema
+        terminated_pending: Optional[list[PendingDetails]]
         selection_state: State
         effective_value: float
 
@@ -572,7 +656,7 @@ class SchemaSelection:
 
         # a stack of previously selected, non-terminated schemas with composite actions used for nested invocations
         # of controller components with composite actions
-        self._pending_schemas: deque[Schema] = deque()
+        self._pending_details: deque[PendingDetails] = deque()
 
     @property
     def select_strategy(self) -> SelectionStrategy:
@@ -605,6 +689,7 @@ class SchemaSelection:
 
         self._weights = value
 
+    # TODO: This method is way too complicated and needs to be refactored into multiple methods.
     def select(self, schemas: Sequence[Schema], state: State) -> SchemaSelection.SelectionDetails:
         """ Selects a schema for explicit activation from the supplied list of applicable schemas.
 
@@ -621,12 +706,12 @@ class SchemaSelection:
         if not schemas:
             raise ValueError('Collection of applicable schemas must contain at least one schema')
 
-        # a schema from a composite action that was previously selected for execution
-        pending = self._update_pending(state)
+        # updates the status of previously selected pending schemas in preparation for selection
+        terminated_pending = self._update_pending(state)
 
         # applicable schemas and their selection values
         candidates = schemas
-        candidates_values = self.calc_effective_values(candidates, pending)
+        candidates_values = self.calc_effective_values(candidates, self.pending_schema)
 
         debug(f'candidates [n: {len(candidates)}]')
         for c, v in zip(candidates, candidates_values):
@@ -637,16 +722,20 @@ class SchemaSelection:
         debug(f'selected schema: {selected_schema} [eff. value: {value}]')
 
         # interruption of a pending schema (see Drescher, 1991, p. 61)
-        if pending and (selected_schema not in pending.action.controller.components):
-            trace(f'pending schema {pending} interrupted: alternate schema chosen {str(selected_schema)}')
-            self._pending_schemas.clear()
+        if self.pending_schema and (selected_schema not in self.pending_schema.action.controller.components):
+            trace(f'pending schema {self.pending_schema} interrupted: alternate schema chosen {selected_schema}')
+
+            # add all interrupted schemas to the completed list
+            terminated_pending.extend(self._interrupt_pending(selected_schema))
 
         # "the [explicit] activation of a schema that has a composite action entails the immediate [explicit] activation
         #  of some component schema..." (See Drescher 1991, p. 60)
         while selected_schema.action.is_composite():
-            # adds schema to list of pending composite action schemas
             trace(f'adding pending schema {selected_schema}')
-            self._pending_schemas.appendleft(selected_schema)
+
+            # adds schema to list of pending composite action schemas
+            self._pending_details.appendleft(
+                PendingDetails(schema=selected_schema, selection_state=state))
 
             # TODO: This is ugly. Need to update the action trace for the pending composite action. Not sure where
             # TODO: to do this if not here....
@@ -663,6 +752,7 @@ class SchemaSelection:
 
         return self.SelectionDetails(applicable=schemas,
                                      selected=selected_schema,
+                                     terminated_pending=terminated_pending,
                                      selection_state=state,
                                      effective_value=value)
 
@@ -678,28 +768,77 @@ class SchemaSelection:
 
         :return: the current pending Schema or None if one does not exist.
         """
-        return self._pending_schemas[0] if self._pending_schemas else None
+        return self._pending_details[0].schema if self._pending_details else None
 
-    def _update_pending(self, state: State) -> Optional[Schema]:
-        next_pending = None
-        while self._pending_schemas and not next_pending:
-            pending_schema = self._pending_schemas[0]
-            action = pending_schema.action
-            goal_state = pending_schema.action.goal_state
+    def _update_pending(self, state: State) -> list[PendingDetails]:
+        terminated_list: list[PendingDetails] = list()
+
+        next_pending: Optional[Schema] = None
+        while self._pending_details and not next_pending:
+
+            details = self._pending_details[0]
+            action = details.schema.action
+            goal_state = action.goal_state
+
+            # FIXME: this should be based on the action controller's max chain length
+            max_duration = 5
 
             # sanity check
             assert action.is_composite()
 
             if not action.is_enabled(state=state):
-                trace(f'pending schema {pending_schema} aborted: no applicable components for state "{state}"')
-                self._pending_schemas.popleft()
-            elif goal_state.is_satisfied(state=state):
-                trace(f'pending schema {pending_schema} completed: goal state {goal_state} reached')
-                self._pending_schemas.popleft()
-            else:
-                next_pending = pending_schema
+                trace(f'pending schema {details.schema} aborted: no applicable components for state "{state}"')
+                details.status = PendingStatus.ABORTED
+                terminated_list.append(details)
 
-        return next_pending
+                # remove from pending stack (no longer active)
+                self._pending_details.popleft()
+
+            elif details.duration > max_duration:
+                trace(f'pending schema {details.schema} interrupted: max duration {max_duration} exceeded"')
+                details.status = PendingStatus.INTERRUPTED
+                terminated_list.append(details)
+
+                # remove from pending stack (no longer active)
+                self._pending_details.popleft()
+
+            elif goal_state.is_satisfied(state=state):
+                trace(f'pending schema {details.schema} completed: goal state {goal_state} reached')
+                details.status = PendingStatus.COMPLETED
+                terminated_list.append(details)
+
+                # remove from pending stack (no longer active)
+                self._pending_details.popleft()
+
+            else:
+                next_pending = details.schema
+
+        # update counts for all active pending schemas
+        for details in self._pending_details:
+            details.duration += 1
+
+        return terminated_list
+
+    def _interrupt_pending(self, alternate_schema: Schema) -> list[PendingDetails]:
+        interrupted_list: list[PendingDetails] = []
+
+        while self._pending_details:
+            details = self._pending_details[0]
+            components = details.schema.action.controller.components
+
+            # if the chosen (interrupting) schema is a component of a pending schema, continue execution of that
+            # pending schema
+            if alternate_schema in components:
+                break
+
+            # otherwise, remove pending schema from the stack and add it to the interrupted list
+            else:
+                self._pending_details.popleft()
+
+                interrupted_list.append(details)
+                details.status = PendingStatus.INTERRUPTED
+
+        return interrupted_list
 
 
 class SchemaMechanism:
@@ -717,49 +856,13 @@ class SchemaMechanism:
             value_strategies=[
                 GoalPursuitEvaluationStrategy(),
                 ExploratoryEvaluationStrategy(),
-                # EpsilonGreedyExploratoryStrategy(0.8)
+                EpsilonGreedyExploratoryStrategy(0.5)
             ],
-            weights=[
-                GlobalParams().get('goal_weight'),
-                GlobalParams().get('explore_weight'),
-            ]
+            # weights=[
+            #     GlobalParams().get('goal_weight'),
+            #     GlobalParams().get('explore_weight'),
+            # ]
         )
-
-        self._selection_details: Optional[SchemaSelection.SelectionDetails] = None
-
-        # initialize traces
-        GlobalStats().action_trace.add(self._primitive_actions)
-
-    @property
-    def schema_memory(self) -> SchemaMemory:
-        return self._schema_memory
-
-    @property
-    def schema_selection(self) -> SchemaSelection:
-        return self._schema_selection
-
-    def select(self, state: State, **kwargs) -> Schema:
-        # TODO: Would it be better to lazy initialize items into item pool for non-primitive items?
-        for se in state:
-            _ = ItemPool().get(se)
-
-        # learn from results of previous actions (if any)
-        if self._selection_details:
-            self._schema_memory.update_all(
-                selection_details=self._selection_details,
-                result_state=state)
-
-            selected = self._selection_details.selected
-            selection_state = self._selection_details.selection_state
-
-            GlobalStats().action_trace.update([selected.action])
-            GlobalStats().delegated_value_helper.update(selection_state=selection_state, result_state=state)
-
-        # updates unconditional state value average
-        GlobalStats().update_baseline(state)
-
-        # determine all schemas applicable to the current state
-        applicable_schemas = self._schema_memory.all_applicable(state)
 
         # TODO: update goal/explore weights.
         # "The schema mechanism maintains a cyclic balance between emphasizing goal-directed value and exploration
@@ -772,10 +875,33 @@ class SchemaMechanism:
         #  between emphasizing goal-pursuit criterion for a time, then emphasizing exploration criterion; currently,
         #  the exploration criterion is emphasized most often (about 90% of the time).” (See Drescher, 1991, p. 61)
 
-        # select a single schema from the applicable schemas
-        self._selection_details = self._schema_selection.select(applicable_schemas, state)
+        # initialize traces
+        GlobalStats().action_trace.add(self._primitive_actions)
 
-        return self._selection_details.selected
+    @property
+    def schema_memory(self) -> SchemaMemory:
+        return self._schema_memory
+
+    @property
+    def schema_selection(self) -> SchemaSelection:
+        return self._schema_selection
+
+    def select(self, state: State, **kwargs) -> SchemaSelection.SelectionDetails:
+        applicable_schemas = self._schema_memory.all_applicable(state)
+        return self._schema_selection.select(applicable_schemas, state)
+
+    def learn(self, selection_details: SchemaSelection.SelectionDetails, result_state: State, **kwargs) -> None:
+        self._schema_memory.update_all(selection_details=selection_details, result_state=result_state)
+
+        selected_schema = selection_details.selected
+        selection_state = selection_details.selection_state
+
+        GlobalStats().action_trace.update([selected_schema.action])
+        GlobalStats().delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
+
+        # updates unconditional state value average
+        GlobalStats().n += 1
+        GlobalStats().update_baseline(result_state)
 
 
 def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion: ItemAssertion) -> Schema:

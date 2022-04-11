@@ -174,16 +174,16 @@ N_STEPS = 5000
 def run():
     args = parse_args()
 
-    GlobalParams().set('learning_rate', 0.1)
-    GlobalParams().set('dv_trace_max_len', 3)
+    GlobalParams().set('learning_rate', 0.05)
     GlobalParams().set('reliability_threshold', 0.7)
-    GlobalParams().set('habituation_decay_rate', 0.95)
-    GlobalParams().set('habituation_multiplier', 15.0)
+    GlobalParams().set('habituation_decay_rate', 0.9)
+    GlobalParams().set('habituation_multiplier', 10.0)
     GlobalParams().set('max_reliability_penalty', 0.1)
     GlobalParams().set('goal_weight', 0.1)
     GlobalParams().set('explore_weight', 0.9)
     GlobalParams().set('dv_discount_factor', 0.7)
-    GlobalParams().set('dv_decay_rate', 0.5)
+    GlobalParams().set('dv_decay_rate', 0.2)
+    GlobalParams().set('composite_action_min_baseline_advantage', 25.0)
 
     machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.n_machines)]
     env = BanditEnvironment(machines)
@@ -201,10 +201,29 @@ def run():
     for n in range(args.steps):
         info(f'state[{n}]: {env.current_state}')
 
-        schema = sm.select(env.current_state)
+        selection_details = sm.select(env.current_state)
+
+        current_composite_schema = sm.schema_selection.pending_schema
+        if current_composite_schema:
+            info(f'active composite action schema: {current_composite_schema} ')
+
+        terminated_composite_schemas = selection_details.terminated_pending
+
+        if terminated_composite_schemas:
+            i = 0
+            for pending_details in terminated_composite_schemas:
+                info(f'terminated schema [{i}]: {pending_details.schema}')
+                info(f'selection state [{i}]: {pending_details.selection_state}')
+                info(f'termination status [{i}]: {pending_details.status}')
+                info(f'duration [{i}]: {pending_details.duration}')
+            i += 1
+
+        schema = selection_details.selected
         info(f'selected schema[{n}]: {schema}')
 
-        _ = env.step(schema.action)
+        state = env.step(schema.action)
+
+        sm.learn(selection_details, result_state=state)
 
     end_time = time()
 

@@ -39,6 +39,7 @@ from schema_mechanism.util import AssociativeArrayList
 from schema_mechanism.util import DefaultDictWithKeyFactory
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
+from schema_mechanism.util import ReplacingTrace
 from schema_mechanism.util import Singleton
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import pairwise
@@ -225,7 +226,7 @@ class EligibilityTraceDelegatedValueHelper:
 
         # note: eligibility traces usually multiply the decay rate by the discount factor. At the moment, it seems
         #       cleaner to disentangle these factors, but I may want to change this in the future.
-        self._eligibility_trace = AccumulatingTrace(decay_rate=trace_decay)
+        self._eligibility_trace = ReplacingTrace(decay_rate=trace_decay)
         self._delegated_values = AssociativeArrayList()
 
     @property
@@ -239,7 +240,9 @@ class EligibilityTraceDelegatedValueHelper:
 
     @discount_factor.setter
     def discount_factor(self, value: float) -> None:
-        # TODO: Add range changing on setter
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(f'Discount factor must be between 0.0 and 1.0 inclusive')
+
         self._discount_factor = value
 
     @property
@@ -286,6 +289,13 @@ class EligibilityTraceDelegatedValueHelper:
                 self._delegated_values[item] = self._delegated_values[item] + lr * err * tv
 
     def effective_state_value(self, selection_state: State, result_state: State) -> float:
+        """ Calculates the effective value of the result state based on changes from previous state.
+
+        :param selection_state: the state prior to the given result state
+        :param result_state: the result state that will be evaluated
+
+        :return: a float that quantifies the value of the result state
+        """
         # only include the value of items that were not On in the selection state
         new_items = new_state(selection_state, result_state)
 
@@ -385,7 +395,7 @@ class SymbolicItem(Item):
 
     def __init__(self, source: str, primitive_value: float = None, **kwargs):
         if not isinstance(source, str):
-            raise ValueError('Source for symbolic item must be a string')
+            raise ValueError(f'Source for symbolic item must be a str, not {type(source)}')
 
         super().__init__(source=source, primitive_value=primitive_value, **kwargs)
 
@@ -419,7 +429,9 @@ def composite_items(items: Collection[Item]) -> Collection[Item]:
 
 class GlobalStats(metaclass=Singleton):
     def __init__(self, baseline_value: Optional[float] = None):
-        self._baseline = baseline_value or 0.0
+        self._n: int = 0
+
+        self._baseline_value = baseline_value or 0.0
 
         self._dv_helper = EligibilityTraceDelegatedValueHelper(
             discount_factor=GlobalParams().get('dv_discount_factor'),
@@ -427,6 +439,14 @@ class GlobalStats(metaclass=Singleton):
 
         self._action_trace: AccumulatingTrace[Action] = AccumulatingTrace(
             decay_rate=GlobalParams().get('habituation_decay_rate'))
+
+    @property
+    def n(self) -> int:
+        return self._n
+
+    @n.setter
+    def n(self, value: int) -> None:
+        self._n = value
 
     @property
     def delegated_value_helper(self) -> EligibilityTraceDelegatedValueHelper:
@@ -442,11 +462,11 @@ class GlobalStats(metaclass=Singleton):
 
         :return: the empirical (primitive value) baseline
         """
-        return self._baseline
+        return self._baseline_value
 
     @baseline_value.setter
     def baseline_value(self, value: float) -> None:
-        self._baseline = value
+        self._baseline_value = value
 
     def update_baseline(self, state: State) -> None:
         """ Updates an unconditional running average of the primitive values of states encountered.
@@ -454,11 +474,23 @@ class GlobalStats(metaclass=Singleton):
         :param state: a state
         :return: None
         """
-        learning_rate = GlobalParams().get('learning_rate')
-        self._baseline += learning_rate * (primitive_value(state) - self._baseline)
+        self._baseline_value += (1.0 / self._n) * (primitive_value(state) - self._baseline_value)
+
+    # TODO: implement this, and replace update_baseline
+    def update(self):
+        pass
 
     def reset(self):
-        self._baseline = 0.0
+        self._baseline_value = 0.0
+        self._n = 0
+
+        # TODO: this code is redundant with initializer code
+        self._dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=GlobalParams().get('dv_discount_factor'),
+            trace_decay=GlobalParams().get('dv_decay_rate'))
+
+        self._action_trace: AccumulatingTrace[Action] = AccumulatingTrace(
+            decay_rate=GlobalParams().get('habituation_decay_rate'))
 
 
 class SchemaStats:
@@ -1685,8 +1717,8 @@ class Schema(Observer, Observable, UniqueIdMixin):
         if self._is_primitive or is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
             self._extended_result.register(self)
 
-        self._avg_duration = 1.0
-        self._cost = 0.0
+        self._avg_duration: Optional[float] = None
+        self._cost: Optional[float] = 1.0
 
     def __eq__(self, other) -> bool:
         if isinstance(other, Schema):
@@ -1775,7 +1807,11 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         :return:
         """
-        return self._avg_duration
+        return np.nan if self._avg_duration is None else self._avg_duration
+
+    @avg_duration.setter
+    def avg_duration(self, value: float) -> None:
+        self._avg_duration = value
 
     # TODO: Cost still needs to be implemented; however, the specifics of its update are still unclear to me. Based
     # TODO: on Drescher's description (see Drescher 1991, p. 54) it seems like a WORST CASE activation result. This
@@ -1793,6 +1829,10 @@ class Schema(Observer, Observable, UniqueIdMixin):
         :return: a float quantifying the schema's cost
         """
         return self._cost
+
+    @cost.setter
+    def cost(self, value: float) -> None:
+        self._cost = value
 
     def is_applicable(self, state: State, **kwargs) -> bool:
         """ Returns whether this schema is "applicable" in the given State.
@@ -1829,7 +1869,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
          an activated schema. Marginal attribution can thereby detect results caused by the goal state, even if the
          goal state obtains due to external events.” (See Drescher, 1991, p. 91)
 
-        :param schema: the selected schema
+        :param schema: the selected schema (explicitly activated)
         :param state: the state RESULTING from the last selected action
         :param applicable: whether this schema was applicable during the last selection event
 
@@ -1881,11 +1921,13 @@ class Schema(Observer, Observable, UniqueIdMixin):
     # TODO: may need to add a parameter for duration of last execution to update average duration.
     def update(self,
                activated: bool,
+               succeeded: bool,
                s_prev: Optional[State],
                s_curr: State,
                new: Collection[Item] = None,
                lost: Collection[Item] = None,
                explained: Optional[bool] = None,
+               duration: float = 1.0,
                count=1) -> None:
         """
 
@@ -1893,21 +1935,26 @@ class Schema(Observer, Observable, UniqueIdMixin):
             context and/or result. These will be received via schema's 'receive' method.
 
         :param activated: True if this schema was implicitly or explicitly activated
+        :param succeeded: True if the schema's result was achieved; False otherwise.
         :param s_prev: the previous state
         :param s_curr: the current state
         :param new: the state elements in current but not previous state
         :param lost: the state elements in previous but not current state
         :param explained: True if a reliable schema was activated that "explained" the last state transition
+        :param duration: the elapsed time between the schema's selection and its completion
         :param count: the number of updates to perform
 
         :return: None
         """
 
-        # True if this schema was activated AND its result obtained; False otherwise
-        success: bool = activated and self.result.is_satisfied(s_curr)
-
         # update top-level stats
-        self._stats.update(activated=activated, success=success, count=count)
+        self._stats.update(activated=activated, success=succeeded, count=count)
+
+        # update average duration
+        if self.avg_duration is np.nan:
+            self.avg_duration = duration
+        else:
+            self.avg_duration += (1.0 / float(self._stats.n)) * (duration - self.avg_duration)
 
         # update extended result stats
         if self._extended_result:
@@ -1918,7 +1965,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         # update extended context stats
         if all((self._extended_context, activated, s_prev)):
-            self._extended_context.update_all(state=s_prev, success=success, count=count)
+            self._extended_context.update_all(state=s_prev, success=succeeded, count=count)
 
     # invoked by a schema's extended context or extended result when a relevant item is discovered
     def receive(self, **kwargs) -> None:
@@ -2493,3 +2540,8 @@ def _(se: StateElement) -> float:
 @avg_accessible_value.register
 def _(item: Item) -> float:
     return item.avg_accessible_value
+
+
+# TODO: need to rename this. The name conflicts with many variable names.
+def value(o: Any) -> float:
+    return primitive_value(o) + delegated_value(o)

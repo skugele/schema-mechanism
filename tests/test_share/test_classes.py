@@ -10,6 +10,7 @@ from schema_mechanism.core import Item
 from schema_mechanism.core import Schema
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
+from schema_mechanism.modules import PendingDetails
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
@@ -162,7 +163,7 @@ class MockSchema(Schema):
 
 
 class MockSchemaSelection(SchemaSelection):
-    def __init__(self, pending_schemas: Optional[deque[Schema]] = None, **kwargs):
+    def __init__(self, pending_schemas: Optional[deque[PendingDetails]] = None, **kwargs):
         super().__init__(**kwargs)
 
-        self._pending_schemas = pending_schemas
+        self._pending_details = pending_schemas

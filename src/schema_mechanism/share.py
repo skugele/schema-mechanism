@@ -144,6 +144,11 @@ class GlobalParams(metaclass=Singleton):
 
         # used by backward_chains (supports composite action)
         self._defaults['backward_chains_max_len'] = 5
+        self._defaults['backward_chains_update_frequency'] = 0.01
+
+        # composite actions are created for novel result states that have values that are greater than the baseline
+        # value by AT LEAST this amount
+        self._defaults['composite_action_min_baseline_advantage'] = 1.0
 
         # used by reliability_values
         self._defaults['max_reliability_penalty'] = 10.0
@@ -189,6 +194,8 @@ class GlobalParams(metaclass=Singleton):
         self._validators['dv_discount_factor'] = RangeValidator(0.0, 1.0)
         self._validators['dv_decay_rate'] = RangeValidator(0.0, 1.0)
         self._validators['backward_chains_max_len'] = MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
+        self._validators['backward_chains_update_frequency'] = RangeValidator(0.0, 1.0)
+        self._validators['composite_action_min_baseline_advantage'] = TypeValidator([float])
 
         # TODO: is there any way to do validators for:
         # TODO:    correlation_test,

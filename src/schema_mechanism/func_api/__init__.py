@@ -110,6 +110,7 @@ def primitive_schemas(actions_: Collection[Action]) -> tuple[Schema]:
 
 def update_schema(schema: Schema,
                   activated: bool,
+                  succeeded: bool,
                   s_prev: Optional[State],
                   s_curr: State,
                   explained: Optional[bool] = None,
@@ -121,11 +122,13 @@ def update_schema(schema: Schema,
     :param s_prev: a collection containing the previous state elements
     :param s_curr: a collection containing the current state elements
     :param explained: True if a reliable schema was activated that "explained" the last state transition
+    :param succeeded: True if the schema was successful in obtaining its result when activated; False otherwise.
     :param count: the number of times to perform this update
 
     :return: the updated schema
     """
     schema.update(activated=activated,
+                  succeeded=succeeded,
                   s_prev=s_prev,
                   s_curr=s_curr,
                   new=new_state(s_prev, s_curr),
