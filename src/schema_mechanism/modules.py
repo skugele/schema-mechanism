@@ -25,7 +25,9 @@ from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaTree
+from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import delegated_value
@@ -257,6 +259,12 @@ class SchemaMemory(Observer):
         if schema.is_primitive() and (spin_off_type is Schema.SpinOffType.RESULT):
             for spin_off in spin_offs:
                 if self.is_novel_result(spin_off.result):
+
+                    # TODO: There must be a better way to limit composite action creation to high value states. This
+                    # TODO: solution is problematic because the result state's value will fluctuate over time, and
+                    # TODO: this will permanently prevent the creation of a composite action if the result state
+                    # TODO: is discovered very early. Note that allowing composite actions for all result states is
+                    # TODO: not tractable for most environments.
                     min_adv = GlobalParams().get('composite_action_min_baseline_advantage')
                     if value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
                         continue
@@ -270,7 +278,7 @@ class SchemaMemory(Observer):
                     GlobalStats().action_trace.add([ca])
 
                     # adds a new bare schema for the new composite action
-                    ca_schema = Schema(action=ca)
+                    ca_schema = SchemaPool().get(SchemaUniqueKey(action=ca))
                     ca_schema.register(self)
 
                     self._schema_tree.add_primitives([ca_schema])
@@ -624,7 +632,7 @@ class ExploratoryEvaluationStrategy:
 
         debug(f'epsilon = {self._eps_greedy.epsilon}')
 
-        return hab_v
+        return hab_v + eps_v
 
 
 class PendingStatus(Enum):
@@ -870,7 +878,7 @@ class SchemaMechanism:
         self._primitive_actions = primitive_actions
         self._primitive_items = primitive_items
 
-        self._primitive_schemas = [Schema(action=a) for a in self._primitive_actions]
+        self._primitive_schemas = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in self._primitive_actions]
 
         self._schema_memory = SchemaMemory(self._primitive_schemas)
         self._schema_selection = SchemaSelection(
@@ -952,7 +960,7 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
             if len(new_context) > 1:
                 _ = ItemPool().get(new_context, item_type=CompositeItem)
 
-        return Schema(action=schema.action, context=new_context, result=schema.result)
+        return SchemaPool().get(SchemaUniqueKey(action=schema.action, context=new_context, result=schema.result))
 
     elif Schema.SpinOffType.RESULT == spin_off_type:
         if not is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) and not schema.is_primitive():
@@ -964,7 +972,7 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
             else Assertion.replicate_with(old=schema.result, new=assertion)
         )
 
-        return Schema(action=schema.action, context=schema.context, result=new_result)
+        return SchemaPool().get(SchemaUniqueKey(action=schema.action, context=schema.context, result=new_result))
 
     else:
         raise ValueError(f'Unsupported spin-off mode: {spin_off_type}')

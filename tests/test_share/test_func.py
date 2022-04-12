@@ -5,12 +5,14 @@ from typing import Any
 from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
+from schema_mechanism.core import SchemaPool
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import Verbosity
 
 
 def common_test_setup():
     ItemPool().clear()
+    SchemaPool().clear()
 
     GlobalParams().reset()
     GlobalParams().set('verbosity', Verbosity.WARN)

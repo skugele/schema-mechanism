@@ -14,6 +14,7 @@ from enum import unique
 from functools import singledispatch
 from functools import singledispatchmethod
 from typing import Any
+from typing import NamedTuple
 from typing import Optional
 from typing import Type
 from typing import Union
@@ -41,6 +42,7 @@ from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
 from schema_mechanism.util import ReplacingTrace
 from schema_mechanism.util import Singleton
+from schema_mechanism.util import Trace
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import pairwise
 from schema_mechanism.util import repr_str
@@ -246,7 +248,7 @@ class EligibilityTraceDelegatedValueHelper:
         self._discount_factor = value
 
     @property
-    def eligibility_trace(self) -> AccumulatingTrace:
+    def eligibility_trace(self) -> Trace:
         return self._eligibility_trace
 
     def delegated_value(self, item: Item) -> float:
@@ -453,7 +455,7 @@ class GlobalStats(metaclass=Singleton):
         return self._dv_helper
 
     @property
-    def action_trace(self) -> AccumulatingTrace[Action]:
+    def action_trace(self) -> Trace[Action]:
         return self._action_trace
 
     @property
@@ -817,7 +819,7 @@ class ERItemStats(ItemStats):
             'n_on_and_activated': f'{self.n_on_and_activated:,}',
             'n_on_and_not_activated': f'{self.n_on_and_not_activated:,}',
             'n_off_and_activated': f'{self.n_off_and_activated:,}',
-            '_n_off_and_not_activated': f'{self._n_off_and_not_activated:,}',
+            'n_off_and_not_activated': f'{self._n_off_and_not_activated:,}',
         }
 
         return repr_str(self, attr_values)
@@ -1986,6 +1988,59 @@ class Schema(Observer, Observable, UniqueIdMixin):
         self.notify_all(source=self, spin_off_type=spin_off_type, relevant_items=relevant_items)
 
 
+class SchemaUniqueKey(NamedTuple):
+    action: Action
+    context: Optional[StateAssertion] = None
+    result: Optional[StateAssertion] = None
+
+
+class SchemaPool(metaclass=Singleton):
+    """
+    Implements a flyweight design pattern for Schema types.
+    """
+    _schemas: dict[SchemaUniqueKey, Schema] = dict()
+
+    def __contains__(self, key: SchemaUniqueKey) -> bool:
+        return key in SchemaPool._schemas
+
+    def __len__(self) -> int:
+        return len(SchemaPool._schemas)
+
+    def __iter__(self) -> Iterator[Schema]:
+        yield from SchemaPool._schemas.values()
+
+    @property
+    def schemas(self) -> Collection[Schema]:
+        return SchemaPool._schemas.values()
+
+    def clear(self):
+        SchemaPool._schemas.clear()
+
+    def get(self, key: SchemaUniqueKey, /, *, schema_type: Optional[Type[Schema]] = None, **kwargs) -> Optional[Schema]:
+        read_only = kwargs.get('read_only', False)
+        schema_type = schema_type or Schema
+
+        obj = self._schemas.get(key)
+
+        # create new schema and add to pool if not found and not read_only
+        if not obj and not read_only:
+            obj = self._schemas[key] = schema_type(context=key.context, action=key.action, result=key.result, **kwargs)
+
+        return obj
+
+
+class ReadOnlySchemaPool(SchemaPool):
+    def __init__(self):
+        self._pool = SchemaPool()
+
+    def get(self, key: SchemaUniqueKey, /, *, schema_type: Optional[Type[Schema]] = None, **kwargs) -> Optional[Schema]:
+        kwargs['read_only'] = True
+        return self._pool.get(key, schema_type=schema_type, **kwargs)
+
+    def clear(self):
+        raise NotImplementedError('ReadOnlySchemaPool does not support clear operation.')
+
+
 def is_reliable(schema: Schema, threshold: Optional[float] = None) -> bool:
     threshold = threshold or GlobalParams().get('reliability_threshold')
     return schema.reliability != np.NAN and schema.reliability >= threshold
@@ -2368,7 +2423,7 @@ class ReadOnlyItemPool(ItemPool):
     def __init__(self):
         self._pool = ItemPool()
 
-    def get(self, source: Any, item_type: Optional[Type[Item]] = None, **kwargs) -> Item:
+    def get(self, source: Any, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
         kwargs['read_only'] = True
         return self._pool.get(source, item_type=item_type, **kwargs)
 

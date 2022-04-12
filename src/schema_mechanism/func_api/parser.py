@@ -10,8 +10,9 @@ from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaPool
+from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import StateAssertion
-from schema_mechanism.share import GlobalParams
 
 # Lark-based parser grammar (see https://lark-parser.readthedocs.io/en/latest/) used for parsing string representations
 # into core objects (e.g., items, assertions, and schemas).
@@ -52,12 +53,10 @@ class ObjectTransformer(Transformer):
 
     def item(self, tokens: list[Any]) -> Item:
         (state_element,) = tokens
-        # self.opt_kwargs['item_type'] = GlobalParams().get('item_type') or SymbolicItem
         return ItemPool().get(str(state_element), **self.opt_kwargs)
 
     def composite_item(self, tokens: list[Any]) -> Item:
         (state_assertion,) = tokens
-        # self.opt_kwargs['item_type'] = GlobalParams().get('composite_item_type') or CompositeItem
         return ItemPool().get(state_assertion, **self.opt_kwargs)
 
     def item_assertion(self, tokens: list[Any]) -> ItemAssertion:
@@ -69,22 +68,13 @@ class ObjectTransformer(Transformer):
 
     def schema_with_primitive_action(self, tokens: list[Any]) -> Schema:
         (context, primitive_action, result) = tokens
-
-        # TODO: the mixture of the ItemPool "factory" and this direct call to the schema initialize is strange. I
-        #       should consider creating a schema factory...
-        schema_type = GlobalParams().get('schema_type') or Schema
-        return schema_type(context=context, action=primitive_action, result=result, **self.opt_kwargs)
+        key = SchemaUniqueKey(context=context, action=primitive_action, result=result)
+        return SchemaPool().get(key, **self.opt_kwargs)
 
     def schema_with_composite_action(self, tokens: list[Any]) -> Schema:
         (context, composite_action, result) = tokens
-        schema_type = GlobalParams().get('schema_type') or Schema
-
-        # TODO: the mixture of the ItemPool "factory" and this direct call to the schema initialize is strange. I
-        #       should consider creating a schema factory...
-        return schema_type(context=context,
-                           action=composite_action,
-                           result=result,
-                           **self.opt_kwargs)
+        key = SchemaUniqueKey(context=context, action=composite_action, result=result)
+        return SchemaPool().get(key, **self.opt_kwargs)
 
     def primitive_action(self, tokens: list[Any]) -> Action:
         (action,) = tokens

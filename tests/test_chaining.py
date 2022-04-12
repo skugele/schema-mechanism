@@ -7,7 +7,6 @@ from schema_mechanism.core import SchemaTree
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import SchemaMemory
-from schema_mechanism.share import GlobalParams
 from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
 
@@ -16,22 +15,19 @@ class TestBackwardChaining(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        # allows direct setting of reliability (only reliable schemas are eligible for chaining)
-        GlobalParams().set('schema_type', MockSchema)
+        self.s1 = sym_schema('/A1/', schema_type=MockSchema, reliability=0.0)
+        self.s2 = sym_schema('/A2/', schema_type=MockSchema, reliability=0.0)
+        self.s3 = sym_schema('/A3/', schema_type=MockSchema, reliability=0.0)
 
-        self.s1 = sym_schema('/A1/', reliability=0.0)
-        self.s2 = sym_schema('/A2/', reliability=0.0)
-        self.s3 = sym_schema('/A3/', reliability=0.0)
+        self.s1_b = sym_schema('/A1/B,', schema_type=MockSchema, reliability=0.25)
+        self.s2_c = sym_schema('/A2/C,', schema_type=MockSchema, reliability=0.25)
+        self.s3_d = sym_schema('/A3/D,', schema_type=MockSchema, reliability=0.25)
+        self.s3_e = sym_schema('/A3/E,', schema_type=MockSchema, reliability=0.25)
 
-        self.s1_b = sym_schema('/A1/B,', reliability=0.25)
-        self.s2_c = sym_schema('/A2/C,', reliability=0.25)
-        self.s3_d = sym_schema('/A3/D,', reliability=0.25)
-        self.s3_e = sym_schema('/A3/E,', reliability=0.25)
-
-        self.s1_a_b = sym_schema('A,/A1/B,', reliability=1.0)
-        self.s2_b_c = sym_schema('B,/A2/C,', reliability=1.0)
-        self.s3_c_d = sym_schema('C,/A3/D,', reliability=1.0)
-        self.s3_d_e = sym_schema('D,/A3/E,', reliability=1.0)
+        self.s1_a_b = sym_schema('A,/A1/B,', schema_type=MockSchema, reliability=1.0)
+        self.s2_b_c = sym_schema('B,/A2/C,', schema_type=MockSchema, reliability=1.0)
+        self.s3_c_d = sym_schema('C,/A3/D,', schema_type=MockSchema, reliability=1.0)
+        self.s3_d_e = sym_schema('D,/A3/E,', schema_type=MockSchema, reliability=1.0)
 
         self.tree = SchemaTree(primitives=[self.s1, self.s2, self.s3])
 
@@ -80,8 +76,8 @@ class TestBackwardChaining(unittest.TestCase):
 
     def test_multi_chain(self):
         # adds a second reliable chain from C to D
-        s2_d = sym_schema('/A2/D,', reliability=0.25)
-        s2_c_d = sym_schema('C,/A2/D,', reliability=1.0)
+        s2_d = sym_schema('/A2/D,', schema_type=MockSchema, reliability=0.25)
+        s2_c_d = sym_schema('C,/A2/D,', schema_type=MockSchema, reliability=1.0)
 
         self.tree.add_result_spin_offs(self.s2, [s2_d])
         self.tree.add_context_spin_offs(s2_d, [s2_c_d])
@@ -116,8 +112,8 @@ class TestBackwardChaining(unittest.TestCase):
 
     def test_with_loop_1(self):
         # adds a second reliable chain from C to D
-        s2_a = sym_schema('/A2/A,', reliability=0.25)
-        s2_e_a = sym_schema('E,/A2/A,', reliability=1.0)
+        s2_a = sym_schema('/A2/A,', schema_type=MockSchema, reliability=0.25)
+        s2_e_a = sym_schema('E,/A2/A,', schema_type=MockSchema, reliability=1.0)
 
         self.tree.add_result_spin_offs(self.s2, [s2_a])
         self.tree.add_context_spin_offs(s2_a, [s2_e_a])
@@ -144,8 +140,8 @@ class TestBackwardChaining(unittest.TestCase):
 
     def test_with_loop_2(self):
         # adds a second reliable chain from B to A creating a loop B -> A -> B
-        s1_b = sym_schema('/A1/B,', reliability=0.25)
-        s1_b_a = sym_schema('B,/A1/A,', reliability=1.0)
+        s1_b = sym_schema('/A1/B,', schema_type=MockSchema, reliability=0.25)
+        s1_b_a = sym_schema('B,/A1/A,', schema_type=MockSchema, reliability=1.0)
 
         self.tree.add_result_spin_offs(self.s1, [s1_b])
         self.tree.add_context_spin_offs(s1_b, [s1_b_a])
@@ -159,7 +155,7 @@ class TestBackwardChaining(unittest.TestCase):
         self.assertListEqual(expected_chain, list(chains))
 
     def test_chains_with_reliable_no_context_schema(self):
-        s2_e = sym_schema('/A2/E,', reliability=1.0)
+        s2_e = sym_schema('/A2/E,', schema_type=MockSchema, reliability=1.0)
         self.tree.add_result_spin_offs(self.s2, [s2_e])
 
         expected_chains = [
@@ -170,7 +166,7 @@ class TestBackwardChaining(unittest.TestCase):
         self.assertSetEqual(set(expected_chains), set(chains))
 
     def test_chains_with_identical_context_and_goal_schema(self):
-        s2_e = sym_schema('E,/A2/E,', reliability=1.0)
+        s2_e = sym_schema('E,/A2/E,', schema_type=MockSchema, reliability=1.0)
 
         self.tree.add_result_spin_offs(self.s2, [s2_e])
 
@@ -181,9 +177,9 @@ class TestBackwardChaining(unittest.TestCase):
         self.assertSetEqual(set(expected_chains), set(chains))
 
     def test_chains_with_composite_items(self):
-        s3_cd_e = sym_schema('C,D,/A3/E,', reliability=1.0)
-        s1_cd = sym_schema('/A1/(C,D),', reliability=1.0)
-        s1_b_cd = sym_schema('B,/A1/(C,D),', reliability=1.0)
+        s3_cd_e = sym_schema('C,D,/A3/E,', schema_type=MockSchema, reliability=1.0)
+        s1_cd = sym_schema('/A1/(C,D),', schema_type=MockSchema, reliability=1.0)
+        s1_b_cd = sym_schema('B,/A1/(C,D),', schema_type=MockSchema, reliability=1.0)
 
         self.tree.add_context_spin_offs(self.s3_d_e, [s3_cd_e])
         self.tree.add_result_spin_offs(self.s1, [s1_cd])
@@ -218,7 +214,7 @@ class TestBackwardChaining(unittest.TestCase):
         self.assertListEqual(expected_chain, list(chains))
 
     def test_chains_with_negated_asserts(self):
-        s1_not_c_b = sym_schema('~C,/A1/B,', reliability=1.0)
+        s1_not_c_b = sym_schema('~C,/A1/B,', schema_type=MockSchema, reliability=1.0)
 
         self.tree.add_context_spin_offs(self.s1_b, [s1_not_c_b])
 
@@ -247,8 +243,8 @@ class TestBackwardChaining(unittest.TestCase):
         self.assertSetEqual(set(expected_chains), set(chains))
 
         # test: negated context and result
-        s2_not_c = sym_schema('/A2/~C,', reliability=0.25)
-        s2_e_not_c = sym_schema('E,/A2/~C,', reliability=1.0)
+        s2_not_c = sym_schema('/A2/~C,', schema_type=MockSchema, reliability=0.25)
+        s2_e_not_c = sym_schema('E,/A2/~C,', schema_type=MockSchema, reliability=1.0)
 
         self.tree.add_result_spin_offs(self.s2, [s2_not_c])
         self.tree.add_context_spin_offs(s2_not_c, [s2_e_not_c])
@@ -314,7 +310,7 @@ class TestBackwardChaining(unittest.TestCase):
         self.tree.add_result_spin_offs(se, spin_offs=[se_e])
 
         # add context spin-offs
-        se_d_e = sym_schema('D,/E,/E,', reliability=1.0)
+        se_d_e = sym_schema('D,/E,/E,', schema_type=MockSchema, reliability=1.0)
         self.tree.add_context_spin_offs(se_e, spin_offs=[se_d_e])
 
         chains = self.sm.backward_chains(goal_state=sym_state_assert('E,'))

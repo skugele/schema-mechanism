@@ -12,7 +12,7 @@ from schema_mechanism.func_api import sym_state_assert
 from test_share.test_func import common_test_setup
 
 
-class TestSharedItemPool(TestCase):
+class TestItemPool(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 

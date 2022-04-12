@@ -24,40 +24,37 @@ class TestShared(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        # allows direct setting of reliability (only reliable schemas are eligible for chaining)
-        GlobalParams().set('schema_type', MockSchema)
-
         # setting learning rate to 1.0 to simplify testing
         GlobalParams().set('learning_rate', 1.0)
 
         # construct a SchemaTree for testing proximity to goal states
-        self.s1 = sym_schema('/A1/', reliability=0.0, avg_duration=np.inf)
-        self.s2 = sym_schema('/A2/', reliability=0.0, avg_duration=np.inf)
-        self.s3 = sym_schema('/A3/', reliability=0.0, avg_duration=np.inf)
-        self.s4 = sym_schema('/A4/', reliability=0.0, avg_duration=np.inf)
+        self.s1 = sym_schema('/A1/', schema_type=MockSchema, reliability=0.0, avg_duration=np.inf)
+        self.s2 = sym_schema('/A2/', schema_type=MockSchema, reliability=0.0, avg_duration=np.inf)
+        self.s3 = sym_schema('/A3/', schema_type=MockSchema, reliability=0.0, avg_duration=np.inf)
+        self.s4 = sym_schema('/A4/', schema_type=MockSchema, reliability=0.0, avg_duration=np.inf)
 
-        self.s1_b = sym_schema('/A1/B,', reliability=0.25, avg_duration=np.inf)
-        self.s1_d = sym_schema('/A1/D,', reliability=0.25, avg_duration=np.inf)
-        self.s2_c = sym_schema('/A2/C,', reliability=0.25, avg_duration=np.inf)
-        self.s3_d = sym_schema('/A3/D,', reliability=0.25, avg_duration=np.inf)
-        self.s3_e = sym_schema('/A3/E,', reliability=0.25, avg_duration=np.inf)
-        self.s4_k = sym_schema('/A4/K,', reliability=0.25, avg_duration=np.inf)
-        self.s4_l = sym_schema('/A4/L,', reliability=0.25, avg_duration=np.inf)
+        self.s1_b = sym_schema('/A1/B,', schema_type=MockSchema, reliability=0.25, avg_duration=np.inf)
+        self.s1_d = sym_schema('/A1/D,', schema_type=MockSchema, reliability=0.25, avg_duration=np.inf)
+        self.s2_c = sym_schema('/A2/C,', schema_type=MockSchema, reliability=0.25, avg_duration=np.inf)
+        self.s3_d = sym_schema('/A3/D,', schema_type=MockSchema, reliability=0.25, avg_duration=np.inf)
+        self.s3_e = sym_schema('/A3/E,', schema_type=MockSchema, reliability=0.25, avg_duration=np.inf)
+        self.s4_k = sym_schema('/A4/K,', schema_type=MockSchema, reliability=0.25, avg_duration=np.inf)
+        self.s4_l = sym_schema('/A4/L,', schema_type=MockSchema, reliability=0.25, avg_duration=np.inf)
 
-        self.s1_a_b = sym_schema('A,/A1/B,', reliability=1.0, avg_duration=1.0)
+        self.s1_a_b = sym_schema('A,/A1/B,', schema_type=MockSchema, reliability=1.0, avg_duration=1.0)
 
-        self.s2_b_c = sym_schema('B,/A2/C,', reliability=1.0, avg_duration=4.5)
-        self.s3_b_c = sym_schema('B,/A3/C,', reliability=1.0, avg_duration=0.5)
+        self.s2_b_c = sym_schema('B,/A2/C,', schema_type=MockSchema, reliability=1.0, avg_duration=4.5)
+        self.s3_b_c = sym_schema('B,/A3/C,', schema_type=MockSchema, reliability=1.0, avg_duration=0.5)
 
-        self.s1_c_d = sym_schema('C,/A1/D,', reliability=1.0, avg_duration=0.5)
-        self.s3_c_d = sym_schema('C,/A3/D,', reliability=1.0, avg_duration=3.0)
+        self.s1_c_d = sym_schema('C,/A1/D,', schema_type=MockSchema, reliability=1.0, avg_duration=0.5)
+        self.s3_c_d = sym_schema('C,/A3/D,', schema_type=MockSchema, reliability=1.0, avg_duration=3.0)
 
-        self.s4_d_k = sym_schema('D,/A4/K,', reliability=1.0, avg_duration=1.0)
-        self.s4_k_l = sym_schema('K,/A4/L,', reliability=1.0, avg_duration=1.0)
-        self.s3_l_e = sym_schema('L,/A3/E,', reliability=1.0, avg_duration=3.0)
+        self.s4_d_k = sym_schema('D,/A4/K,', schema_type=MockSchema, reliability=1.0, avg_duration=1.0)
+        self.s4_k_l = sym_schema('K,/A4/L,', schema_type=MockSchema, reliability=1.0, avg_duration=1.0)
+        self.s3_l_e = sym_schema('L,/A3/E,', schema_type=MockSchema, reliability=1.0, avg_duration=3.0)
 
-        self.s1_b_e = sym_schema('D,/A1/E,', reliability=1.0, avg_duration=10.0)
-        self.s3_d_e = sym_schema('D,/A3/E,', reliability=1.0, avg_duration=4.5)
+        self.s1_b_e = sym_schema('D,/A1/E,', schema_type=MockSchema, reliability=1.0, avg_duration=10.0)
+        self.s3_d_e = sym_schema('D,/A3/E,', schema_type=MockSchema, reliability=1.0, avg_duration=4.5)
 
         self.tree = SchemaTree(primitives=[self.s1, self.s2, self.s3, self.s4])
 
@@ -184,10 +181,10 @@ class TestCompositeAction(TestShared):
     #     s1 = sym_schema('M1,P/M1,/P,')
     #
     #     # s1's components
-    #     s1_c1 = sym_schema('/sit[M1]/M1,', reliability=1.0)
-    #     s1_c2 = sym_schema('/M1,P/M1,P', reliability=1.0)
-    #     s1_c3 = sym_schema('S,/sit[M1]/M1,', reliability=1.0)
-    #     s1_c4 = sym_schema('/stand/S,', reliability=1.0)
+    #     s1_c1 = sym_schema('/sit[M1]/M1,', schema_type=MockSchema, reliability=1.0)
+    #     s1_c2 = sym_schema('/M1,P/M1,P', schema_type=MockSchema, reliability=1.0)
+    #     s1_c3 = sym_schema('S,/sit[M1]/M1,', schema_type=MockSchema, reliability=1.0)
+    #     s1_c4 = sym_schema('/stand/S,', schema_type=MockSchema, reliability=1.0)
     #
     #     chains = [
     #         Chain([s1_c1]),
@@ -202,11 +199,11 @@ class TestCompositeAction(TestShared):
     #     s2 = sym_schema('/M1,P/M1,P')
     #
     #     # s2's components
-    #     s2_c1 = sym_schema('/stand/S,', reliability=1.0)
-    #     s2_c2 = sym_schema('M1,/P,/M1,P', reliability=1.0)
-    #     s2_c3 = sym_schema('/sit[M1]/M1,', reliability=1.0)
-    #     s2_c4 = sym_schema('S,/sit[M1]/M1,', reliability=1.0)
-    #     s2_c5 = sym_schema('M1,/deposit/M1,P', reliability=1.0)
+    #     s2_c1 = sym_schema('/stand/S,', schema_type=MockSchema, reliability=1.0)
+    #     s2_c2 = sym_schema('M1,/P,/M1,P', schema_type=MockSchema, reliability=1.0)
+    #     s2_c3 = sym_schema('/sit[M1]/M1,', schema_type=MockSchema, reliability=1.0)
+    #     s2_c4 = sym_schema('S,/sit[M1]/M1,', schema_type=MockSchema, reliability=1.0)
+    #     s2_c5 = sym_schema('M1,/deposit/M1,P', schema_type=MockSchema, reliability=1.0)
     #
     #     chains = [
     #         Chain([s2_c3, s2_c5]),
@@ -219,7 +216,7 @@ class TestCompositeAction(TestShared):
     #     s3 = sym_schema('M1,/P,/M1,P')
     #
     #     # s3's components
-    #     s3_c1 = sym_schema('M1,P/M1,/P,', reliability=1.0)
+    #     s3_c1 = sym_schema('M1,P/M1,/P,', schema_type=MockSchema, reliability=1.0)
     #
     #     chains = [
     #         Chain([s3_c1]),

@@ -1,9 +1,9 @@
 import unittest
 from collections import Counter
 
+from examples.multi_arm_bandits import BanditEnvironment
+from examples.multi_arm_bandits import Machine
 from schema_mechanism.core import Action
-from schema_mechanism.examples.multi_arm_bandits import BanditEnvironment
-from schema_mechanism.examples.multi_arm_bandits import Machine
 from schema_mechanism.func_api import sym_state
 from test_share.test_func import common_test_setup
 

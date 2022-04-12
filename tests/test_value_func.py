@@ -270,22 +270,22 @@ class TestInstrumentalValues(unittest.TestCase):
         GlobalParams().set('learning_rate', 1.0)
 
         _ = [sym_item(str(i), primitive_value=0.0) for i in range(1, 6)]
-        goal = sym_item('6', primitive_value=100.0, avg_accessible_value=10.0)
+        goal = sym_item('6', item_type=MockSymbolicItem, primitive_value=100.0, avg_accessible_value=10.0)
 
         chain = Chain([
-            sym_schema('1,/A1/2,', cost=0.0, avg_duration=1.0),  # proximity = 1.0/5.0 = 0.2
-            sym_schema('2,/A2/3,', cost=0.0, avg_duration=1.0),  # proximity = 1.0/4.0 = 0.25
-            sym_schema('3,/A3/4,', cost=0.0, avg_duration=1.0),  # proximity = 1.0/3.0 = 0.333333
-            sym_schema('4,/A2/5,', cost=0.0, avg_duration=1.0),  # proximity = 1.0/2.0 = 0.5
-            sym_schema('5,/A4/6,', cost=0.0, avg_duration=1.0),  # proximity = 1.0
+            sym_schema('1,/A1/2,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/5.0 = 0.2
+            sym_schema('2,/A2/3,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/4.0 = 0.25
+            sym_schema('3,/A3/4,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/3.0 = 0.33
+            sym_schema('4,/A2/5,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/2.0 = 0.5
+            sym_schema('5,/A4/6,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0
         ])
 
         pending = sym_schema('/6,/')
         pending.action.controller.update([chain])
 
         non_components = [
-            sym_schema('/A1/', cost=0.0),
-            sym_schema('/A2/', cost=0.0),
+            sym_schema('/A1/', schema_type=MockSchema, cost=0.0),
+            sym_schema('/A2/', schema_type=MockSchema, cost=0.0),
         ]
         schemas = [*chain, *non_components]
 
@@ -304,22 +304,22 @@ class TestInstrumentalValues(unittest.TestCase):
         GlobalParams().set('learning_rate', 1.0)
 
         _ = [sym_item(str(i), primitive_value=0.0) for i in range(1, 6)]
-        goal = sym_item('6', primitive_value=100.0, avg_accessible_value=10.0)
+        goal = sym_item('6', item_type=MockSymbolicItem, primitive_value=100.0, avg_accessible_value=10.0)
 
         chain = Chain([
-            sym_schema('1,/A1/2,', cost=10.0, avg_duration=1.0),  # proximity = 1.0/5.0 = 0.2
-            sym_schema('2,/A2/3,', cost=10.0, avg_duration=1.0),  # proximity = 1.0/4.0 = 0.25
-            sym_schema('3,/A3/4,', cost=10.0, avg_duration=1.0),  # proximity = 1.0/3.0 = 0.333333
-            sym_schema('4,/A2/5,', cost=10.0, avg_duration=1.0),  # proximity = 1.0/2.0 = 0.5
-            sym_schema('5,/A4/6,', cost=10.0, avg_duration=1.0),  # proximity = 1.0
+            sym_schema('1,/A1/2,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/5.0 = 0.2
+            sym_schema('2,/A2/3,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/4.0 = 0.25
+            sym_schema('3,/A3/4,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/3.0 = 0.33
+            sym_schema('4,/A2/5,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/2.0 = 0.5
+            sym_schema('5,/A4/6,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0
         ])
 
         pending = sym_schema('/6,/')
         pending.action.controller.update([chain])
 
         non_components = [
-            sym_schema('/A1/', cost=0.0),
-            sym_schema('/A2/', cost=0.0),
+            sym_schema('/A1/', schema_type=MockSchema, cost=0.0),
+            sym_schema('/A2/', schema_type=MockSchema, cost=0.0),
         ]
         schemas = [*chain, *non_components]
 
@@ -344,10 +344,6 @@ class TestReliabilityValues(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        GlobalParams().set('item_type', MockSymbolicItem)
-        GlobalParams().set('composite_item_type', MockCompositeItem)
-        GlobalParams().set('schema_type', MockSchema)
-
     def test_no_schemas(self):
         # test: should return an empty numpy array if no schemas provided and no pending
         result = reliability_values(schemas=[], pending=None)
@@ -358,22 +354,23 @@ class TestReliabilityValues(unittest.TestCase):
         max_penalty = 10.0
 
         # test: a reliability of 1.0 should result in penalty of 0.0
-        schemas = [sym_schema('A,/A1/B,', reliability=1.0)]
+        schemas = [sym_schema('A,/A1/B,', schema_type=MockSchema, reliability=1.0)]
         rvs = reliability_values(schemas, max_penalty=max_penalty)
         self.assertTrue(np.array_equal(np.zeros_like(schemas), rvs))
 
         # test: a reliability of 0.0 should result in max penalty
-        schemas = [sym_schema('A,/A1/B,', reliability=0.0)]
+        schemas = [sym_schema('A,/A1/C,', schema_type=MockSchema, reliability=0.0)]
         rvs = reliability_values(schemas, max_penalty=max_penalty)
         self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
 
         # test: a reliability of nan should result in max penalty
-        schemas = [sym_schema('A,/A1/B,', reliability=np.nan)]
+        schemas = [sym_schema('A,/A1/D,', schema_type=MockSchema, reliability=np.nan)]
         rvs = reliability_values(schemas, max_penalty=max_penalty)
         self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
 
         # test: a reliability less than 1.0 should result in penalty greater than 0.0
-        schemas = [sym_schema('A,/A1/B,', reliability=rel) for rel in np.linspace(0.01, 1.0, endpoint=False)]
+        schemas = [sym_schema('A,/A1/E,', schema_type=MockSchema, reliability=rel)
+                   for rel in np.linspace(0.01, 1.0, endpoint=False)]
         rvs = reliability_values(schemas, max_penalty=max_penalty)
         self.assertTrue(all({-max_penalty < rv < 0.0 for rv in rvs}))
 

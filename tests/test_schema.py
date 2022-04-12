@@ -519,6 +519,7 @@ class TestSchema(TestCase):
         # TODO: This is WAY too slow...
         start = time()
         self.schema.update(activated=True,
+                           succeeded=True,
                            s_prev=s_prev,
                            s_curr=s_curr,
                            new=new,

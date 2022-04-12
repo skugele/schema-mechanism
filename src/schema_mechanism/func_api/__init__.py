@@ -11,7 +11,9 @@ from schema_mechanism.core import Item
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaTreeNode
+from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
@@ -105,7 +107,8 @@ def actions(n: Optional[int] = None, labels: Optional[list] = None) -> Collectio
 
 
 def primitive_schemas(actions_: Collection[Action]) -> tuple[Schema]:
-    return tuple([Schema(action=a) for a in actions_])
+    schemas: list[Schema] = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in actions_]
+    return tuple(schemas)
 
 
 def update_schema(schema: Schema,
