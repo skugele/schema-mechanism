@@ -470,7 +470,7 @@ class TestSchema(TestCase):
         self.assertEqual(1.0, self.schema.reliability)
 
     def test_notify_all(self):
-        GlobalParams().set('correlation_test', DrescherCorrelationTest())
+        GlobalParams().set('ext_context.correlation_test', DrescherCorrelationTest())
 
         self.schema.notify_all = MagicMock()
 

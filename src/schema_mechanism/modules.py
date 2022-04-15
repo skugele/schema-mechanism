@@ -173,8 +173,8 @@ class SchemaMemory(Observer):
         # update composite action controllers
         controllers = CompositeAction.all_satisfied_by(result_state)
         for c in controllers:
-            if rng().uniform(0.0, 1.0) < GlobalParams().get('backward_chains_update_frequency'):
-                chains = self.backward_chains(c.goal_state, max_len=GlobalParams().get('backward_chains_max_len'))
+            if rng().uniform(0.0, 1.0) < GlobalParams().get('backward_chains.update_frequency'):
+                chains = self.backward_chains(c.goal_state, max_len=GlobalParams().get('backward_chains.max_len'))
                 c.update(chains)
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
@@ -250,38 +250,8 @@ class SchemaMemory(Observer):
 
         spin_offs = frozenset([create_spin_off(schema, spin_off_type, ia) for ia in relevant_items])
 
-        # "Whenever a bare schema spawns a spinoff schema, the mechanism determines whether the new schema's result is
-        #  novel, as opposed to its already appearing as the result component of some other schema. If the result is
-        #  novel, the schema mechanism defines a new composite action with that result as its goal state, it is the
-        #  action of achieving that result. The schema mechanism also constructs a bare schema which has that action;
-        #  that schema's extended result then can discover effects of achieving the action's goal state"
-        #      (See Drescher 1991, p. 90)
         if schema.is_primitive() and (spin_off_type is Schema.SpinOffType.RESULT):
-            for spin_off in spin_offs:
-                if self.is_novel_result(spin_off.result):
-
-                    # TODO: There must be a better way to limit composite action creation to high value states. This
-                    # TODO: solution is problematic because the result state's value will fluctuate over time, and
-                    # TODO: this will permanently prevent the creation of a composite action if the result state
-                    # TODO: is discovered very early. Note that allowing composite actions for all result states is
-                    # TODO: not tractable for most environments.
-                    min_adv = GlobalParams().get('composite_action_min_baseline_advantage')
-                    if value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
-                        continue
-
-                    trace(f'Novel result detected: {spin_off.result}. Creating new composite action.')
-
-                    # creates and initializes a new composite action
-                    ca = CompositeAction(goal_state=spin_off.result)
-                    ca.controller.update(self.backward_chains(ca.goal_state))
-
-                    GlobalStats().action_trace.add([ca])
-
-                    # adds a new bare schema for the new composite action
-                    ca_schema = SchemaPool().get(SchemaUniqueKey(action=ca))
-                    ca_schema.register(self)
-
-                    self._schema_tree.add_primitives([ca_schema])
+            self._create_composite_action_for_novel_spin_off_results(spin_offs)
 
         # register listeners for spin-offs
         for s in spin_offs:
@@ -290,6 +260,49 @@ class SchemaMemory(Observer):
         debug(f'creating spin-offs for schema {str(schema)}: {",".join([str(s) for s in spin_offs])}')
 
         self._schema_tree.add(schema, spin_offs, spin_off_type)
+
+    def _create_composite_action_for_novel_spin_off_results(self, result_spin_offs: frozenset[Schema]) -> None:
+        """ Creates new composite actions and bare schemas for novel results of result spin-offs.
+
+        "Whenever a bare schema spawns a spinoff schema, the mechanism determines whether the new schema's result is
+         novel, as opposed to its already appearing as the result component of some other schema. If the result is
+         novel, the schema mechanism defines a new composite action with that result as its goal state, it is the
+         action of achieving that result. The schema mechanism also constructs a bare schema which has that action;
+         that schema's extended result then can discover effects of achieving the action's goal state"
+             (See Drescher 1991, p. 90)
+
+        :param result_spin_offs: a set of result spin-off schemas
+
+        :return: None
+        """
+        if not is_feature_enabled(SupportedFeature.COMPOSITE_ACTIONS):
+            return
+
+        for spin_off in result_spin_offs:
+            if self.is_novel_result(spin_off.result):
+
+                # TODO: There must be a better way to limit composite action creation to high value states. This
+                # TODO: solution is problematic because the result state's value will fluctuate over time, and
+                # TODO: this will permanently prevent the creation of a composite action if the result state
+                # TODO: is discovered very early. Note that allowing composite actions for all result states is
+                # TODO: not tractable for most environments.
+                min_adv = GlobalParams().get('composite_action_min_baseline_advantage')
+                if value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
+                    continue
+
+                trace(f'Novel result detected: {spin_off.result}. Creating new composite action.')
+
+                # creates and initializes a new composite action
+                ca = CompositeAction(goal_state=spin_off.result)
+                ca.controller.update(self.backward_chains(ca.goal_state))
+
+                GlobalStats().action_trace.add([ca])
+
+                # adds a new bare schema for the new composite action
+                ca_schema = SchemaPool().get(SchemaUniqueKey(action=ca))
+                ca_schema.register(self)
+
+                self._schema_tree.add_primitives([ca_schema])
 
 
 def schema_succeeded(applicable: bool, activated: bool, satisfied: bool) -> bool:
@@ -492,7 +505,8 @@ class GoalPursuitEvaluationStrategy:
         pv = primitive_values(schemas)
         dv = delegated_values(schemas)
         iv = instrumental_values(schemas, pending)
-        rv = reliability_values(schemas, pending, max_penalty=GlobalParams().get('max_reliability_penalty'))
+        rv = reliability_values(schemas, pending,
+                                max_penalty=GlobalParams().get('goal_pursuit_strategy.reliability.max_penalty'))
         fv = pending_focus_values(schemas, pending)
 
         trace('goal pursuit selection values:')
@@ -599,10 +613,10 @@ class ExploratoryEvaluationStrategy:
         # TODO: It seems that these will need to be parameterized and experimented with to determine the most beneficial
         # TODO: balance between them.
         self._eps_greedy = EpsilonGreedyExploratoryStrategy(
-            epsilon=GlobalParams().get('epsilon'),
+            epsilon=GlobalParams().get('random_exploratory_strategy.epsilon.initial'),
             decay_strategy=GeometricDecayStrategy(
-                rate=GlobalParams().get('epsilon_decay_rate'),
-                minimum=GlobalParams().get('epsilon_min')))
+                rate=GlobalParams().get('random_exploratory_strategy.epsilon.decay.rate'),
+                minimum=GlobalParams().get('random_exploratory_strategy.epsilon.decay.min')))
 
     def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema]) -> np.ndarray:
         # TODO: Add a mechanism for tracking recently activated schemas.
@@ -620,7 +634,8 @@ class ExploratoryEvaluationStrategy:
 
         hab_v = habituation_exploratory_value(schemas=schemas,
                                               trace=GlobalStats().action_trace,
-                                              multiplier=GlobalParams().get('habituation_multiplier'))
+                                              multiplier=GlobalParams().get(
+                                                  'habituation_exploratory_strategy.multiplier'))
 
         eps_v = self._eps_greedy(schemas=schemas)
 
@@ -888,8 +903,8 @@ class SchemaMechanism:
                 ExploratoryEvaluationStrategy(),
             ],
             weights=[
-                GlobalParams().get('goal_weight'),
-                GlobalParams().get('explore_weight'),
+                GlobalParams().get('schema_selection.weights.goal_weight'),
+                GlobalParams().get('schema_selection.weights.explore_weight'),
             ]
         )
 

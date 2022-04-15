@@ -13,6 +13,8 @@ from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import info
 from schema_mechanism.share import rng
+from schema_mechanism.stats import CorrelationOnEncounter
+from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.util import Observable
 
 
@@ -175,24 +177,38 @@ def run():
     args = parse_args()
 
     GlobalParams().set('composite_action_min_baseline_advantage', 25.0)
-    GlobalParams().set('dv_decay_rate', 0.2)
-    GlobalParams().set('dv_discount_factor', 0.7)
-    GlobalParams().set('epsilon_decay_rate', 0.99)
-    GlobalParams().set('epsilon_min', 0.1)
-    GlobalParams().set('explore_weight', 0.9)
-    GlobalParams().set('goal_weight', 0.1)
-    GlobalParams().set('habituation_decay_rate', 0.9)
-    GlobalParams().set('habituation_multiplier', 10.0)
+    GlobalParams().set('delegated_value_helper.decay_rate', 0.2)
+    GlobalParams().set('delegated_value_helper.discount_factor', 0.5)
+    GlobalParams().set('random_exploratory_strategy.epsilon.decay.rate', 0.9999)
+    GlobalParams().set('random_exploratory_strategy.epsilon.decay.min', 0.1)
+    GlobalParams().set('schema_selection.weights.explore_weight', 0.9)
+    GlobalParams().set('schema_selection.weights.goal_weight', 0.1)
+    GlobalParams().set('habituation_exploratory_strategy.decay.rate', 0.9)
+    GlobalParams().set('habituation_exploratory_strategy.multiplier', 10.0)
     GlobalParams().set('learning_rate', 0.05)
-    GlobalParams().set('max_reliability_penalty', 0.1)
+    GlobalParams().set('goal_pursuit_strategy.reliability.max_penalty', 10.0)
     GlobalParams().set('reliability_threshold', 0.7)
+
+    # item correlation test used for determining relevance of extended context items
+    GlobalParams().set('ext_context.correlation_test', FisherExactCorrelationTest)
+
+    # thresholds for determining the relevance of extended result items
+    #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
+    GlobalParams().set('ext_context.positive_correlation_threshold', 0.95)
+
+    # item correlation test used for determining relevance of extended result items
+    GlobalParams().set('ext_result.correlation_test', CorrelationOnEncounter)
+
+    # thresholds for determining the relevance of extended result items
+    #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
+    GlobalParams().set('ext_result.positive_correlation_threshold', 0.95)
 
     machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.n_machines)]
     env = BanditEnvironment(machines)
 
     # primitive items
     i_win = sym_item('W', primitive_value=100.0)
-    i_lose = sym_item('L', primitive_value=-20.0)
+    i_lose = sym_item('L', primitive_value=-100.0)
     i_pay = sym_item('P', primitive_value=-5.0)
 
     sm = SchemaMechanism(primitive_actions=env.actions,
@@ -215,8 +231,8 @@ def run():
             i = 0
             for pending_details in terminated_composite_schemas:
                 info(f'terminated schema [{i}]: {pending_details.schema}')
-                info(f'selection state [{i}]: {pending_details.selection_state}')
                 info(f'termination status [{i}]: {pending_details.status}')
+                info(f'selection state [{i}]: {pending_details.selection_state}')
                 info(f'duration [{i}]: {pending_details.duration}')
             i += 1
 

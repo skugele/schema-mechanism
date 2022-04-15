@@ -1,27 +1,13 @@
 from __future__ import annotations
 
-from abc import ABC
-from abc import abstractmethod
 from functools import cache
 from functools import lru_cache
 
 import numpy as np
 from scipy import stats as stats
 
-CorrelationTable = tuple[int, int, int, int]
-
-
-class ItemCorrelationTest(ABC):
-
-    @classmethod
-    @abstractmethod
-    def positive_corr_statistic(cls, table: CorrelationTable) -> float:
-        pass
-
-    @classmethod
-    @abstractmethod
-    def negative_corr_statistic(cls, table: CorrelationTable) -> float:
-        pass
+from schema_mechanism.protocols import CorrelationTable
+from schema_mechanism.protocols import ItemCorrelationTest
 
 
 class DrescherCorrelationTest(ItemCorrelationTest):
@@ -149,6 +135,30 @@ class FisherExactCorrelationTest(ItemCorrelationTest):
         array = np.array([table[0:2], table[2:]])
         _, p_value = stats.fisher_exact(array, alternative='less')
         return 1.0 - p_value
+
+
+class CorrelationOnEncounter(ItemCorrelationTest):
+    @classmethod
+    def positive_corr_statistic(cls, table: CorrelationTable) -> float:
+        """ Returns the part-to-part ratio Pr(A | X) : Pr(A | not X)
+
+        Input data should be an integer tuple of the form: [[N(A,X), N(not A,X)], [N(A,not X), N(not A,not X)]],
+        where N(A,X) is the number of events that are both A AND X
+
+        :return: the ratio as a float, or numpy.NAN if division by zero
+        """
+        return 1.0 if table[0] > 1 else 0.0
+
+    @classmethod
+    def negative_corr_statistic(cls, table: CorrelationTable) -> float:
+        """ Returns the part-to-part ratio Pr(not A | X) : Pr(not A | not X)
+
+        Input data should be an integer tuple of the form: [N(A,X), N(not A,X), N(A,not X), N(not A,not X)],
+        where N(A,X) is the number of events that are both A AND X
+
+        :return: the ratio as a float, or numpy.NAN if division by zero
+        """
+        return 1.0 if table[1] > 1 else 0.0
 
 
 def positive_correlation(table: CorrelationTable, test: ItemCorrelationTest, threshold: float) -> bool:

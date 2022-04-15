@@ -11,8 +11,10 @@ import numpy as np
 from schema_mechanism.core import Action
 from schema_mechanism.protocols import State
 
-dir_trans = str.maketrans('NSEW', '0123')
-dir_rev_trans = str.maketrans('0123', 'NSEW')
+DIRECTIONS = 'NSEW'
+
+dir_trans = str.maketrans(DIRECTIONS, '0123')
+dir_rev_trans = str.maketrans('0123', DIRECTIONS)
 
 dir_left_of = {'N': 'W', 'S': 'E', 'E': 'N', 'W': 'S'}
 dir_right_of = {'N': 'E', 'S': 'W', 'E': 'S', 'W': 'N'}
@@ -315,12 +317,12 @@ def get_agent_observation(world: WumpusWorld, agent: WumpusWorldAgent, wumpus: W
     ]
 
     # objects/entities in agent's cell
-    # for obj in world.cells[agent.position]:
-    #     state_elements.append(f'IN_CELL_WITH_AGENT={obj}')
+    for obj in world.cells[agent.position]:
+        state_elements.append(f'IN_CELL_WITH_AGENT={obj}')
 
     # objects/entities in front of agent
-    # for obj in world.cells[pos_in_front_of(agent)]:
-    #     state_elements.append(f'IN_FRONT_OF_AGENT={obj}')
+    for obj in world.cells[pos_in_front_of(agent)]:
+        state_elements.append(f'IN_FRONT_OF_AGENT={obj}')
 
     # other events
     ##############
@@ -405,6 +407,7 @@ class WumpusWorldMDP:
 
         if self.randomized_start:
             self.agent.position = choice(self.env.locations_of(FREE))
+            self.agent.direction = choice(DIRECTIONS)
 
         if self.wumpus_spec:
             self.wumpus = copy.deepcopy(self.wumpus_spec)

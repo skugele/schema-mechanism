@@ -30,7 +30,7 @@ class TestSchemaMemory(TestCase):
 
         # allows direct setting of reliability (only reliable schemas are eligible for chaining)
         GlobalParams().set('schema_type', MockSchema)
-        GlobalParams().set('backward_chains_update_frequency', 1.0)
+        GlobalParams().set('backward_chains.update_frequency', 1.0)
 
         # always create composite actions for novel results
         GlobalParams().set('composite_action_min_baseline_advantage', -np.inf)

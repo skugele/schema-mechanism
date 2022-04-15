@@ -19,9 +19,9 @@ class TestExtendedResult(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        GlobalParams().set('correlation_test', DrescherCorrelationTest())
-        GlobalParams().set('positive_correlation_threshold', 0.65)
-        GlobalParams().set('negative_correlation_threshold', 0.65)
+        GlobalParams().set('ext_result.correlation_test', DrescherCorrelationTest())
+        GlobalParams().set('ext_result.positive_correlation_threshold', 0.65)
+        GlobalParams().set('ext_result.negative_correlation_threshold', 0.65)
 
         # populate item pool
         self._item_pool = ItemPool()
@@ -98,8 +98,12 @@ class TestExtendedResult(TestCase):
         self.assertEqual(1, len(self.er.new_relevant_items))
 
         i1_stats = self.er.stats[i1]
-        self.assertTrue(i1_stats.positive_correlation_stat > GlobalParams().get('positive_correlation_threshold'))
-        self.assertTrue(i1_stats.negative_correlation_stat <= GlobalParams().get('negative_correlation_threshold'))
+
+        pos_threshold = GlobalParams().get('ext_result.positive_correlation_threshold')
+        neg_threshold = GlobalParams().get('ext_result.negative_correlation_threshold')
+
+        self.assertTrue(i1_stats.positive_correlation_stat > pos_threshold)
+        self.assertTrue(i1_stats.negative_correlation_stat <= neg_threshold)
 
         # verify only one relevant item
         self.assertEqual(1, len(self.er.relevant_items))
@@ -128,8 +132,12 @@ class TestExtendedResult(TestCase):
         self.er.update(i1, on=False, activated=False, count=10)
 
         i1_stats = self.er.stats[i1]
-        self.assertTrue(i1_stats.positive_correlation_stat > GlobalParams().get('positive_correlation_threshold'))
-        self.assertTrue(i1_stats.negative_correlation_stat <= GlobalParams().get('negative_correlation_threshold'))
+
+        pos_threshold = GlobalParams().get('ext_result.positive_correlation_threshold')
+        neg_threshold = GlobalParams().get('ext_result.negative_correlation_threshold')
+
+        self.assertTrue(i1_stats.positive_correlation_stat > pos_threshold)
+        self.assertTrue(i1_stats.negative_correlation_stat <= neg_threshold)
 
         # verify suppressed item NOT in relevant items list
         self.assertEqual(0, len(self.er.relevant_items))

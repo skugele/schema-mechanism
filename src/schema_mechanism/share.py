@@ -15,6 +15,7 @@ from typing import TextIO
 
 import numpy as np
 
+from schema_mechanism.stats import ItemCorrelationTest
 from schema_mechanism.util import Singleton
 from schema_mechanism.validate import MultiValidator
 from schema_mechanism.validate import NULL_VALIDATOR
@@ -34,6 +35,8 @@ class Verbosity(IntEnum):
 
 
 class SupportedFeature(Enum):
+    COMPOSITE_ACTIONS = auto()
+
     # "There is an embellishment of the marginal attribution algorithm--deferring to a more specific applicable schema--
     #  that often enables the discovery of an item whose relevance has been obscured." (see Drescher,1991, pp. 75-76)
     EC_DEFER_TO_MORE_SPECIFIC_SCHEMA = auto()
@@ -130,44 +133,57 @@ class GlobalParams(metaclass=Singleton):
         # determines step size for incremental updates (e.g., this is used for delegated value updates)
         self._defaults['learning_rate'] = 0.01
 
-        # thresholds for determining the relevance of items (1.0 -> correlation always occurs)
-        self._defaults['positive_correlation_threshold'] = 0.95
-        self._defaults['negative_correlation_threshold'] = 0.95
+        # item correlation test used for determining relevance of extended context items
+        self._defaults['ext_context.correlation_test'] = None
 
-        # success threshold used for determining that a schema is reliable (1.0 -> schema always succeeds)
+        # thresholds for determining the relevance of extended result items
+        #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
+        self._defaults['ext_context.positive_correlation_threshold'] = 0.95
+        self._defaults['ext_context.negative_correlation_threshold'] = 0.95
+
+        # item correlation test used for determining relevance of extended result items
+        self._defaults['ext_result.correlation_test'] = None
+
+        # thresholds for determining the relevance of extended result items
+        #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
+        self._defaults['ext_result.positive_correlation_threshold'] = 0.95
+        self._defaults['ext_result.negative_correlation_threshold'] = 0.95
+
+        # success threshold used for determining that a schema is reliable
+        #     from 0.0 [schema has never succeeded] to 1.0 [schema always succeeds]
         self._defaults['reliability_threshold'] = 0.95
 
         # used by delegated value helper
-        self._defaults['dv_trace_max_len'] = 5
-        self._defaults['dv_discount_factor'] = 0.9
-        self._defaults['dv_decay_rate'] = 0.2
+        self._defaults['delegated_value_helper.discount_factor'] = 0.9
+        self._defaults['delegated_value_helper.decay_rate'] = 0.2
 
         # used by backward_chains (supports composite action)
-        self._defaults['backward_chains_max_len'] = 5
-        self._defaults['backward_chains_update_frequency'] = 0.01
+        self._defaults['backward_chains.max_len'] = 5
+        self._defaults['backward_chains.update_frequency'] = 0.01
 
         # composite actions are created for novel result states that have values that are greater than the baseline
         # value by AT LEAST this amount
         self._defaults['composite_action_min_baseline_advantage'] = 1.0
 
         # used by reliability_values
-        self._defaults['max_reliability_penalty'] = 10.0
+        self._defaults['goal_pursuit_strategy.reliability.max_penalty'] = 10.0
 
         # used by reliability_values
-        self._defaults['habituation_decay_rate'] = 0.95
-        self._defaults['habituation_multiplier'] = 10.0
+        self._defaults['habituation_exploratory_strategy.decay.rate'] = 0.95
+        self._defaults['habituation_exploratory_strategy.multiplier'] = 10.0
 
         # used by epsilon greedy exploratory
-        self._defaults['epsilon'] = 1.0
-        self._defaults['epsilon_decay_rate'] = 0.999
-        self._defaults['epsilon_min'] = 0.01
+        self._defaults['random_exploratory_strategy.epsilon.initial'] = 1.0
+        self._defaults['random_exploratory_strategy.epsilon.decay.rate'] = 0.999
+        self._defaults['random_exploratory_strategy.epsilon.decay.min'] = 0.01
 
         # schema selection weighting (set in SchemaMechanism)
-        self._defaults['goal_weight'] = 0.6
-        self._defaults['explore_weight'] = 0.4
+        self._defaults['schema_selection.weights.goal_weight'] = 0.6
+        self._defaults['schema_selection.weights.explore_weight'] = 0.4
 
         # default features
         self._defaults['features'] = {
+            SupportedFeature.COMPOSITE_ACTIONS,
             SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA,
             SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE,
             SupportedFeature.ER_POSITIVE_ASSERTIONS_ONLY,
@@ -178,34 +194,42 @@ class GlobalParams(metaclass=Singleton):
         # TODO: this registers the key names to prevent warning messages, but I need to update this with the names
         # TODO: of default classes or some other indicators later. (NOTE: circular dependency issues will ensue if
         # TODO: I initialize these with the types from schema_mechanism.core).
-        self._defaults['correlation_test'] = None
         self._defaults['item_type'] = None
         self._defaults['composite_item_type'] = None
         self._defaults['schema_type'] = None
 
     def _set_validators(self):
-        self._validators['features'] = SupportedFeatureValidator()
-        self._validators['rng_seed'] = TypeValidator([int])
-        self._validators['learning_rate'] = RangeValidator(0.0, 1.0)
-        self._validators['positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
-        self._validators['negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
-        self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
-        self._validators['max_reliability_penalty'] = RangeValidator(0.0, exclude=[0.0])
-        self._validators['goal_weight'] = RangeValidator(0.0, 1.0)
-        self._validators['explore_weight'] = RangeValidator(0.0, 1.0)
-        self._validators['verbosity'] = TypeValidator([Verbosity])
-        self._validators['output_format'] = TypeValidator([str])
-        self._validators['dv_trace_max_len'] = MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
-        self._validators['dv_discount_factor'] = RangeValidator(0.0, 1.0)
-        self._validators['dv_decay_rate'] = RangeValidator(0.0, 1.0)
-        self._validators['backward_chains_max_len'] = MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
-        self._validators['backward_chains_update_frequency'] = RangeValidator(0.0, 1.0)
-        self._validators['composite_action_min_baseline_advantage'] = TypeValidator([float])
-        self._validators['epsilon'] = RangeValidator(0.0, 1.0)
-        self._validators['epsilon_decay_rate'] = RangeValidator(0.0, 1.0, exclude=[0.0, 1.0])
-        self._validators['epsilon_min'] = RangeValidator(low=0.0)
 
-        # TODO: is there any way to do validators for:
+        self._validators['backward_chains.max_len'] = MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
+        self._validators['backward_chains.update_frequency'] = RangeValidator(0.0, 1.0)
+        self._validators['composite_action_min_baseline_advantage'] = TypeValidator([float])
+        self._validators['delegated_value_helper.decay_rate'] = RangeValidator(0.0, 1.0)
+        self._validators['delegated_value_helper.discount_factor'] = RangeValidator(0.0, 1.0)
+        self._validators['ext_context.correlation_test'] = TypeValidator([ItemCorrelationTest])
+        self._validators['ext_context.negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
+        self._validators['ext_context.positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
+        self._validators['ext_result.correlation_test'] = TypeValidator([ItemCorrelationTest])
+        self._validators['ext_result.negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
+        self._validators['ext_result.positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
+        self._validators['features'] = SupportedFeatureValidator()
+        self._validators['goal_pursuit_strategy.reliability.max_penalty'] = RangeValidator(0.0, exclude=[0.0])
+        self._validators['learning_rate'] = RangeValidator(0.0, 1.0)
+        self._validators['output_format'] = TypeValidator([str])
+        self._validators['random_exploratory_strategy.epsilon.decay.min'] = RangeValidator(low=0.0)
+        self._validators['random_exploratory_strategy.epsilon.decay.rate'] = RangeValidator(0.0, 1.0,
+                                                                                            exclude=[0.0, 1.0])
+        self._validators['random_exploratory_strategy.epsilon.initial'] = RangeValidator(0.0, 1.0)
+        self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
+        self._validators['rng_seed'] = TypeValidator([int])
+        self._validators['schema_selection.weights.explore_weight'] = RangeValidator(0.0, 1.0)
+        self._validators['schema_selection.weights.goal_weight'] = RangeValidator(0.0, 1.0)
+        self._validators['verbosity'] = TypeValidator([Verbosity])
+
+        # used by reliability_values
+        self._defaults['habituation_exploratory_strategy.decay.rate'] = 0.95
+        self._defaults['habituation_exploratory_strategy.multiplier'] = 10.0
+
+        # TODO: is there any way to do validators for?
         # TODO:    correlation_test,
         # TODO:    item_type,
         # TODO:    composite_item_type,
@@ -215,7 +239,14 @@ class GlobalParams(metaclass=Singleton):
         self._params = dict(self._defaults)
 
 
-global_params = GlobalParams()
+global_params: GlobalParams = GlobalParams()
+
+
+def display_params() -> None:
+    info(f'Global Parameters:')
+    for param, value in global_params:
+        is_default_value = value == global_params.defaults.get(param, None)
+        info(f'\t{param} = \'{value}\' [DEFAULT: {is_default_value}]')
 
 
 def _output_fd(level: Verbosity) -> TextIO:

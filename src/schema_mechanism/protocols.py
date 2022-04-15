@@ -33,3 +33,16 @@ class DecayStrategy(Protocol):
 
         :return: the decayed value
         """
+
+
+CorrelationTable = tuple[int, int, int, int]
+
+
+@runtime_checkable
+class ItemCorrelationTest(Protocol):
+
+    @classmethod
+    def positive_corr_statistic(cls, table: CorrelationTable) -> float: ...
+
+    @classmethod
+    def negative_corr_statistic(cls, table: CorrelationTable) -> float: ...

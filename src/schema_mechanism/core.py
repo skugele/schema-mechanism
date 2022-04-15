@@ -25,6 +25,7 @@ from anytree import LevelOrderIter
 from anytree import NodeMixin
 from anytree import RenderTree
 
+from schema_mechanism.protocols import ItemCorrelationTest
 from schema_mechanism.protocols import State
 from schema_mechanism.protocols import StateElement
 from schema_mechanism.share import GlobalParams
@@ -34,7 +35,6 @@ from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import trace
 from schema_mechanism.stats import CorrelationTable
 from schema_mechanism.stats import FisherExactCorrelationTest
-from schema_mechanism.stats import ItemCorrelationTest
 from schema_mechanism.util import AccumulatingTrace
 from schema_mechanism.util import AssociativeArrayList
 from schema_mechanism.util import DefaultDictWithKeyFactory
@@ -402,6 +402,10 @@ class SymbolicItem(Item):
         super().__init__(source=source, primitive_value=primitive_value, **kwargs)
 
     def __eq__(self, other: Any) -> bool:
+        # ItemPool should be used for all item creation, so this should be an optimization
+        if self is other:
+            return True
+
         if isinstance(other, SymbolicItem):
             return self.source == other.source
         return False if other is None else NotImplemented
@@ -436,11 +440,11 @@ class GlobalStats(metaclass=Singleton):
         self._baseline_value = baseline_value or 0.0
 
         self._dv_helper = EligibilityTraceDelegatedValueHelper(
-            discount_factor=GlobalParams().get('dv_discount_factor'),
-            trace_decay=GlobalParams().get('dv_decay_rate'))
+            discount_factor=GlobalParams().get('delegated_value_helper.discount_factor'),
+            trace_decay=GlobalParams().get('delegated_value_helper.decay_rate'))
 
         self._action_trace: AccumulatingTrace[Action] = AccumulatingTrace(
-            decay_rate=GlobalParams().get('habituation_decay_rate'))
+            decay_rate=GlobalParams().get('habituation_exploratory_strategy.decay.rate'))
 
     @property
     def n(self) -> int:
@@ -488,11 +492,11 @@ class GlobalStats(metaclass=Singleton):
 
         # TODO: this code is redundant with initializer code
         self._dv_helper = EligibilityTraceDelegatedValueHelper(
-            discount_factor=GlobalParams().get('dv_discount_factor'),
-            trace_decay=GlobalParams().get('dv_decay_rate'))
+            discount_factor=GlobalParams().get('delegated_value_helper.discount_factor'),
+            trace_decay=GlobalParams().get('delegated_value_helper.decay_rate'))
 
         self._action_trace: AccumulatingTrace[Action] = AccumulatingTrace(
-            decay_rate=GlobalParams().get('habituation_decay_rate'))
+            decay_rate=GlobalParams().get('habituation_exploratory_strategy.decay.rate'))
 
 
 class SchemaStats:
@@ -573,17 +577,21 @@ class SchemaStats:
 
 
 class ItemStats(ABC):
+
     @property
+    @abstractmethod
     def correlation_test(self) -> ItemCorrelationTest:
-        return GlobalParams().get('correlation_test') or FisherExactCorrelationTest()
+        pass
 
     @property
+    @abstractmethod
     def positive_correlation_threshold(self) -> float:
-        return GlobalParams().get('positive_correlation_threshold')
+        pass
 
     @property
+    @abstractmethod
     def negative_correlation_threshold(self) -> float:
-        return GlobalParams().get('negative_correlation_threshold')
+        pass
 
     @property
     def positive_correlation_stat(self) -> float:
@@ -625,6 +633,18 @@ class ECItemStats(ItemStats):
         self._n_success_and_off = 0
         self._n_fail_and_on = 0
         self._n_fail_and_off = 0
+
+    @property
+    def correlation_test(self) -> ItemCorrelationTest:
+        return GlobalParams().get('ext_context.correlation_test') or FisherExactCorrelationTest()
+
+    @property
+    def positive_correlation_threshold(self) -> float:
+        return GlobalParams().get('ext_context.positive_correlation_threshold')
+
+    @property
+    def negative_correlation_threshold(self) -> float:
+        return GlobalParams().get('ext_context.negative_correlation_threshold')
 
     def update(self, on: bool, success: bool, count: int = 1) -> None:
         if on and success:
@@ -733,6 +753,18 @@ class ERItemStats(ItemStats):
         self._n_on_and_not_activated = 0
         self._n_off_and_activated = 0
         self._n_off_and_not_activated = 0
+
+    @property
+    def correlation_test(self) -> ItemCorrelationTest:
+        return GlobalParams().get('ext_result.correlation_test') or FisherExactCorrelationTest()
+
+    @property
+    def positive_correlation_threshold(self) -> float:
+        return GlobalParams().get('ext_result.positive_correlation_threshold')
+
+    @property
+    def negative_correlation_threshold(self) -> float:
+        return GlobalParams().get('ext_result.negative_correlation_threshold')
 
     @property
     def n_on(self) -> int:
@@ -1723,6 +1755,10 @@ class Schema(Observer, Observable, UniqueIdMixin):
         self._cost: Optional[float] = 1.0
 
     def __eq__(self, other) -> bool:
+        # SchemaPool should be used for all item creation, so this should be an optimization
+        if self is other:
+            return True
+
         if isinstance(other, Schema):
             return all({s == o for s, o in
                         [[self._context, other._context],
@@ -1920,7 +1956,6 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         return is_satisfied and state_items == result_items
 
-    # TODO: may need to add a parameter for duration of last execution to update average duration.
     def update(self,
                activated: bool,
                succeeded: bool,

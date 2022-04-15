@@ -1,10 +1,15 @@
 import unittest
 
+from schema_mechanism.core import Item
+from schema_mechanism.core import Schema
 from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import is_feature_enabled
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import Verbosity
 from schema_mechanism.share import display_message
+from schema_mechanism.stats import BarnardExactCorrelationTest
+from schema_mechanism.stats import DrescherCorrelationTest
+from schema_mechanism.stats import FisherExactCorrelationTest
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
@@ -100,7 +105,7 @@ class TestGlobalParams(unittest.TestCase):
                 pass
 
     def test_max_reliability_penalty(self):
-        key = 'max_reliability_penalty'
+        key = 'goal_pursuit_strategy.reliability.max_penalty'
 
         # test: value should be the default before updates
         self.assertEqual(self.gp.defaults[key], self.gp.get(key))
@@ -148,47 +153,60 @@ class TestGlobalParams(unittest.TestCase):
             except ValueError:
                 pass
 
-    def test_pos_corr_threshold(self):
-        key = 'positive_correlation_threshold'
+    def test_correlation_thresholds(self):
+        # test: correlation thresholds
+        ##############################
+        keys = [
+            'ext_context.positive_correlation_threshold',
+            'ext_context.negative_correlation_threshold',
+            'ext_result.positive_correlation_threshold',
+            'ext_result.negative_correlation_threshold',
+        ]
 
-        # test: value should be the default before updates
-        self.assertEqual(self.gp.defaults[key], self.gp.get(key))
+        for key in keys:
+            # test: value should be the default before updates
+            self.assertEqual(self.gp.defaults[key], self.gp.get(key))
 
-        # test: values between 0.0 and 1.0 exclusive should be accepted and returned
-        self.gp.set(key, 0.0)
-        self.assertEqual(0.0, self.gp.get(key))
+            # test: values between 0.0 and 1.0 exclusive should be accepted and returned
+            self.gp.set(key, 0.0)
+            self.assertEqual(0.0, self.gp.get(key))
 
-        self.gp.set(key, 1.0)
-        self.assertEqual(1.0, self.gp.get(key))
+            self.gp.set(key, 1.0)
+            self.assertEqual(1.0, self.gp.get(key))
 
-        # test: values NOT between 0.0 and 1.0 exclusive should raise a ValueError
-        for illegal_value in [-0.001, 1.001]:
-            try:
-                self.gp.set(key, illegal_value)
-                self.fail('Did not raise expected ValueError on illegal value')
-            except ValueError:
-                pass
+            # test: values NOT between 0.0 and 1.0 exclusive should raise a ValueError
+            for illegal_value in [-0.001, 1.001]:
+                try:
+                    self.gp.set(key, illegal_value)
+                    self.fail('Did not raise expected ValueError on illegal value')
+                except ValueError:
+                    pass
 
-    def test_neg_corr_threshold(self):
-        key = 'negative_correlation_threshold'
+    def test_correlation_tests(self):
+        # test: correlation tests
+        #########################
+        keys = [
+            'ext_context.correlation_test',
+            'ext_result.correlation_test',
+        ]
 
-        # test: value should be the default before updates
-        self.assertEqual(self.gp.defaults[key], self.gp.get(key))
+        for key in keys:
 
-        # test: values between 0.0 and 1.0 exclusive should be accepted and returned
-        self.gp.set(key, 0.0)
-        self.assertEqual(0.0, self.gp.get(key))
+            # test: subclasses of ItemCorrelationTest should be allowed
+            for legal_value in [DrescherCorrelationTest, FisherExactCorrelationTest, BarnardExactCorrelationTest]:
+                try:
+                    self.gp.set(key, legal_value)
+                    self.assertEqual(legal_value, self.gp.get(key))
+                except ValueError as e:
+                    self.fail(f'Received unexpected ValueError: {e}')
 
-        self.gp.set(key, 1.0)
-        self.assertEqual(1.0, self.gp.get(key))
-
-        # test: values NOT between 0.0 and 1.0 exclusive should raise a ValueError
-        for illegal_value in [-0.001, 1.001]:
-            try:
-                self.gp.set(key, illegal_value)
-                self.fail('Did not raise expected ValueError on illegal value')
-            except ValueError:
-                pass
+            # test: values that are NOT subclasses of ItemCorrelationTest should raise a ValueError
+            for illegal_value in [Schema, Item, 1.0, 'bad value']:
+                try:
+                    self.gp.set(key, illegal_value)
+                    self.fail('Did not raise expected ValueError on illegal value')
+                except ValueError:
+                    pass
 
     def test_learning_rate(self):
         key = 'learning_rate'
@@ -215,10 +233,10 @@ class TestGlobalParams(unittest.TestCase):
         self.gp.set('dv_trace_max_len', 17)
         self.gp.set('item_type', MockSymbolicItem)
         self.gp.set('learning_rate', 0.00001)
-        self.gp.set('negative_correlation_threshold', 0.186)
+        self.gp.set('ext_context.negative_correlation_threshold', 0.186)
         self.gp.set('features', [SupportedFeature.ER_INCREMENTAL_RESULTS])
         self.gp.set('output_format', '{message}')
-        self.gp.set('positive_correlation_threshold', 0.176)
+        self.gp.set('ext_result.positive_correlation_threshold', 0.176)
         self.gp.set('reliability_threshold', 0.72)
         self.gp.set('rng_seed', 123456)
 
@@ -267,13 +285,15 @@ class TestGlobalParams(unittest.TestCase):
                 self.assertFalse(is_feature_enabled(feature))
 
     def test_defaults(self):
-        self.assertEqual(Verbosity.WARN, self.gp.defaults['verbosity'])
         self.assertEqual('{timestamp} [{severity}]\t{message}', self.gp.defaults['output_format'])
-        self.assertLessEqual(0, self.gp.defaults['rng_seed'])
         self.assertEqual(0.01, self.gp.defaults['learning_rate'])
-        self.assertEqual(0.95, self.gp.defaults['positive_correlation_threshold'])
-        self.assertEqual(0.95, self.gp.defaults['negative_correlation_threshold'])
+        self.assertEqual(0.4, self.gp.defaults['schema_selection.weights.explore_weight'])
+        self.assertEqual(0.6, self.gp.defaults['schema_selection.weights.goal_weight'])
+        self.assertEqual(0.95, self.gp.defaults['ext_context.negative_correlation_threshold'])
+        self.assertEqual(0.95, self.gp.defaults['ext_context.positive_correlation_threshold'])
+        self.assertEqual(0.95, self.gp.defaults['ext_result.negative_correlation_threshold'])
+        self.assertEqual(0.95, self.gp.defaults['ext_result.positive_correlation_threshold'])
         self.assertEqual(0.95, self.gp.defaults['reliability_threshold'])
         self.assertEqual(5, self.gp.defaults['dv_trace_max_len'])
-        self.assertEqual(0.6, self.gp.defaults['goal_weight'])
-        self.assertEqual(0.4, self.gp.defaults['explore_weight'])
+        self.assertEqual(Verbosity.WARN, self.gp.defaults['verbosity'])
+        self.assertLessEqual(0, self.gp.defaults['rng_seed'])
