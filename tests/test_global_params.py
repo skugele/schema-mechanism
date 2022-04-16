@@ -297,7 +297,7 @@ class TestGlobalParams(unittest.TestCase):
         expected_dict.update(non_default_params)
 
         # sanity check
-        self.assertDictEqual(self.gp.params, expected_dict)
+        self.assertDictEqual({k: v for k, v in self.gp}, expected_dict)
 
         with TemporaryDirectory() as tmp_dir:
             path = Path(os.path.join(tmp_dir, 'test-file-global_params-save_and_load.sav'))
@@ -314,9 +314,9 @@ class TestGlobalParams(unittest.TestCase):
             self.gp.reset()
 
             # sanity check: only defaults
-            self.assertDictEqual(self.gp.params, self.gp.defaults)
+            self.assertDictEqual({k: v for k, v in self.gp}, self.gp.defaults)
 
             self.gp.load(path)
 
             # test: non-default global params SHOULD be restored after load
-            self.assertDictEqual(self.gp.params, expected_dict)
+            self.assertDictEqual({k: v for k, v in self.gp}, expected_dict)

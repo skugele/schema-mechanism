@@ -123,7 +123,7 @@ class GlobalParams(metaclass=Singleton):
         return self._params.get(name)
 
     def save(self, path: Path, overwrite: bool = False) -> None:
-        serialize(self.params, path, overwrite)
+        serialize(self._params, path, overwrite)
 
     def load(self, path: Path) -> None:
         # serializing params dictionary because entire object cannot deserialized directly due to validators, etc.
