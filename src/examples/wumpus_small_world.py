@@ -9,6 +9,7 @@ from examples.environments.wumpus_world import Wumpus
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
 from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import ItemPool
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.modules import SchemaMechanism
@@ -16,12 +17,13 @@ from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import display_params
 from schema_mechanism.share import info
-# Wumpus @ (6,3); Agent starts @ (1,8) facing 'W'
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import DrescherCorrelationTest
 
+# Wumpus @ (6,3); Agent starts @ (1,8) facing 'W'
 agent_spec = WumpusWorldAgent(position=(1, 1), direction='N', n_arrows=0)
 wumpus_spec = Wumpus(position=(3, 1), health=2)
+
 # world = """
 # www
 # w.w
@@ -77,6 +79,9 @@ def run(sm: SchemaMechanism) -> None:
         # While not terminal state
         n = 0
         while not is_terminal and running and n < 250:
+            info(f'n items: {len(ItemPool())}')
+            info(f'n schemas: {len(sm.schema_memory)}')
+
             env.render()
 
             info(f'selection state[{n}]: {state}')
@@ -126,38 +131,26 @@ def run(sm: SchemaMechanism) -> None:
 
 
 def set_params():
-    GlobalParams().set('composite_action_min_baseline_advantage', 0.0)
-    GlobalParams().set('delegated_value_helper.decay_rate', 0.5)
-    GlobalParams().set('delegated_value_helper.discount_factor', 0.7)
-    GlobalParams().set('random_exploratory_strategy.epsilon.decay.rate', 0.9999)
-    GlobalParams().set('random_exploratory_strategy.epsilon.decay.min', 0.2)
-    GlobalParams().set('schema_selection.weights.explore_weight', 0.2)
-    GlobalParams().set('schema_selection.weights.goal_weight', 0.8)
-    GlobalParams().set('habituation_exploratory_strategy.decay.rate', 0.95)
-    GlobalParams().set('habituation_exploratory_strategy.multiplier', 5.0)
-    GlobalParams().set('learning_rate', 0.005)
+    GlobalParams().set('backward_chains.max_len', 3)
+    GlobalParams().set('backward_chains.update_frequency', 0.01)
+    GlobalParams().set('composite_action_min_baseline_advantage', 10.0)
+    GlobalParams().set('delegated_value_helper.decay_rate', 0.8)
+    GlobalParams().set('delegated_value_helper.discount_factor', 0.2)
+    GlobalParams().set('ext_context.correlation_test', DrescherCorrelationTest)
+    GlobalParams().set('ext_context.positive_correlation_threshold', 0.95)
+    GlobalParams().set('ext_result.correlation_test', CorrelationOnEncounter)
+    GlobalParams().set('ext_result.positive_correlation_threshold', 0.95)
     GlobalParams().set('goal_pursuit_strategy.reliability.max_penalty', 5.0)
+    GlobalParams().set('habituation_exploratory_strategy.decay.rate', 0.6)
+    GlobalParams().set('habituation_exploratory_strategy.multiplier', 1.0)
+    GlobalParams().set('learning_rate', 0.01)
+    GlobalParams().set('random_exploratory_strategy.epsilon.decay.rate.min', 0.2)
+    GlobalParams().set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.9999)
     GlobalParams().set('reliability_threshold', 0.9)
-    GlobalParams().set('backward_chains.max_len', 2)
-    GlobalParams().set('backward_chains.update_frequency', 0.001)
+    GlobalParams().set('schema_selection.weights.explore_weight', 0.5)
+    GlobalParams().set('schema_selection.weights.goal_weight', 0.5)
 
     GlobalParams().get('features').remove(SupportedFeature.COMPOSITE_ACTIONS)
-
-    # item correlation test used for determining relevance of extended context items
-    GlobalParams().set('ext_context.correlation_test', DrescherCorrelationTest)
-
-    # thresholds for determining the relevance of extended result items
-    #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
-    GlobalParams().set('ext_context.positive_correlation_threshold', 0.95)
-    GlobalParams().set('ext_context.negative_correlation_threshold', 1.0)
-
-    # item correlation test used for determining relevance of extended result items
-    GlobalParams().set('ext_result.correlation_test', CorrelationOnEncounter)
-
-    # thresholds for determining the relevance of extended result items
-    #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
-    GlobalParams().set('ext_result.positive_correlation_threshold', 0.95)
-    GlobalParams().set('ext_result.negative_correlation_threshold', 0.95)
 
 
 if __name__ == "__main__":

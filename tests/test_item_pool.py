@@ -134,8 +134,8 @@ class TestItemPool(TestCase):
                 end = time()
                 elapsed_time += end - start
 
-        n_iters = n_repeats * n_state_elements
-        print(f'Time retrieving {n_iters:,} items randomly from pool of {n_items:,} items : {elapsed_time}s ')
+        n_iterations = n_repeats * n_state_elements
+        print(f'Time retrieving {n_iterations:,} items randomly from pool of {n_items:,} items : {elapsed_time}s ')
 
 
 class TestReadOnlyItemPool(TestCase):

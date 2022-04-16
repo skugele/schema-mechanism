@@ -16,7 +16,7 @@ from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import SchemaMemory
-from schema_mechanism.modules import SchemaSelection
+from schema_mechanism.modules import SelectionDetails
 from schema_mechanism.modules import create_context_spin_off
 from schema_mechanism.modules import create_result_spin_off
 from schema_mechanism.share import GlobalParams
@@ -215,7 +215,7 @@ class TestSchemaMemory(TestCase):
         applicable_schemas = set(self.sm.all_applicable(selection_state))
         non_applicable_schemas = all_schemas - applicable_schemas
 
-        selection_details = SchemaSelection.SelectionDetails(
+        selection_details = SelectionDetails(
             applicable=applicable_schemas,
             selected=selected_schema,
             selection_state=selection_state,
@@ -233,24 +233,24 @@ class TestSchemaMemory(TestCase):
 
             # test: activated SHOULD be True if schema's action equals selected schema's action
             if s.action == selected_schema.action:
-                s.update.assert_called_with(activated=True, succeeded=ANY, s_prev=ANY,
-                                            s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
+                s.update.assert_called_with(activated=True, succeeded=ANY, selection_state=ANY, new=ANY, lost=ANY,
+                                            explained=ANY)
 
             # test: activated SHOULD be False if schema's action equals selected schema's action
             else:
-                s.update.assert_called_with(activated=False, succeeded=ANY, s_prev=ANY,
-                                            s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
+                s.update.assert_called_with(activated=False, succeeded=ANY, selection_state=ANY, new=ANY, lost=ANY,
+                                            explained=ANY)
 
             # test: succeeded SHOULD be True if schema's result is satisfied and schema is activated
             if (s.is_activated(selected_schema, selection_state, applicable=True)
                     and s.result.is_satisfied(result_state)):
-                s.update.assert_called_with(succeeded=True, activated=ANY, s_prev=ANY,
-                                            s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
+                s.update.assert_called_with(succeeded=True, activated=ANY, selection_state=ANY, new=ANY, lost=ANY,
+                                            explained=ANY)
 
             # test: succeeded SHOULD be False if schema's result is not satisfied or schema is not activated
             else:
-                s.update.assert_called_with(succeeded=False, activated=ANY, s_prev=ANY,
-                                            s_curr=ANY, new=ANY, lost=ANY, explained=ANY)
+                s.update.assert_called_with(succeeded=False, activated=ANY, selection_state=ANY, new=ANY, lost=ANY,
+                                            explained=ANY)
 
         # test: update SHOULD NOT be called for non-applicable schemas
         for s in non_applicable_schemas:

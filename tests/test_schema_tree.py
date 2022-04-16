@@ -490,14 +490,14 @@ class TestSchemaTree(TestCase):
 
     @test_share.performance_test
     def test_performance_1(self):
-        n_iters = 1000
+        n_iterations = 1000
         n_actions = 10
 
         tree = SchemaTree(primitive_schemas(actions(n_actions)))
 
         elapsed_time = 0
         schema = sample(list(tree.root.schemas_satisfied_by), k=1)[0]
-        for state_element in range(n_iters):
+        for state_element in range(n_iterations):
             spinoff = create_context_spin_off(schema, sym_item_assert(str(state_element)))
 
             start = time()
@@ -508,18 +508,18 @@ class TestSchemaTree(TestCase):
             node = sample(tree.root.descendants, k=1)[0]
             schema = sample(list(node.schemas_satisfied_by), k=1)[0]
 
-        print(f'Time calling SchemaTree.add_context_spin_offs {n_iters:,} times {elapsed_time}s')
+        print(f'Time calling SchemaTree.add_context_spin_offs {n_iterations:,} times {elapsed_time}s')
 
     @test_share.performance_test
     def test_performance_2(self):
-        n_iters = 1000
+        n_iterations = 1000
         n_actions = 10
 
         tree = SchemaTree(primitive_schemas(actions(n_actions)))
 
         elapsed_time = 0
         schema = sample(list(tree.root.schemas_satisfied_by), k=1)[0]
-        for state_element in range(100, 100 + n_iters):
+        for state_element in range(100, 100 + n_iterations):
             spinoff = create_result_spin_off(schema, sym_item_assert(str(state_element)))
 
             start = time()
@@ -529,7 +529,7 @@ class TestSchemaTree(TestCase):
 
             schema = sample(list(tree.root.schemas_satisfied_by), k=1)[0]
 
-        print(f'Time calling SchemaTree.add_result_spin_offs {n_iters:,} times {elapsed_time}s')
+        print(f'Time calling SchemaTree.add_result_spin_offs {n_iterations:,} times {elapsed_time}s')
 
 
 class TestSchemaTreeNode(TestCase):

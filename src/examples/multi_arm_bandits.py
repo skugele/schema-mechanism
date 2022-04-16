@@ -170,7 +170,7 @@ def parse_args():
 
 # global constants
 N_MACHINES = 4
-N_STEPS = 5000
+N_STEPS = 1000
 
 
 def run():
@@ -179,8 +179,8 @@ def run():
     GlobalParams().set('composite_action_min_baseline_advantage', 25.0)
     GlobalParams().set('delegated_value_helper.decay_rate', 0.2)
     GlobalParams().set('delegated_value_helper.discount_factor', 0.5)
-    GlobalParams().set('random_exploratory_strategy.epsilon.decay.rate', 0.9999)
-    GlobalParams().set('random_exploratory_strategy.epsilon.decay.min', 0.1)
+    GlobalParams().set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.999)
+    GlobalParams().set('random_exploratory_strategy.epsilon.decay.rate.min', 0.1)
     GlobalParams().set('schema_selection.weights.explore_weight', 0.9)
     GlobalParams().set('schema_selection.weights.goal_weight', 0.1)
     GlobalParams().set('habituation_exploratory_strategy.decay.rate', 0.9)

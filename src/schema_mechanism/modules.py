@@ -9,7 +9,6 @@ from copy import copy
 from dataclasses import dataclass
 from enum import Enum
 from enum import auto
-from typing import NamedTuple
 from typing import Optional
 
 import numpy as np
@@ -30,12 +29,12 @@ from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
-from schema_mechanism.core import delegated_value
+from schema_mechanism.core import calc_delegated_value
+from schema_mechanism.core import calc_primitive_value
+from schema_mechanism.core import calc_value
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
-from schema_mechanism.core import primitive_value
-from schema_mechanism.core import value
 from schema_mechanism.protocols import DecayStrategy
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
@@ -96,9 +95,7 @@ class SchemaMemory(Observer):
         return sm
 
     # TODO: this method is too complicated. I need to refactor it into multiple methods.
-    def update_all(self,
-                   selection_details: SchemaSelection.SelectionDetails,
-                   result_state: State) -> None:
+    def update_all(self, selection_details: SelectionDetails, result_state: State) -> None:
         """ Updates schema statistics based on results of previously selected schema(s).
 
         Note: While the current implementation only supports updates based on the most recently selected schema, the
@@ -109,7 +106,9 @@ class SchemaMemory(Observer):
 
         :return: None
         """
-        applicable, schema, pending_list, selection_state, _ = selection_details
+        applicable = selection_details.applicable
+        schema = selection_details.selected
+        selection_state = selection_details.selection_state
 
         # create new and lost state element collections
         new = new_state(selection_state, result_state)
@@ -135,8 +134,7 @@ class SchemaMemory(Observer):
 
             s.update(activated=True,
                      succeeded=succeeded,
-                     s_prev=selection_state,
-                     s_curr=result_state,
+                     selection_state=selection_state,
                      new=new,
                      lost=lost,
                      explained=explained)
@@ -144,8 +142,7 @@ class SchemaMemory(Observer):
         for s in non_activated_schemas:
             s.update(activated=False,
                      succeeded=False,  # success requires implicit or explicit activation
-                     s_prev=selection_state,
-                     s_curr=result_state,
+                     selection_state=selection_state,
                      new=new,
                      lost=lost,
                      explained=explained)
@@ -163,8 +160,7 @@ class SchemaMemory(Observer):
                 pending_schema.update(
                     activated=True,
                     succeeded=False,  # success requires implicit or explicit activation
-                    s_prev=pending_selection_state,
-                    s_curr=result_state,
+                    selection_state=pending_selection_state,
                     new=new_state(pending_selection_state, result_state),
                     lost=lost_state(pending_selection_state, result_state),
                     explained=explained)
@@ -287,7 +283,7 @@ class SchemaMemory(Observer):
                 # TODO: is discovered very early. Note that allowing composite actions for all result states is
                 # TODO: not tractable for most environments.
                 min_adv = GlobalParams().get('composite_action_min_baseline_advantage')
-                if value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
+                if calc_value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
                     continue
 
                 trace(f'Novel result detected: {spin_off.result}. Creating new composite action.')
@@ -365,7 +361,7 @@ def primitive_values(schemas: Sequence[Schema]) -> np.ndarray:
     return (
         np.array([])
         if schemas is None or len(schemas) == 0
-        else np.array([primitive_value(s.result) for s in schemas])
+        else np.array([calc_primitive_value(s.result) for s in schemas])
     )
 
 
@@ -373,7 +369,7 @@ def delegated_values(schemas: Sequence[Schema]) -> np.ndarray:
     return (
         np.array([])
         if schemas is None or len(schemas) == 0
-        else np.array([delegated_value(s.result) for s in schemas])
+        else np.array([calc_delegated_value(s.result) for s in schemas])
     )
 
 
@@ -406,7 +402,7 @@ def instrumental_values(schemas: Sequence[Schema], pending: Optional[Schema] = N
         raise ValueError('Pending schemas must have composite actions.')
 
     goal_state = pending.action.goal_state
-    goal_state_value = primitive_value(goal_state) + delegated_value(goal_state)
+    goal_state_value = calc_primitive_value(goal_state) + calc_delegated_value(goal_state)
 
     # goal state must have positive value to propagate instrumental value
     if goal_state_value <= 0:
@@ -472,6 +468,7 @@ def reliability_values(schemas: Sequence[Schema],
     :param schemas:
     :param pending:
     :param max_penalty:
+
     :return: an array of reliability penalty values
     """
     if max_penalty <= 0.0:
@@ -580,6 +577,7 @@ def habituation_exploratory_value(schemas: Sequence[Schema],
     :param trace:
     :param multiplier:
     :param pending:
+
     :return:
     """
     if trace is None:
@@ -615,8 +613,8 @@ class ExploratoryEvaluationStrategy:
         self._eps_greedy = EpsilonGreedyExploratoryStrategy(
             epsilon=GlobalParams().get('random_exploratory_strategy.epsilon.initial'),
             decay_strategy=GeometricDecayStrategy(
-                rate=GlobalParams().get('random_exploratory_strategy.epsilon.decay.rate'),
-                minimum=GlobalParams().get('random_exploratory_strategy.epsilon.decay.min')))
+                rate=GlobalParams().get('random_exploratory_strategy.epsilon.decay.rate.initial'),
+                minimum=GlobalParams().get('random_exploratory_strategy.epsilon.decay.rate.min')))
 
     def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema]) -> np.ndarray:
         # TODO: Add a mechanism for tracking recently activated schemas.
@@ -665,33 +663,49 @@ class PendingDetails:
     duration: int = 0
 
 
+@dataclass
+class SelectionDetails:
+    applicable: Collection[Schema]
+    selected: Schema
+    terminated_pending: Optional[list[PendingDetails]]
+    selection_state: State
+    effective_value: float
+
+
 class SchemaSelection:
-    """ A module responsible for the selection of a schema from a set of applicable schemas.
+    """ Responsible for the selection of schemas based on their situational applicability and value.
 
-        The module has the following high-level characteristics:
+    The module has the following high-level characteristics:
 
-            1.) Schemas compete for selection at each time step (e.g., for each received environmental state)
-            2.) Only one schema is selected at a time
-            3.) Schemas are chosen based on their "activation importance"
-            4.) Activation importance is based on "explicit goal pursuit" and "exploration"
-    """
+        1.) Schemas compete for selection at each time step (e.g., for each received environmental state).
+        2.) Only one schema is selected at a time.
+        3.) Schemas are chosen based on their goal-pursuit and exploratory value.
+        4.) Schemas with composite actions may be selected. If selected, one of their applicable component schemas will
+            be immediately selected, and the composite action schema will be added to the pending schema list. Pending
+            schemas are schemas with composite action that are previously selected, non-terminated, schemas whose
+            action execution is still in progress.
+        5.) Pending schemas may be terminated by reaching their goal state (i.e., action COMPLETED), by an alternate
+            schema being selected (i.e., action INTERRUPTED), or by having no applicable component schemas (i.e.,
+            action ABORTED).
 
-    class SelectionDetails(NamedTuple):
-        applicable: Collection[Schema]
-        selected: Schema
-        terminated_pending: Optional[list[PendingDetails]]
-        selection_state: State
-        effective_value: float
+    See Drescher, 1991, section 3.4 for additional details.
 
-    """
-        See Drescher, 1991, section 3.4
+    Attributes:
+
     """
 
     def __init__(self,
                  select_strategy: Optional[SelectionStrategy] = None,
                  value_strategies: Optional[Collection[SchemaEvaluationStrategy]] = None,
                  weights: Optional[Collection[float]] = None,
-                 **kwargs):
+                 **kwargs) -> None:
+        """ Blah Blah Blah
+
+        :param select_strategy:
+        :param value_strategies:
+        :param weights:
+        :param kwargs:
+        """
 
         self.select_strategy: SelectionStrategy = (
                 select_strategy or RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0))
@@ -735,7 +749,7 @@ class SchemaSelection:
         self._weights = value
 
     # TODO: This method is way too complicated and needs to be refactored into multiple methods.
-    def select(self, schemas: Sequence[Schema], state: State) -> SchemaSelection.SelectionDetails:
+    def select(self, schemas: Sequence[Schema], state: State) -> SelectionDetails:
         """ Selects a schema for explicit activation from the supplied list of applicable schemas.
 
         Note: If a schema with a composite action was PREVIOUSLY selected, it will also compete for selection if any
@@ -795,11 +809,11 @@ class SchemaSelection:
             selected_schema = sd.selected
             value = sd.effective_value
 
-        return self.SelectionDetails(applicable=schemas,
-                                     selected=selected_schema,
-                                     terminated_pending=terminated_pending,
-                                     selection_state=state,
-                                     effective_value=value)
+        return SelectionDetails(applicable=schemas,
+                                selected=selected_schema,
+                                terminated_pending=terminated_pending,
+                                selection_state=state,
+                                effective_value=value)
 
     def calc_effective_values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         if not self._value_strategies:
@@ -930,11 +944,11 @@ class SchemaMechanism:
     def schema_selection(self) -> SchemaSelection:
         return self._schema_selection
 
-    def select(self, state: State, **kwargs) -> SchemaSelection.SelectionDetails:
+    def select(self, state: State, **kwargs) -> SelectionDetails:
         applicable_schemas = self._schema_memory.all_applicable(state)
         return self._schema_selection.select(applicable_schemas, state)
 
-    def learn(self, selection_details: SchemaSelection.SelectionDetails, result_state: State, **kwargs) -> None:
+    def learn(self, selection_details: SelectionDetails, result_state: State, **kwargs) -> None:
         self._schema_memory.update_all(selection_details=selection_details, result_state=result_state)
 
         selected_schema = selection_details.selected
@@ -1011,18 +1025,3 @@ def create_result_spin_off(source: Schema, item_assert: ItemAssertion) -> Schema
     :return: a new result spin-off
     """
     return create_spin_off(source, Schema.SpinOffType.RESULT, item_assert)
-
-
-# TODO: Implement this
-def forward_chains(schema: Schema, depth: int, accept: Callable[[Schema], bool]) -> Collection[Chain]:
-    # used to determine which states are ACCESSIBLE from the current state
-
-    # ACCESSIBILITY determination:
-    #    "To begin, each schema that is currently applicable broadcasts a message via its extended result
-    #     to the items and conjunctions that are included in the schema's result. Any schema that has such an item or
-    #     conjunction as its context broadcasts in turn via its own extended result, and so on, to some maximum depth
-    #     of search. Any item or conjunction of items that receives a message by this process is currently accessible."
-    #     (See Drescher 1991, p. 101)
-
-    # TODO: seems like I need a breadth first graph traversal
-    pass

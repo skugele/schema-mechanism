@@ -221,7 +221,7 @@ class TestSchema(TestCase):
         new = new_state(s_prev, s_curr)
         lost = lost_state(s_prev, s_curr)
 
-        self.schema.update(activated=True, succeeded=True, s_prev=s_prev, s_curr=s_curr, new=new, lost=lost)
+        self.schema.update(activated=True, succeeded=True, selection_state=s_prev, new=new, lost=lost)
 
         # check schema level statistics
         self.assertEqual(1, self.schema.stats.n)
@@ -266,7 +266,7 @@ class TestSchema(TestCase):
         new = new_state(s_prev, s_curr)
         lost = lost_state(s_prev, s_curr)
 
-        self.schema.update(activated=True, succeeded=False, s_prev=s_prev, s_curr=s_curr, new=new, lost=lost)
+        self.schema.update(activated=True, succeeded=False, selection_state=s_prev, new=new, lost=lost)
 
         # check schema level statistics
         self.assertEqual(1, self.schema.stats.n)
@@ -311,7 +311,7 @@ class TestSchema(TestCase):
         new = new_state(s_prev, s_curr)
         lost = lost_state(s_prev, s_curr)
 
-        self.schema.update(activated=False, succeeded=False, s_prev=s_prev, s_curr=s_curr, new=new, lost=lost)
+        self.schema.update(activated=False, succeeded=False, selection_state=s_prev, new=new, lost=lost)
 
         # check schema level statistics
         self.assertEqual(1, self.schema.stats.n)
@@ -516,12 +516,10 @@ class TestSchema(TestCase):
         new = new_state(s_prev, s_curr)
         lost = lost_state(s_prev, s_curr)
 
-        # TODO: This is WAY too slow...
         start = time()
         self.schema.update(activated=True,
                            succeeded=True,
-                           s_prev=s_prev,
-                           s_curr=s_curr,
+                           selection_state=s_prev,
                            new=new,
                            lost=lost)
         end = time()
@@ -562,7 +560,7 @@ class TestSchema(TestCase):
 
     @test_share.performance_test
     def test_performance_3(self):
-        n_iters = 100_000
+        n_iterations = 100_000
 
         other = Schema(
             context=sym_state_assert('1,2'),
@@ -571,32 +569,32 @@ class TestSchema(TestCase):
         )
 
         start = time()
-        for _ in range(n_iters):
+        for _ in range(n_iterations):
             _ = self.schema == other
         end = time()
         elapsed_time = end - start
 
-        print(f'Time for {n_iters:,} calls to Schema.__eq__ comparing unequal objects: {elapsed_time}s ')
+        print(f'Time for {n_iterations:,} calls to Schema.__eq__ comparing unequal objects: {elapsed_time}s ')
 
         start = time()
-        for _ in range(n_iters):
+        for _ in range(n_iterations):
             _ = self.schema == copy(self.schema)
         end = time()
         elapsed_time = end - start
 
-        print(f'Time for {n_iters:,} calls to Schema.__eq__ comparing equal objects: {elapsed_time}s ')
+        print(f'Time for {n_iterations:,} calls to Schema.__eq__ comparing equal objects: {elapsed_time}s ')
 
     @test_share.performance_test
     def test_performance_4(self):
-        n_iters = 100_000
+        n_iterations = 100_000
 
         start = time()
-        for _ in range(n_iters):
+        for _ in range(n_iterations):
             _ = hash(self.schema)
         end = time()
         elapsed_time = end - start
 
-        print(f'Time for {n_iters:,} calls to Schema.__hash__: {elapsed_time}s ')
+        print(f'Time for {n_iterations:,} calls to Schema.__hash__: {elapsed_time}s ')
 
     @test_share.string_test
     def test_str(self):

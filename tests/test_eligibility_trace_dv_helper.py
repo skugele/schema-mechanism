@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
-from schema_mechanism.core import value
+from schema_mechanism.core import calc_value
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.share import GlobalParams
@@ -155,7 +155,7 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         self.assertAlmostEqual(0.0, float(last_diff))
 
         # test: undiscounted delegated value should converge to target state value
-        self.assertAlmostEqual(value(sym_state('9')), dv_helper.delegated_value(self.item_a))
+        self.assertAlmostEqual(calc_value(sym_state('9')), dv_helper.delegated_value(self.item_a))
 
     def test_pos_primitive_value_states_produce_pos_delegated_value(self):
         GlobalParams().set('learning_rate', 0.1)

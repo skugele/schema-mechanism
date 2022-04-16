@@ -1,7 +1,16 @@
 from collections import Callable
 
+from schema_mechanism.share import warn
+
 SUPPRESS_PERFORMANCE = True
 SUPPRESS_STRING_OUTPUT = True
+
+
+def disable_test(test_case: Callable) -> Callable:
+    def _test_wrapper(*_args, **_kwargs):
+        warn(f'Suppressing test case: {test_case}')
+
+    return _test_wrapper
 
 
 def performance_test(test_case: Callable) -> Callable:

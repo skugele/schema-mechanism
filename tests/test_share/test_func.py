@@ -104,6 +104,7 @@ def is_eq_with_null_is_false(x: Any) -> bool:
     """
     assert (x is not None)
 
+    # This is intentional! Do not change it to "is not".
     return x != None
 
 

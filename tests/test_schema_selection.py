@@ -10,8 +10,8 @@ import numpy as np
 from schema_mechanism.core import Chain
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import Schema
-from schema_mechanism.core import delegated_value
-from schema_mechanism.core import primitive_value
+from schema_mechanism.core import calc_delegated_value
+from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import AbsoluteDiffMatchStrategy
@@ -29,13 +29,13 @@ from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
 
 
-def primitive_value_evaluation_strategy(schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
-    values = list([primitive_value(s.result) for s in schemas])
+def primitive_value_evaluation_strategy(schemas: Sequence[Schema], _pending: Optional[Schema] = None) -> np.ndarray:
+    values = list([calc_primitive_value(s.result) for s in schemas])
     return np.array(values)
 
 
-def delegated_value_evaluation_strategy(schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
-    values = list([delegated_value(s.result) for s in schemas])
+def delegated_value_evaluation_strategy(schemas: Sequence[Schema], _pending: Optional[Schema] = None) -> np.ndarray:
+    values = list([calc_delegated_value(s.result) for s in schemas])
     return np.array(values)
 
 
@@ -369,7 +369,7 @@ class TestSchemaSelection(TestCase):
 
         selection_states = [sym_state('2'), sym_state('3'), sym_state('4'), sym_state('5')]
 
-        applicables = [
+        applicable_schemas = [
             [self.s2_c2_r3, self.s1_c12_r2],
             [self.s3_c3_r4],
             [self.s1_c4_r5],
@@ -377,7 +377,7 @@ class TestSchemaSelection(TestCase):
         ]
 
         # test: selection should iterate through controller chain to goal state
-        for state, applicable in zip(selection_states, applicables):
+        for state, applicable in zip(selection_states, applicable_schemas):
             sd = mock_ss.select(applicable, state)
             self.assertIs(applicable[0], sd.selected)
             self.assertIs(mock_ss.pending_schema, self.sca24_c12_r35)
@@ -409,13 +409,13 @@ class TestSchemaSelection(TestCase):
             sym_state('6'),  # no applicable components (should terminate pending schema)
         ]
 
-        applicables = [
+        applicable_schemas = [
             [self.s2_c2_r3],
             [self.s3_c3_r4],
             [self.s3],
         ]
 
-        for state, applicable in zip(selection_states, applicables):
+        for state, applicable in zip(selection_states, applicable_schemas):
             sd = mock_ss.select(applicable, state)
 
             self.assertIs(applicable[0], sd.selected)

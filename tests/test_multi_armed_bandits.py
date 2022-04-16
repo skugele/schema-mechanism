@@ -29,7 +29,7 @@ class TestMultiArmedBandits(unittest.TestCase):
         # test: sending no machines SHOULD generate a ValueError
         self.assertRaises(ValueError, lambda: BanditEnvironment(machines=[]))
 
-        # test: explicitly passing an initial state SHOULD be reflected in the env's current state
+        # test: explicitly passing an initial state SHOULD be reflected in the environment's current state
         init_state = sym_state('M0')
         env = BanditEnvironment(self.machines, init_state)
         self.assertEqual(init_state, env.current_state)

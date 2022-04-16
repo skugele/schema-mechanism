@@ -83,27 +83,6 @@ class TestGlobalParams(unittest.TestCase):
             except ValueError:
                 pass
 
-    def test_dv_trace_max_len(self):
-        key = 'dv_trace_max_len'
-
-        # test: value should be the default before updates
-        self.assertEqual(self.gp.defaults[key], self.gp.get(key))
-
-        # test: integer values greater than 0 should be accepted and returned
-        self.gp.set(key, 1)
-        self.assertEqual(1, self.gp.get(key))
-
-        self.gp.set(key, 100)
-        self.assertEqual(100, self.gp.get(key))
-
-        # test: values NOT between 0 and 1 and non-integer values should be rejected
-        for illegal_value in [-1, 0.5, 'str']:
-            try:
-                self.gp.set(key, illegal_value)
-                self.fail('Did not raise expected ValueError on illegal value')
-            except ValueError:
-                pass
-
     def test_max_reliability_penalty(self):
         key = 'goal_pursuit_strategy.reliability.max_penalty'
 
@@ -230,7 +209,6 @@ class TestGlobalParams(unittest.TestCase):
     def test_reset(self):
         # setting arbitrary non-default values
         self.gp.set('composite_item_type', MockCompositeItem)
-        self.gp.set('dv_trace_max_len', 17)
         self.gp.set('item_type', MockSymbolicItem)
         self.gp.set('learning_rate', 0.00001)
         self.gp.set('ext_context.negative_correlation_threshold', 0.186)
@@ -294,6 +272,4 @@ class TestGlobalParams(unittest.TestCase):
         self.assertEqual(0.95, self.gp.defaults['ext_result.negative_correlation_threshold'])
         self.assertEqual(0.95, self.gp.defaults['ext_result.positive_correlation_threshold'])
         self.assertEqual(0.95, self.gp.defaults['reliability_threshold'])
-        self.assertEqual(5, self.gp.defaults['dv_trace_max_len'])
-        self.assertEqual(Verbosity.WARN, self.gp.defaults['verbosity'])
         self.assertLessEqual(0, self.gp.defaults['rng_seed'])

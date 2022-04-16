@@ -174,8 +174,8 @@ class GlobalParams(metaclass=Singleton):
 
         # used by epsilon greedy exploratory
         self._defaults['random_exploratory_strategy.epsilon.initial'] = 1.0
-        self._defaults['random_exploratory_strategy.epsilon.decay.rate'] = 0.999
-        self._defaults['random_exploratory_strategy.epsilon.decay.min'] = 0.01
+        self._defaults['random_exploratory_strategy.epsilon.decay.rate.initial'] = 0.999
+        self._defaults['random_exploratory_strategy.epsilon.decay.rate.min'] = 0.01
 
         # schema selection weighting (set in SchemaMechanism)
         self._defaults['schema_selection.weights.goal_weight'] = 0.6
@@ -215,9 +215,9 @@ class GlobalParams(metaclass=Singleton):
         self._validators['goal_pursuit_strategy.reliability.max_penalty'] = RangeValidator(0.0, exclude=[0.0])
         self._validators['learning_rate'] = RangeValidator(0.0, 1.0)
         self._validators['output_format'] = TypeValidator([str])
-        self._validators['random_exploratory_strategy.epsilon.decay.min'] = RangeValidator(low=0.0)
-        self._validators['random_exploratory_strategy.epsilon.decay.rate'] = RangeValidator(0.0, 1.0,
-                                                                                            exclude=[0.0, 1.0])
+        self._validators['random_exploratory_strategy.epsilon.decay.rate.min'] = RangeValidator(low=0.0)
+        self._validators['random_exploratory_strategy.epsilon.decay.rate.initial'] = RangeValidator(0.0, 1.0,
+                                                                                                    exclude=[0.0, 1.0])
         self._validators['random_exploratory_strategy.epsilon.initial'] = RangeValidator(0.0, 1.0)
         self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['rng_seed'] = TypeValidator([int])

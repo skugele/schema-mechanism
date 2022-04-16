@@ -8,7 +8,7 @@ from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import StateAssertion
-from schema_mechanism.core import primitive_value
+from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
@@ -130,7 +130,7 @@ class TestStateAssertion(TestCase):
 
     def test_primitive_value_1(self):
         # test: empty assertion should have zero total value
-        self.assertEqual(0.0, primitive_value(StateAssertion()))
+        self.assertEqual(0.0, calc_primitive_value(StateAssertion()))
 
     def test_primitive_value_2(self):
         # test: single NON-NEGATED item assertion in state assertion should have (prim. value == item's prim. value)
@@ -141,7 +141,7 @@ class TestStateAssertion(TestCase):
         self.assertFalse(ia.is_negated)
 
         sa = StateAssertion((ia,))
-        self.assertEqual(ia.item.primitive_value, primitive_value(sa))
+        self.assertEqual(ia.item.primitive_value, calc_primitive_value(sa))
 
     def test_primitive_value_3(self):
         # test: state assertion with single NEGATED item assertion should have prim. value == 0.0
@@ -152,7 +152,7 @@ class TestStateAssertion(TestCase):
         self.assertTrue(ia.is_negated)
 
         sa = StateAssertion((ia,))
-        self.assertEqual(0.0, primitive_value(sa))
+        self.assertEqual(0.0, calc_primitive_value(sa))
 
     def test_primitive_value_4(self):
         # test: state assertion with multiple NON-NEGATED item assertion should have prim. value == sum of item
@@ -161,7 +161,7 @@ class TestStateAssertion(TestCase):
 
         sa = StateAssertion(ias_pos)
 
-        self.assertEqual(sum(ia.item.primitive_value for ia in ias_pos), primitive_value(sa))
+        self.assertEqual(sum(ia.item.primitive_value for ia in ias_pos), calc_primitive_value(sa))
 
     def test_primitive_value_5(self):
         # test: state assertion with multiple NEGATED item assertion should have prim. value == -(sum of item
@@ -170,7 +170,7 @@ class TestStateAssertion(TestCase):
 
         sa = StateAssertion(ias_neg)
 
-        self.assertEqual(sum(ia.item.primitive_value for ia in ias_neg), primitive_value(sa))
+        self.assertEqual(sum(ia.item.primitive_value for ia in ias_neg), calc_primitive_value(sa))
 
     def test_primitive_value_6(self):
         # test: state assertion with negated AND non-negated item assertion should have prim. value == sum(prim. value
@@ -181,7 +181,7 @@ class TestStateAssertion(TestCase):
 
         sa = StateAssertion({*ias_pos, *ias_neg})
         expected_value = sum(ia.item.primitive_value for ia in ias_pos) - sum(ia.item.primitive_value for ia in ias_neg)
-        self.assertEqual(expected_value, primitive_value(sa))
+        self.assertEqual(expected_value, calc_primitive_value(sa))
 
     def test_primitive_value_7(self):
         # test: NEGATED STATE ASSERTION with negated AND non-negated item assertion should have prim. value ==
@@ -195,7 +195,7 @@ class TestStateAssertion(TestCase):
                 sum(ia.item.primitive_value for ia in ias_pos) -
                 sum(ia.item.primitive_value for ia in ias_neg)
         )
-        self.assertEqual(expected_value, primitive_value(sa))
+        self.assertEqual(expected_value, calc_primitive_value(sa))
 
     def test_iterable(self):
         count = 0
@@ -239,10 +239,10 @@ class TestStateAssertion(TestCase):
         for se in range(n_items):
             pool.get(str(se))
 
-        n_iters = 10_000
+        n_iterations = 10_000
 
         elapsed_time = 0
-        for _ in range(n_iters):
+        for _ in range(n_iterations):
             state = tuple(sample(range(n_items), k=5))
             pos_asserts = [ItemAssertion(item=ItemPool().get(str(i))) for i in sample(range(0, 50), k=5)]
             neg_asserts = [ItemAssertion(item=ItemPool().get(str(i)), negated=True) for i in
@@ -254,7 +254,7 @@ class TestStateAssertion(TestCase):
             end = time()
             elapsed_time += end - start
 
-        print(f'Time to call StateAssertion.is_satisfied {n_iters:,} times: {elapsed_time}s')
+        print(f'Time to call StateAssertion.is_satisfied {n_iterations:,} times: {elapsed_time}s')
 
     def test_replicate_with_2(self):
         # test: OLD state assertion with NEW non-composite item assertion

@@ -114,115 +114,54 @@ def lost_state(s_prev: Optional[State], s_curr: Optional[State]) -> frozenset[It
     return frozenset(lost)
 
 
-class DelegatedValueHelper:
-    """ A helper class that performs calculations necessary to derive an Item's delegated value.
+class DelegatedValueHelper(ABC):
+    """ An abstract base class for helper classes that track and derive an Item's delegated value.
 
-    Note: Drescher's implementation of delegated values uses forwarding chaining based on "parallel broadcasts"
-    (see Drescher 1991, p. 101). The current implementation deviates from Drescher's for performance reasons (performant
-    parallel broadcasts are not possible in Python). Instead of forward chaining, it uses a "backward" view that is
-    similar in spirit to eligibility traces. These value "traces" are initiated whenever the tracked item is in an On
-    state and terminate some configurable number of state transitions away from the state in which the Item was On. Upon
-    termination the trace's value (i.e., the maximum state value encountered along the trace) is used to update a
-    running average of the accessible value for the item. The trace's value also takes into account the average
-    accessible values of the items encountered during the trace.
-
-    Delegated value is calculated as the difference between the Item's average accessible value when On and a
-    "baseline" state value maintained in the global statistics. When the average accessible value when On is greater
-    than the baseline, the delegated value will be positive. Similarly, when it is less than the baseline, the
-    delegated value will be negative.
+    For a discussion of delegated value see Drescher 1991, p. 63.
     """
 
-    def __init__(self, item: Item) -> None:
-        self._item = item
+    @abstractmethod
+    def delegated_value(self, item: Item) -> float:
+        """ Returns the delegated value for the requested item.
 
-        self._dv_trace_updates_remaining = 0
-        self._dv_trace_value = -np.inf
-
-        self._dv_avg_accessible_value = 0.0
-
-    @property
-    def item(self) -> Item:
-        return self._item
-
-    @property
-    def trace_updates_remaining(self) -> int:
-        return self._dv_trace_updates_remaining
-
-    @property
-    def trace_value(self) -> float:
-        return self._dv_trace_value
-
-    @property
-    def avg_accessible_value(self) -> float:
-        """ The average of the maximum state values accessible when this Item is On.
-
-        "At each time unit, the schema mechanism computes the value explicitly accessible from the current state--that
-         is, the maximum value of any items that can be reached by a reliable chain of schemas starting with an
-         applicable schema." (See Drescher 1991, p. 63)
-
-        :return: the average accessible value when this Item is On
+        :param item: the item for which the delegated value will be returned.
+        :return: the item's current delegated value
         """
-        return self._dv_avg_accessible_value
+        pass
 
-    @property
-    def delegated_value(self) -> float:
-        """ Returns the delegated value for this helper's item.
+    @abstractmethod
+    def update(self, selection_state: State, result_state: State, **kwargs) -> None:
+        """ Updates the item's delegated value.
 
-        (For a discussion of delegated value see Drescher 1991, p. 63.)
+        Delegated value should only be updated when states of non-zero value are encountered following the inclusion
+        of the tracked item (i.e., the item being On) in a selection state. Note that an item's delegated value may be
+        updated even if the item was On in a selection state that does not immediately precede a value-bearing result
+        states. In other words, an item's delegated value may be updated even if there are many intermediate states
+        between a selection state in which the tracked item was On and a value-bearing result state.
 
-        :return: the Item's current delegated value
-        """
-        return self._dv_avg_accessible_value - GlobalStats().baseline_value
+        :param selection_state: the most recent selection state.
+        :param result_state: the state immediately following the selection state.
+        :param kwargs: a dictionary of optional keyword arguments
 
-    def update(self,
-               selection_state: State,
-               result_state: State,
-               **kwargs) -> None:
-        """ Updates delegated-value-related statistics based on the selection and result states.
-
-        :param selection_state: the state from which the last schema was selected (i.e., an action taken)
-        :param result_state: the state that immediately followed the provided selection state
-        :param kwargs: optional keyword arguments
         :return: None
         """
-        # start trace if item is On in selection state
-        if self._item.is_on(state=selection_state, **kwargs):
-            self._dv_trace_updates_remaining = GlobalParams().get('dv_trace_max_len')
-
-        # update trace value if updates remain
-        if self._dv_trace_updates_remaining > 0:
-            self._update_trace_val(result_state)
-
-        # if another On state is encountered during trace, need to terminate previous trace immediately
-        immediate_termination = self._item.is_on(state=result_state, **kwargs)
-        if immediate_termination:
-            self._dv_trace_updates_remaining = 0
-
-        # update avg. accessible value based on trace value on final trace update
-        if self._dv_trace_updates_remaining <= 0 and self._dv_trace_value != -np.inf:
-            self._update_avg_accessible_val()
-
-    def _update_trace_val(self, state: State) -> None:
-        s_pv = primitive_value(state)
-        s_aav = avg_accessible_value(state)
-
-        self._dv_trace_value = np.max([self._dv_trace_value, s_pv, s_aav])
-        self._dv_trace_updates_remaining -= 1
-
-    def _update_avg_accessible_val(self) -> None:
-        if self._dv_trace_value == -np.inf:
-            raise ValueError('invalid trace value: -np.inf.')
-
-        err = self._dv_trace_value - self._dv_avg_accessible_value
-        learning_rate = GlobalParams().get('learning_rate')
-        self._dv_avg_accessible_value += learning_rate * err
-
-        # clear trace value
-        self._dv_trace_value = -np.inf
+        pass
 
 
-# TODO: Is there a useful base class for the DVHelpers?
-class EligibilityTraceDelegatedValueHelper:
+class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
+    """ An eligibility-trace-based implementation of the DelegatedValueHelper.
+
+    Note: Drescher's implementation of delegated values used forwarding chaining based on "parallel broadcasts"
+    (see Drescher 1991, p. 101). The current implementation deviates from Drescher's for performance reasons (performant
+    parallel broadcasts are not possible in Python). This implementation has the additional advantage of supporting the
+    discounting of delegated values based on the temporal proximity between an item's inclusion in a selection state
+    and value-bearing result states that may follow. Drescher's original formulation is not discounted
+    (see Drescher 1991, p. 63).
+
+    For information on eligibility traces, see Chapter 12 of
+        Sutton, R. S., & Barto, A. G. (2018). Reinforcement learning: An introduction. MIT press.
+    """
+
     def __init__(self, discount_factor: float, trace_decay: float):
         self.discount_factor = discount_factor
 
@@ -480,7 +419,7 @@ class GlobalStats(metaclass=Singleton):
         :param state: a state
         :return: None
         """
-        self._baseline_value += (1.0 / self._n) * (primitive_value(state) - self._baseline_value)
+        self._baseline_value += (1.0 / self._n) * (calc_primitive_value(state) - self._baseline_value)
 
     # TODO: implement this, and replace update_baseline
     def update(self):
@@ -1098,7 +1037,7 @@ class CompositeItem(StateAssertion, Item):
             raise ValueError('Source assertion must have at least two elements')
 
         super().__init__(source=source,
-                         primitive_value=primitive_value(source),
+                         primitive_value=calc_primitive_value(source),
                          asserts=[*source.asserts, *source.negated_asserts])
 
     @property
@@ -1959,8 +1898,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
     def update(self,
                activated: bool,
                succeeded: bool,
-               s_prev: Optional[State],
-               s_curr: State,
+               selection_state: Optional[State],
                new: Collection[Item] = None,
                lost: Collection[Item] = None,
                explained: Optional[bool] = None,
@@ -1973,8 +1911,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         :param activated: True if this schema was implicitly or explicitly activated
         :param succeeded: True if the schema's result was achieved; False otherwise.
-        :param s_prev: the previous state
-        :param s_curr: the current state
+        :param selection_state: the environment state on which the most recent schema selection was based.
         :param new: the state elements in current but not previous state
         :param lost: the state elements in previous but not current state
         :param explained: True if a reliable schema was activated that "explained" the last state transition
@@ -2001,8 +1938,8 @@ class Schema(Observer, Observable, UniqueIdMixin):
                 self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
 
         # update extended context stats
-        if all((self._extended_context, activated, s_prev)):
-            self._extended_context.update_all(state=s_prev, success=succeeded, count=count)
+        if all((self._extended_context, activated, selection_state)):
+            self._extended_context.update_all(state=selection_state, success=succeeded, count=count)
 
     # invoked by a schema's extended context or extended result when a relevant item is discovered
     def receive(self, **kwargs) -> None:
@@ -2496,26 +2433,26 @@ class Chain(deque):
 
 
 @singledispatch
-def primitive_value(other: Optional[Any]) -> float:
+def calc_primitive_value(other: Optional[Any]) -> float:
     raise TypeError(f'Primitive value not supported for this type: {type(other)}')
 
 
-@primitive_value.register
+@calc_primitive_value.register
 def _(state: State) -> float:
     if len(state) == 0:
         return 0.0
     items = [ReadOnlyItemPool().get(se) for se in state]
-    return sum(primitive_value(i) for i in items if i)
+    return sum(calc_primitive_value(i) for i in items if i)
 
 
-@primitive_value.register
+@calc_primitive_value.register
 def _(assertion: ItemAssertion) -> float:
     if assertion.is_negated:
         return 0.0
-    return primitive_value(assertion.item)
+    return calc_primitive_value(assertion.item)
 
 
-@primitive_value.register
+@calc_primitive_value.register
 def _(assertion: StateAssertion) -> float:
     if assertion.is_negated:
         return 0.0
@@ -2523,30 +2460,30 @@ def _(assertion: StateAssertion) -> float:
     return sum(i.primitive_value for i in items)
 
 
-@primitive_value.register
+@calc_primitive_value.register
 def _(se: StateElement) -> float:
     item = ReadOnlyItemPool().get(se)
     if not item:
         return 0.0
-    return item.primitive_value
+    return item.calc_primitive_value
 
 
-@primitive_value.register
+@calc_primitive_value.register
 def _(item: Item) -> float:
     return item.primitive_value
 
 
-@primitive_value.register
+@calc_primitive_value.register
 def _(item: CompositeItem) -> float:
-    return primitive_value(item.as_state())
+    return calc_primitive_value(item.as_state())
 
 
 @singledispatch
-def delegated_value(other: Optional[Any]) -> float:
+def calc_delegated_value(other: Optional[Any]) -> float:
     raise TypeError(f'Delegated value not supported for this type: {type(other)}')
 
 
-@delegated_value.register
+@calc_delegated_value.register
 def _(state: State) -> float:
     if len(state) == 0:
         return 0.0 - GlobalStats().baseline_value
@@ -2560,14 +2497,14 @@ def _(state: State) -> float:
     return np.max([i.delegated_value for i in items if i])
 
 
-@delegated_value.register
+@calc_delegated_value.register
 def _(assertion: ItemAssertion) -> float:
     if assertion.is_negated:
         return 0.0 - GlobalStats().baseline_value
-    return delegated_value(assertion.item)
+    return calc_delegated_value(assertion.item)
 
 
-@delegated_value.register
+@calc_delegated_value.register
 def _(assertion: StateAssertion) -> float:
     if assertion.is_negated:
         return 0.0
@@ -2578,60 +2515,23 @@ def _(assertion: StateAssertion) -> float:
     return np.max([i.delegated_value for i in items if i])
 
 
-@delegated_value.register
+@calc_delegated_value.register
 def _(se: StateElement) -> float:
     item = ReadOnlyItemPool().get(se)
     if not item:
         return 0.0
-    return item.delegated_value
+    return item.calc_delegated_value
 
 
-@delegated_value.register
+@calc_delegated_value.register
 def _(item: Item) -> float:
     return item.delegated_value
 
 
-@delegated_value.register
+@calc_delegated_value.register
 def _(item: CompositeItem) -> float:
-    return delegated_value(item.as_state())
+    return calc_delegated_value(item.as_state())
 
 
-@singledispatch
-def avg_accessible_value(other: Optional[Any]) -> float:
-    raise TypeError(f'Average accessible value not supported for this type: {type(other)}')
-
-
-@avg_accessible_value.register
-def _(state: State) -> float:
-    if not state:
-        return 0.0
-    items = [ReadOnlyItemPool().get(se) for se in state]
-    return np.max([i.avg_accessible_value for i in items])
-
-
-@avg_accessible_value.register
-def _(assertion: ItemAssertion) -> float:
-    return 0.0 if assertion.is_negated else assertion.item.avg_accessible_value
-
-
-@avg_accessible_value.register
-def _(assertion: StateAssertion) -> float:
-    return sum(ia.item.avg_accessible_value for ia in assertion.asserts)
-
-
-@avg_accessible_value.register
-def _(se: StateElement) -> float:
-    item = ReadOnlyItemPool().get(se)
-    if not item:
-        return 0.0
-    return item.avg_accessible_value
-
-
-@avg_accessible_value.register
-def _(item: Item) -> float:
-    return item.avg_accessible_value
-
-
-# TODO: need to rename this. The name conflicts with many variable names.
-def value(o: Any) -> float:
-    return primitive_value(o) + delegated_value(o)
+def calc_value(o: Any) -> float:
+    return calc_primitive_value(o) + calc_delegated_value(o)

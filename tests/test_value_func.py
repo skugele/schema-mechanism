@@ -9,8 +9,8 @@ from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import ReadOnlyItemPool
 from schema_mechanism.core import SymbolicItem
-from schema_mechanism.core import delegated_value
-from schema_mechanism.core import primitive_value
+from schema_mechanism.core import calc_delegated_value
+from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_schema
@@ -40,69 +40,69 @@ class TestPrimitiveValueFunctions(unittest.TestCase):
         self.known_state_elements = list(itertools.chain.from_iterable([i.state_elements for i in self.known_items]))
 
     def test_pv_other(self):
-        self.assertRaises(TypeError, lambda: primitive_value(set()))
-        self.assertRaises(TypeError, lambda: primitive_value(dict()))
+        self.assertRaises(TypeError, lambda: calc_primitive_value(set()))
+        self.assertRaises(TypeError, lambda: calc_primitive_value(dict()))
 
     def test_pv_item(self):
         # test: primitive_value(item) should return the primitive value of the item
         for item in self.known_items:
-            self.assertEqual(item.primitive_value, primitive_value(item))
+            self.assertEqual(item.primitive_value, calc_primitive_value(item))
 
     def test_pv_state_element(self):
         # test: primitive_value(state element) should return the primitive value of the corresponding item in pool
         for se in self.known_state_elements:
             item = ReadOnlyItemPool().get(se)
-            self.assertEqual(item.primitive_value, primitive_value(se))
+            self.assertEqual(item.primitive_value, calc_primitive_value(se))
 
         # test: primitive_value(state element) should return a ValueError if item does not exist in pool
-        self.assertEqual(0.0, primitive_value('UNK'))
+        self.assertEqual(0.0, calc_primitive_value('UNK'))
 
     def test_pv_state(self):
         # test: primitive_value(state) should return the sum of state elements' primitive values
-        self.assertEqual(-100.0, primitive_value(sym_state('A')))
-        self.assertEqual(0.0, primitive_value(sym_state('B')))
-        self.assertEqual(100.0, primitive_value(sym_state('C')))
-        self.assertEqual(-100.0, primitive_value(sym_state('A,B')))
-        self.assertEqual(0.0, primitive_value(sym_state('A,C')))
-        self.assertEqual(100.0, primitive_value(sym_state('B,C')))
+        self.assertEqual(-100.0, calc_primitive_value(sym_state('A')))
+        self.assertEqual(0.0, calc_primitive_value(sym_state('B')))
+        self.assertEqual(100.0, calc_primitive_value(sym_state('C')))
+        self.assertEqual(-100.0, calc_primitive_value(sym_state('A,B')))
+        self.assertEqual(0.0, calc_primitive_value(sym_state('A,C')))
+        self.assertEqual(100.0, calc_primitive_value(sym_state('B,C')))
 
         # test: empty state should return 0.0
-        self.assertEqual(0.0, primitive_value(sym_state('')))
+        self.assertEqual(0.0, calc_primitive_value(sym_state('')))
 
         # test: state containing only unknown state elements (not in item pool) should return 0.0
-        self.assertEqual(0.0, primitive_value(sym_state('UNK,N/A,NOPE,NADA')))
+        self.assertEqual(0.0, calc_primitive_value(sym_state('UNK,N/A,NOPE,NADA')))
 
     def test_pv_item_assertion(self):
         # test: primitive_value(item assert) should return the item's primitive value
-        self.assertEqual(-100.0, primitive_value(sym_item_assert('A')))
-        self.assertEqual(0.0, primitive_value(sym_item_assert('B')))
-        self.assertEqual(100.0, primitive_value(sym_item_assert('C')))
+        self.assertEqual(-100.0, calc_primitive_value(sym_item_assert('A')))
+        self.assertEqual(0.0, calc_primitive_value(sym_item_assert('B')))
+        self.assertEqual(100.0, calc_primitive_value(sym_item_assert('C')))
 
         # test: primitive_value(item assert) should return 0.0 for negated assertions
-        self.assertEqual(0.0, primitive_value(sym_item_assert('~A')))
-        self.assertEqual(0.0, primitive_value(sym_item_assert('~B')))
-        self.assertEqual(0.0, primitive_value(sym_item_assert('~C')))
+        self.assertEqual(0.0, calc_primitive_value(sym_item_assert('~A')))
+        self.assertEqual(0.0, calc_primitive_value(sym_item_assert('~B')))
+        self.assertEqual(0.0, calc_primitive_value(sym_item_assert('~C')))
 
         # test: composite item assertions should function like state assertions
-        self.assertEqual(-100.0, primitive_value(sym_item_assert('(A,B)')))
-        self.assertEqual(0.0, primitive_value(sym_item_assert('(A,C)')))
-        self.assertEqual(100.0, primitive_value(sym_item_assert('(B,C)')))
-        self.assertEqual(0.0, primitive_value(sym_item_assert('(~A,B)')))
-        self.assertEqual(100.0, primitive_value(sym_item_assert('(~A,C)')))
-        self.assertEqual(0.0, primitive_value(sym_item_assert('(B,~C)')))
+        self.assertEqual(-100.0, calc_primitive_value(sym_item_assert('(A,B)')))
+        self.assertEqual(0.0, calc_primitive_value(sym_item_assert('(A,C)')))
+        self.assertEqual(100.0, calc_primitive_value(sym_item_assert('(B,C)')))
+        self.assertEqual(0.0, calc_primitive_value(sym_item_assert('(~A,B)')))
+        self.assertEqual(100.0, calc_primitive_value(sym_item_assert('(~A,C)')))
+        self.assertEqual(0.0, calc_primitive_value(sym_item_assert('(B,~C)')))
 
     def test_pv_state_assertion(self):
         # test: primitive_value(state assert) for non-negated asserts should return the sum of the primitive values
-        self.assertEqual(-100.0, primitive_value(sym_state_assert('A')))
-        self.assertEqual(0.0, primitive_value(sym_state_assert('B')))
-        self.assertEqual(100.0, primitive_value(sym_state_assert('C')))
+        self.assertEqual(-100.0, calc_primitive_value(sym_state_assert('A')))
+        self.assertEqual(0.0, calc_primitive_value(sym_state_assert('B')))
+        self.assertEqual(100.0, calc_primitive_value(sym_state_assert('C')))
 
-        self.assertEqual(-100.0, primitive_value(sym_state_assert('A,B')))
-        self.assertEqual(0.0, primitive_value(sym_state_assert('A,C')))
-        self.assertEqual(100.0, primitive_value(sym_state_assert('B,C')))
-        self.assertEqual(0.0, primitive_value(sym_state_assert('~A,B')))
-        self.assertEqual(100.0, primitive_value(sym_state_assert('~A,C')))
-        self.assertEqual(0.0, primitive_value(sym_state_assert('B,~C')))
+        self.assertEqual(-100.0, calc_primitive_value(sym_state_assert('A,B')))
+        self.assertEqual(0.0, calc_primitive_value(sym_state_assert('A,C')))
+        self.assertEqual(100.0, calc_primitive_value(sym_state_assert('B,C')))
+        self.assertEqual(0.0, calc_primitive_value(sym_state_assert('~A,B')))
+        self.assertEqual(100.0, calc_primitive_value(sym_state_assert('~A,C')))
+        self.assertEqual(0.0, calc_primitive_value(sym_state_assert('B,~C')))
 
 
 class TestDelegatedValueFunctions(unittest.TestCase):
@@ -117,83 +117,83 @@ class TestDelegatedValueFunctions(unittest.TestCase):
         self.known_state_elements = list(itertools.chain.from_iterable([i.state_elements for i in self.known_items]))
 
     def test_dv_other(self):
-        self.assertRaises(TypeError, lambda: delegated_value(set()))
-        self.assertRaises(TypeError, lambda: delegated_value(dict()))
+        self.assertRaises(TypeError, lambda: calc_delegated_value(set()))
+        self.assertRaises(TypeError, lambda: calc_delegated_value(dict()))
 
     def test_dv_item(self):
         # test: delegated_value(item) should return the primitive value of the item
         for item in self.known_items:
-            self.assertEqual(item.delegated_value, delegated_value(item))
+            self.assertEqual(item.delegated_value, calc_delegated_value(item))
 
     def test_dv_state_element(self):
         # test: delegated_value(state element) should return the delegated value of the corresponding item in pool
         for se in self.known_state_elements:
             item = ReadOnlyItemPool().get(se)
-            self.assertEqual(item.delegated_value, delegated_value(se))
+            self.assertEqual(item.delegated_value, calc_delegated_value(se))
 
         # test: delegated_value(state element) should return a ValueError if item does not exist in pool
-        self.assertRaises(ValueError, lambda: delegated_value('UNK'))
+        self.assertRaises(ValueError, lambda: calc_delegated_value('UNK'))
 
     def test_dv_state(self):
         # test: delegated_value(state) should return the max of state elements' delegated values
-        self.assertEqual(-100.0, delegated_value(sym_state('A')))
-        self.assertEqual(0.0, delegated_value(sym_state('B')))
-        self.assertEqual(100.0, delegated_value(sym_state('C')))
-        self.assertEqual(0.0, delegated_value(sym_state('A,B')))
-        self.assertEqual(100.0, delegated_value(sym_state('A,C')))
-        self.assertEqual(100.0, delegated_value(sym_state('B,C')))
+        self.assertEqual(-100.0, calc_delegated_value(sym_state('A')))
+        self.assertEqual(0.0, calc_delegated_value(sym_state('B')))
+        self.assertEqual(100.0, calc_delegated_value(sym_state('C')))
+        self.assertEqual(0.0, calc_delegated_value(sym_state('A,B')))
+        self.assertEqual(100.0, calc_delegated_value(sym_state('A,C')))
+        self.assertEqual(100.0, calc_delegated_value(sym_state('B,C')))
 
         # test: empty state should return 0.0
-        self.assertEqual(0.0, delegated_value(sym_state('')))
+        self.assertEqual(0.0, calc_delegated_value(sym_state('')))
 
         # test: state containing unknown state elements should return ValueError
-        self.assertRaises(ValueError, lambda: delegated_value(sym_state('UNK,N/A,NOPE,NADA')))
+        self.assertRaises(ValueError, lambda: calc_delegated_value(sym_state('UNK,N/A,NOPE,NADA')))
 
     def test_dv_item_assertion(self):
         # test: delegated_value(item assert) should return the item's delegated value
-        self.assertEqual(-100.0, delegated_value(sym_item_assert('A')))
-        self.assertEqual(0.0, delegated_value(sym_item_assert('B')))
-        self.assertEqual(100.0, delegated_value(sym_item_assert('C')))
+        self.assertEqual(-100.0, calc_delegated_value(sym_item_assert('A')))
+        self.assertEqual(0.0, calc_delegated_value(sym_item_assert('B')))
+        self.assertEqual(100.0, calc_delegated_value(sym_item_assert('C')))
 
         # test: delegated_value(item assert) should return 0.0 for negated assertions
-        self.assertEqual(0.0, delegated_value(sym_item_assert('~A')))
-        self.assertEqual(0.0, delegated_value(sym_item_assert('~B')))
-        self.assertEqual(0.0, delegated_value(sym_item_assert('~C')))
+        self.assertEqual(0.0, calc_delegated_value(sym_item_assert('~A')))
+        self.assertEqual(0.0, calc_delegated_value(sym_item_assert('~B')))
+        self.assertEqual(0.0, calc_delegated_value(sym_item_assert('~C')))
 
         # test: composite item assertions should function like state assertions
-        self.assertEqual(0.0, delegated_value(sym_item_assert('(A,B)')))
-        self.assertEqual(100.0, delegated_value(sym_item_assert('(A,C)')))
-        self.assertEqual(100.0, delegated_value(sym_item_assert('(B,C)')))
-        self.assertEqual(0.0, delegated_value(sym_item_assert('(~A,B)')))
-        self.assertEqual(100.0, delegated_value(sym_item_assert('(~A,C)')))
-        self.assertEqual(0.0, delegated_value(sym_item_assert('(B,~C)')))
+        self.assertEqual(0.0, calc_delegated_value(sym_item_assert('(A,B)')))
+        self.assertEqual(100.0, calc_delegated_value(sym_item_assert('(A,C)')))
+        self.assertEqual(100.0, calc_delegated_value(sym_item_assert('(B,C)')))
+        self.assertEqual(0.0, calc_delegated_value(sym_item_assert('(~A,B)')))
+        self.assertEqual(100.0, calc_delegated_value(sym_item_assert('(~A,C)')))
+        self.assertEqual(0.0, calc_delegated_value(sym_item_assert('(B,~C)')))
 
     def test_dv_state_assertion(self):
         # test: delegated_value(state assert) for non-negated asserts should return the max of the delegated values
-        self.assertEqual(-100.0, delegated_value(sym_state_assert('A')))
-        self.assertEqual(0.0, delegated_value(sym_state_assert('B')))
-        self.assertEqual(100.0, delegated_value(sym_state_assert('C')))
+        self.assertEqual(-100.0, calc_delegated_value(sym_state_assert('A')))
+        self.assertEqual(0.0, calc_delegated_value(sym_state_assert('B')))
+        self.assertEqual(100.0, calc_delegated_value(sym_state_assert('C')))
 
-        self.assertEqual(0.0, delegated_value(sym_state_assert('A,B')))
-        self.assertEqual(100.0, delegated_value(sym_state_assert('A,C')))
-        self.assertEqual(100.0, delegated_value(sym_state_assert('B,C')))
-        self.assertEqual(0.0, delegated_value(sym_state_assert('~A,B')))
-        self.assertEqual(100.0, delegated_value(sym_state_assert('~A,C')))
-        self.assertEqual(0.0, delegated_value(sym_state_assert('B,~C')))
+        self.assertEqual(0.0, calc_delegated_value(sym_state_assert('A,B')))
+        self.assertEqual(100.0, calc_delegated_value(sym_state_assert('A,C')))
+        self.assertEqual(100.0, calc_delegated_value(sym_state_assert('B,C')))
+        self.assertEqual(0.0, calc_delegated_value(sym_state_assert('~A,B')))
+        self.assertEqual(100.0, calc_delegated_value(sym_state_assert('~A,C')))
+        self.assertEqual(0.0, calc_delegated_value(sym_state_assert('B,~C')))
 
     def test_dv_with_nonzero_baseline(self):
         GlobalStats().baseline_value = 10.0
 
-        self.assertEqual(0.0 - GlobalStats().baseline_value, delegated_value(sym_state('')))
-        self.assertEqual(0.0 - GlobalStats().baseline_value, delegated_value(sym_item_assert('~A')))
-        self.assertEqual(100.0 - GlobalStats().baseline_value, delegated_value(sym_item_assert('C')))
+        self.assertEqual(0.0 - GlobalStats().baseline_value, calc_delegated_value(sym_state('')))
+        self.assertEqual(0.0 - GlobalStats().baseline_value, calc_delegated_value(sym_item_assert('~A')))
+        self.assertEqual(100.0 - GlobalStats().baseline_value, calc_delegated_value(sym_item_assert('C')))
 
-        self.assertEqual(0.0 - GlobalStats().baseline_value, delegated_value(sym_state_assert('A,B')))
-        self.assertEqual(100.0 - GlobalStats().baseline_value, delegated_value(sym_state_assert('~A,C')))
+        self.assertEqual(0.0 - GlobalStats().baseline_value, calc_delegated_value(sym_state_assert('A,B')))
+        self.assertEqual(100.0 - GlobalStats().baseline_value, calc_delegated_value(sym_state_assert('~A,C')))
 
         for se in self.known_state_elements:
             item = ReadOnlyItemPool().get(se)
-            self.assertEqual(delegated_value(item), delegated_value(se))
+            self.assertEqual(calc_delegated_value(item), calc_delegated_value(se))
 
 
 class TestInstrumentalValues(unittest.TestCase):
@@ -292,7 +292,8 @@ class TestInstrumentalValues(unittest.TestCase):
         proximities = [pending.action.controller.proximity(s) for s in chain]
 
         # test: when cost is zero, instrumental value should be the goal value scaled by a schema's goal proximity
-        component_ivs = np.array(proximities, dtype=np.float64) * (primitive_value(goal) + delegated_value(goal))
+        component_ivs = np.array(proximities, dtype=np.float64) * (
+                calc_primitive_value(goal) + calc_delegated_value(goal))
         non_component_ivs = np.zeros_like(non_components, dtype=np.float64)
 
         expected_result = np.concatenate([component_ivs, non_component_ivs])
@@ -328,7 +329,7 @@ class TestInstrumentalValues(unittest.TestCase):
 
         # test: instrumental value should always be non-negative
         component_ivs = np.maximum(
-            np.array(proximities, dtype=np.float64) * (primitive_value(goal) + delegated_value(goal)) - costs,
+            np.array(proximities, dtype=np.float64) * (calc_primitive_value(goal) + calc_delegated_value(goal)) - costs,
             np.zeros_like(chain, dtype=np.float64)
         )
 
