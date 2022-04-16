@@ -254,7 +254,9 @@ class Item:
 
         self._source = source
         self._primitive_value = primitive_value or 0.0
-        self._delegated_value_helper: EligibilityTraceDelegatedValueHelper = GlobalStats().delegated_value_helper
+
+        # TODO: let this be set by argument to __init__
+        self._delegated_value_helper: DelegatedValueHelper = GlobalStats().delegated_value_helper
 
     # TODO: Need to be really careful with the default hash implementations which produce different values between
     # TODO: runs. This will kill and direct serialization/deserialization of data structures that rely on hashes.
@@ -268,8 +270,7 @@ class Item:
     def __repr__(self) -> str:
         return repr_str(self, {'source': str(self.source),
                                'pv': self.primitive_value,
-                               'dv': self.delegated_value,
-                               'aav': self.avg_accessible_value, })
+                               'dv': self.delegated_value})
 
     @property
     def source(self) -> Any:

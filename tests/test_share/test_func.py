@@ -1,11 +1,15 @@
+import os
 from collections import Hashable
 from copy import copy
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SchemaPool
+from schema_mechanism.persistence import Serializable
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import Verbosity
 
@@ -153,3 +157,33 @@ def satisfies_hash_checks(obj: Any) -> bool:
         is_hash_same_for_equal_objects(obj, obj),
         is_hash_same_for_equal_objects(obj, copy(obj)),
     })
+
+
+# functions to support testing Serializable objects
+def serialize_enforces_overwrite_protection(obj: Serializable) -> bool:
+    with TemporaryDirectory() as tmp_dir:
+        path = Path(os.path.join(tmp_dir, 'test-file-serialize_enforce_overwrite_protection.sav'))
+
+        # create the file that would be written to
+        path.touch()
+
+        # test: this should raise a ValueError
+        try:
+            obj.save(path, overwrite=False)
+            return False  # failure: should never get here
+        except ValueError:
+            pass
+
+        # test: this should NOT raise a ValueError
+        try:
+            obj.save(path, overwrite=True)
+        except ValueError:
+            # failure: overwrite allowed; should not raise a ValueError
+            return False
+
+    return True
+
+
+def file_was_written(path: Path):
+    # file was written with at least one byte of data
+    return path.exists() and path.is_file() and path.stat().st_size > 0

@@ -1,4 +1,7 @@
+import os
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from schema_mechanism.core import Item
 from schema_mechanism.core import Schema
@@ -10,16 +13,16 @@ from schema_mechanism.share import display_message
 from schema_mechanism.stats import BarnardExactCorrelationTest
 from schema_mechanism.stats import DrescherCorrelationTest
 from schema_mechanism.stats import FisherExactCorrelationTest
-from test_share.test_classes import MockCompositeItem
-from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
+from test_share.test_func import file_was_written
+from test_share.test_func import serialize_enforces_overwrite_protection
 
 
 class TestGlobalParams(unittest.TestCase):
     def setUp(self):
         common_test_setup()
 
-        self.gp = GlobalParams()
+        self.gp: GlobalParams = GlobalParams()
         self.gp.reset()
 
     def test_singleton(self):
@@ -208,8 +211,6 @@ class TestGlobalParams(unittest.TestCase):
 
     def test_reset(self):
         # setting arbitrary non-default values
-        self.gp.set('composite_item_type', MockCompositeItem)
-        self.gp.set('item_type', MockSymbolicItem)
         self.gp.set('learning_rate', 0.00001)
         self.gp.set('ext_context.negative_correlation_threshold', 0.186)
         self.gp.set('features', [SupportedFeature.ER_INCREMENTAL_RESULTS])
@@ -273,3 +274,49 @@ class TestGlobalParams(unittest.TestCase):
         self.assertEqual(0.95, self.gp.defaults['ext_result.positive_correlation_threshold'])
         self.assertEqual(0.95, self.gp.defaults['reliability_threshold'])
         self.assertLessEqual(0, self.gp.defaults['rng_seed'])
+
+    def test_save_and_load(self):
+        self.assertTrue(serialize_enforces_overwrite_protection(self.gp))
+
+        # sets a few non-default values
+        non_default_params = {
+            'learning_rate': 0.00001,
+            'ext_context.negative_correlation_threshold': 0.186,
+            'features': [SupportedFeature.ER_INCREMENTAL_RESULTS],
+            'output_format': '{message}',
+            'ext_result.positive_correlation_threshold': 0.176,
+            'reliability_threshold': 0.72,
+            'rng_seed': 123456,
+        }
+
+        for key, value in non_default_params.items():
+            self.gp.set(key, value)
+
+        expected_dict = dict()
+        expected_dict.update(self.gp.defaults)
+        expected_dict.update(non_default_params)
+
+        # sanity check
+        self.assertDictEqual(self.gp.params, expected_dict)
+
+        with TemporaryDirectory() as tmp_dir:
+            path = Path(os.path.join(tmp_dir, 'test-file-global_params-save_and_load.sav'))
+
+            # sanity check: file SHOULD NOT exist
+            self.assertFalse(path.exists())
+
+            self.gp.save(path)
+
+            # test: file SHOULD exist after call to save
+            self.assertTrue(file_was_written(path))
+
+            # clear non-default parameters
+            self.gp.reset()
+
+            # sanity check: only defaults
+            self.assertDictEqual(self.gp.params, self.gp.defaults)
+
+            self.gp.load(path)
+
+            # test: non-default global params SHOULD be restored after load
+            self.assertDictEqual(self.gp.params, expected_dict)
