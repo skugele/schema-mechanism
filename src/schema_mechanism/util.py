@@ -131,7 +131,7 @@ class AssociativeArrayList(Generic[T]):
         self._block_size = block_size
 
         # map of hashable objects to their values array index
-        self._indexes: dict[T, int] = defaultdict(lambda: self._missing_index())
+        self._indexes: dict[T, int] = defaultdict(self._missing_index)
 
         self._values = np.zeros(pre_allocated, dtype=np.float64)
 

@@ -9,6 +9,7 @@ from copy import copy
 from dataclasses import dataclass
 from enum import Enum
 from enum import auto
+from typing import Any
 from typing import Optional
 
 import numpy as np
@@ -72,6 +73,13 @@ class SchemaMemory(Observer):
 
     def __iter__(self) -> Schema:
         yield from itertools.chain.from_iterable([n.schemas_satisfied_by for n in self._schema_tree])
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, SchemaMemory):
+            return all({
+                self._schema_tree == other._schema_tree,
+            })
+        return False if other is None else NotImplemented
 
     @staticmethod
     def from_tree(tree: SchemaTree) -> SchemaMemory:

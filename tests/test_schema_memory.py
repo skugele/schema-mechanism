@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import ANY
 from unittest.mock import MagicMock
@@ -19,9 +22,12 @@ from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SelectionDetails
 from schema_mechanism.modules import create_context_spin_off
 from schema_mechanism.modules import create_result_spin_off
+from schema_mechanism.persistence import deserialize
+from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
 from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
+from test_share.test_func import file_was_written
 
 
 class TestSchemaMemory(TestCase):
@@ -422,3 +428,19 @@ class TestSchemaMemory(TestCase):
         # test: after adding result to SchemaMemory, all these should return False
         for r in unknown_results:
             self.assertFalse(sm.is_novel_result(r))
+
+    def test_serialize(self):
+        with TemporaryDirectory() as tmp_dir:
+            path = Path(os.path.join(tmp_dir, 'test-file-schema-memory-serialize.sav'))
+
+            # sanity check: file SHOULD NOT exist
+            self.assertFalse(path.exists())
+
+            serialize(self.sm, path)
+
+            # test: file SHOULD exist after call to save
+            self.assertTrue(file_was_written(path))
+
+            recovered: SchemaMemory = deserialize(path)
+
+            self.assertEqual(self.sm, recovered)

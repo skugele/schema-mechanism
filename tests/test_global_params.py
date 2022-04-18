@@ -7,6 +7,8 @@ from schema_mechanism.core import Item
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import is_feature_enabled
+from schema_mechanism.persistence import deserialize
+from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import Verbosity
 from schema_mechanism.share import display_message
@@ -15,7 +17,6 @@ from schema_mechanism.stats import DrescherCorrelationTest
 from schema_mechanism.stats import FisherExactCorrelationTest
 from test_share.test_func import common_test_setup
 from test_share.test_func import file_was_written
-from test_share.test_func import serialize_enforces_overwrite_protection
 
 
 class TestGlobalParams(unittest.TestCase):
@@ -275,9 +276,7 @@ class TestGlobalParams(unittest.TestCase):
         self.assertEqual(0.95, self.gp.defaults['reliability_threshold'])
         self.assertLessEqual(0, self.gp.defaults['rng_seed'])
 
-    def test_save_and_load(self):
-        self.assertTrue(serialize_enforces_overwrite_protection(self.gp))
-
+    def test_serialize(self):
         # sets a few non-default values
         non_default_params = {
             'learning_rate': 0.00001,
@@ -305,7 +304,7 @@ class TestGlobalParams(unittest.TestCase):
             # sanity check: file SHOULD NOT exist
             self.assertFalse(path.exists())
 
-            self.gp.save(path)
+            serialize(self.gp, path)
 
             # test: file SHOULD exist after call to save
             self.assertTrue(file_was_written(path))
@@ -316,7 +315,7 @@ class TestGlobalParams(unittest.TestCase):
             # sanity check: only defaults
             self.assertDictEqual({k: v for k, v in self.gp}, self.gp.defaults)
 
-            self.gp.load(path)
+            deserialize(path)
 
             # test: non-default global params SHOULD be restored after load
             self.assertDictEqual({k: v for k, v in self.gp}, expected_dict)

@@ -247,7 +247,7 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         return self.discount_factor * (pv + self.discount_factor * dv)
 
 
-class Item:
+class Item(ABC):
 
     def __init__(self, source: Any, primitive_value: float = None, **kwargs) -> None:
         super().__init__()
@@ -301,28 +301,8 @@ class Item:
         self._primitive_value = value
 
     @property
-    def avg_accessible_value(self) -> float:
-        return self._delegated_value_helper.delegated_value(self)
-
-    @property
     def delegated_value(self) -> float:
         return self._delegated_value_helper.delegated_value(self)
-
-    def update_delegated_value(self,
-                               selection_state: State,
-                               result_state: State,
-                               **kwargs) -> None:
-        """ Updates delegated value based on if item was On in selection and the value of items in the result state.
-
-        :param selection_state: the state from which the last schema was selected (i.e., an action taken)
-        :param result_state: the state that immediately followed the provided selection state
-        :param kwargs: optional keyword arguments
-        :return: None
-        """
-        self._delegated_value_helper.update(item=self,
-                                            selection_state=selection_state,
-                                            result_state=result_state,
-                                            **kwargs)
 
     @abstractmethod
     def is_on(self, state: State, **kwargs) -> bool:
@@ -574,6 +554,16 @@ class ECItemStats(ItemStats):
         self._n_fail_and_on = 0
         self._n_fail_and_off = 0
 
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, ECItemStats):
+            return all({
+                self._n_success_and_on == other._n_success_and_on,
+                self._n_success_and_off == other._n_success_and_off,
+                self._n_fail_and_on == other._n_fail_and_on,
+                self._n_fail_and_off == other._n_fail_and_off,
+            })
+        return False if other is None else NotImplemented
+
     @property
     def correlation_test(self) -> ItemCorrelationTest:
         return GlobalParams().get('ext_context.correlation_test') or FisherExactCorrelationTest()
@@ -643,17 +633,6 @@ class ECItemStats(ItemStats):
     def as_table(self) -> CorrelationTable:
         return self.n_success_and_on, self.n_fail_and_on, self.n_success_and_off, self.n_fail_and_off
 
-    def __eq__(self, other) -> bool:
-        if isinstance(other, ECItemStats):
-            # the "s is o" check is to handle np.nan fields
-            return all({s is o or s == o for s, o in
-                        [[self._n_success_and_on, other._n_success_and_on],
-                         [self._n_success_and_off, other._n_success_and_off],
-                         [self._n_fail_and_on, other._n_fail_and_on],
-                         [self._n_fail_and_off, other._n_fail_and_off]]})
-
-        return False if other is None else NotImplemented
-
     def __hash__(self):
         return hash((self._n_success_and_on,
                      self._n_success_and_off,
@@ -693,6 +672,16 @@ class ERItemStats(ItemStats):
         self._n_on_and_not_activated = 0
         self._n_off_and_activated = 0
         self._n_off_and_not_activated = 0
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, ERItemStats):
+            return all({
+                self._n_on_and_activated == other._n_on_and_activated,
+                self._n_on_and_not_activated == other._n_on_and_not_activated,
+                self._n_off_and_activated == other._n_off_and_activated,
+                self._n_off_and_not_activated == other._n_off_and_not_activated,
+            })
+        return False if other is None else NotImplemented
 
     @property
     def correlation_test(self) -> ItemCorrelationTest:
@@ -756,17 +745,6 @@ class ERItemStats(ItemStats):
                 self.n_off_and_activated,
                 self.n_on_and_not_activated,
                 self.n_off_and_not_activated)
-
-    def __eq__(self, other) -> bool:
-        if isinstance(other, ERItemStats):
-            # the "s is o" check is to handle np.nan fields
-            return all({s is o or s == o for s, o in
-                        [[self._n_on_and_activated, other._n_on_and_activated],
-                         [self._n_off_and_activated, other._n_off_and_activated],
-                         [self._n_on_and_not_activated, other._n_on_and_not_activated],
-                         [self._n_off_and_not_activated, other._n_off_and_not_activated]]})
-
-        return False if other is None else NotImplemented
 
     def __hash__(self):
         return hash((self._n_on_and_activated,
@@ -1082,9 +1060,7 @@ class ExtendedItemCollection(Observable):
         self._relevant_items: MutableSet[ItemAssertion] = set()
         self._new_relevant_items: MutableSet[ItemAssertion] = set()
 
-        self._stats: dict[Any, ItemStats] = defaultdict(lambda: self._null_member)
-
-        self._item_pool = ItemPool()
+        self._stats: dict[Any, ItemStats] = defaultdict(self._get_null_stats)
 
     def __str__(self) -> str:
         name = self.__class__.__name__
@@ -1104,6 +1080,17 @@ class ExtendedItemCollection(Observable):
         }
 
         return repr_str(self, attr_values)
+
+    def __eq__(self, other: Any):
+        if isinstance(other, ExtendedItemCollection):
+            return all({
+                # self._null_member == other._null_member,
+                self._suppressed_items == other._suppressed_items,
+                self._relevant_items == other._relevant_items,
+                self._new_relevant_items == other._new_relevant_items,
+                self._stats == other._stats
+            })
+        return False if other is None else NotImplemented
 
     @property
     def stats(self) -> dict[Any, Any]:
@@ -1145,6 +1132,9 @@ class ExtendedItemCollection(Observable):
     @new_relevant_items.setter
     def new_relevant_items(self, value: Collection[Assertion]) -> None:
         self._new_relevant_items = frozenset(value)
+
+    def _get_null_stats(self) -> ItemStats:
+        return self._null_member
 
 
 class ExtendedResult(ExtendedItemCollection):
@@ -1190,10 +1180,7 @@ class ExtendedResult(ExtendedItemCollection):
         if item not in self.suppressed_items:
             self._check_for_relevance(item, item_stats)
 
-    # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
-    # TODO: statistics.
-    def update_all(self, activated: bool, new: Collection[Item], lost: Collection[Item],
-                   count: int = 1) -> None:
+    def update_all(self, activated: bool, new: Collection[Item], lost: Collection[Item], count: int = 1) -> None:
 
         # "a trial for which the result was already satisfied before the action was taken does not count as a
         # positive-transition trial; and one for which the result was already unsatisfied does not count
@@ -1259,15 +1246,13 @@ class ExtendedContext(ExtendedItemCollection):
         if item not in self.suppressed_items:
             self._check_for_relevance(item, item_stats)
 
-    # TODO: Try to optimize this. The vast majority of the items in each extended context should have identical
-    # TODO: statistics.
     def update_all(self, state: State, success: bool, count: int = 1) -> None:
         # bypass updates when a more specific spinoff schema exists
-        if is_feature_enabled(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA) and self.defer_update_to_spin_offs(
-                state):
+        if (is_feature_enabled(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+                and self.defer_update_to_spin_offs(state)):
             return
 
-        for item in self._item_pool.items:
+        for item in ItemPool().items:
             self.update(item=item, on=item.is_on(state), success=success, count=count)
 
         self.check_pending_relevant_items()
@@ -1323,7 +1308,6 @@ class ExtendedContext(ExtendedItemCollection):
 
     def _check_for_relevance(self, item: Item, item_stats: ECItemStats) -> None:
 
-        # TODO: The check against thresholds should be done in the correlation test classes
         # if item is relevant, a new item assertion is created
         item_assert = (
             ItemAssertion(item) if item_stats.positive_correlation else
@@ -1351,8 +1335,8 @@ class ExtendedContext(ExtendedItemCollection):
 class Controller:
     def __init__(self, goal_state: StateAssertion):
         self._goal_state = goal_state
-        self._proximity: dict[Schema, float] = defaultdict(lambda: 0.0)
-        self._total_cost: dict[Schema, float] = defaultdict(lambda: 0.0)
+        self._proximity: dict[Schema, float] = defaultdict(float)
+        self._total_cost: dict[Schema, float] = defaultdict(float)
         self._components: set[Schema] = set()
         self._descendants: set[Schema] = set()
 
@@ -1570,6 +1554,10 @@ class Action(UniqueIdMixin):
         return True
 
 
+def default_for_controller_map(key: StateAssertion) -> Controller:
+    return Controller(key)
+
+
 class CompositeAction(Action):
     """ "A composite action is essentially a subroutine: it is defined to be the action of achieving the designated
      goal state, by whatever means is available. The means are given by chains of schemas that lead to the goal
@@ -1577,7 +1565,7 @@ class CompositeAction(Action):
     """
 
     _controller_map: dict[StateAssertion, Controller] = (
-        DefaultDictWithKeyFactory(lambda key: Controller(key))
+        DefaultDictWithKeyFactory(default_for_controller_map)
     )
 
     def __init__(self, goal_state: StateAssertion, **kwargs):
@@ -1982,6 +1970,14 @@ class SchemaPool(metaclass=Singleton):
     def __iter__(self) -> Iterator[Schema]:
         yield from SchemaPool._schemas.values()
 
+    def __getstate__(self) -> dict[str, Any]:
+        return {'_schemas': SchemaPool._schemas}
+
+    def __setstate__(self, state: dict[str:Any]) -> None:
+        sp = SchemaPool()
+        for key in state:
+            setattr(sp, key, state[key])
+
     @property
     def schemas(self) -> Collection[Schema]:
         return SchemaPool._schemas.values()
@@ -1993,11 +1989,12 @@ class SchemaPool(metaclass=Singleton):
         read_only = kwargs.get('read_only', False)
         schema_type = schema_type or Schema
 
-        obj = self._schemas.get(key)
+        obj = SchemaPool._schemas.get(key)
 
         # create new schema and add to pool if not found and not read_only
         if not obj and not read_only:
-            obj = self._schemas[key] = schema_type(context=key.context, action=key.action, result=key.result, **kwargs)
+            obj = SchemaPool._schemas[key] = schema_type(
+                context=key.context, action=key.action, result=key.result, **kwargs)
 
         return obj
 
@@ -2114,6 +2111,15 @@ class SchemaTree:
 
     def __str__(self) -> str:
         return RenderTree(self._root, style=AsciiStyle()).by_attr(lambda s: str(s))
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, SchemaTree):
+            return all({
+                self._root == other._root,
+                self._nodes == other._nodes,
+                self._n_schemas == other._n_schemas
+            })
+        return False if other is None else NotImplemented
 
     @property
     def root(self) -> SchemaTreeNode:
@@ -2368,26 +2374,27 @@ class ItemPool(metaclass=Singleton):
         read_only = kwargs.get('read_only', False)
         item_type = item_type or SymbolicItem
 
-        obj = self._items.get(source)
+        obj = ItemPool._items.get(source)
 
         # create new item and add to pool if not found and not read_only
         if not obj and not read_only:
-            obj = self._items[source] = item_type(source, **kwargs)
+            obj = ItemPool._items[source] = item_type(source, **kwargs)
 
         return obj
 
     @get.register
-    def _(self, source: StateAssertion, /, *,
+    def _(self,
+          source: StateAssertion, /, *,
           item_type: Optional[Type[CompositeItem]] = None,
           **kwargs) -> Optional[CompositeItem]:
         read_only = kwargs.get('read_only', False)
         item_type = item_type or CompositeItem
 
-        obj = self._composite_items.get(source)
+        obj = ItemPool._composite_items.get(source)
 
         # create new item and add to pool if not found and not read_only
         if not obj and not read_only:
-            obj = self._composite_items[source] = item_type(source, **kwargs)
+            obj = ItemPool._composite_items[source] = item_type(source, **kwargs)
 
         return obj
 

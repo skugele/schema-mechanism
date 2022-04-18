@@ -8,7 +8,6 @@ from datetime import datetime
 from enum import Enum
 from enum import IntEnum
 from enum import auto
-from pathlib import Path
 from time import time
 from typing import Any
 from typing import Optional
@@ -16,8 +15,6 @@ from typing import TextIO
 
 import numpy as np
 
-from schema_mechanism.persistence import deserialize
-from schema_mechanism.persistence import serialize
 from schema_mechanism.stats import ItemCorrelationTest
 from schema_mechanism.util import Singleton
 from schema_mechanism.validate import MultiValidator
@@ -100,6 +97,14 @@ class GlobalParams(metaclass=Singleton):
     def __iter__(self) -> ItemsView[str, Any]:
         yield from self._params.items()
 
+    def __getstate__(self) -> dict[str, Any]:
+        return {'_params': self._params}
+
+    def __setstate__(self, state: dict[str:Any]) -> None:
+        gp = GlobalParams()
+        for key in state:
+            setattr(gp, key, state[key])
+
     @property
     def defaults(self) -> dict[str, Any]:
         return self._defaults
@@ -121,14 +126,6 @@ class GlobalParams(metaclass=Singleton):
             warn(f'Parameter "{name}" does not exist.')
 
         return self._params.get(name)
-
-    def save(self, path: Path, overwrite: bool = False) -> None:
-        serialize(self._params, path, overwrite)
-
-    def load(self, path: Path) -> None:
-        # serializing params dictionary because entire object cannot deserialized directly due to validators, etc.
-        self._params = dict(self._defaults)
-        self._params.update(deserialize(path))
 
     def _set_defaults(self) -> None:
 

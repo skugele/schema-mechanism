@@ -1,5 +1,8 @@
+import os
 from copy import copy
+from pathlib import Path
 from random import sample
+from tempfile import TemporaryDirectory
 from time import time
 from unittest import TestCase
 from unittest.mock import MagicMock
@@ -21,10 +24,13 @@ from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.func_api import update_schema
+from schema_mechanism.persistence import deserialize
+from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.stats import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
+from test_share.test_func import file_was_written
 from test_share.test_func import satisfies_equality_checks
 from test_share.test_func import satisfies_hash_checks
 
@@ -499,6 +505,38 @@ class TestSchema(TestCase):
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.schema))
+
+    def test_serialize_basic_schema(self):
+        with TemporaryDirectory() as tmp_dir:
+            path = Path(os.path.join(tmp_dir, 'test-file-schema-serialize.sav'))
+
+            # sanity check: file SHOULD NOT exist
+            self.assertFalse(path.exists())
+
+            serialize(self.schema, path)
+
+            # test: file SHOULD exist after call to save
+            self.assertTrue(file_was_written(path))
+
+            recovered = deserialize(path)
+
+            self.assertEqual(self.schema, recovered)
+
+    def test_serialize_composite_action_schema(self):
+        with TemporaryDirectory() as tmp_dir:
+            path = Path(os.path.join(tmp_dir, 'test-file-schema-serialize_composite_action_schema.sav'))
+
+            # sanity check: file SHOULD NOT exist
+            self.assertFalse(path.exists())
+
+            serialize(self.schema_ca, path)
+
+            # test: file SHOULD exist after call to save
+            self.assertTrue(file_was_written(path))
+
+            recovered = deserialize(path)
+
+            self.assertEqual(self.schema_ca, recovered)
 
     @test_share.performance_test
     def test_performance_1(self):

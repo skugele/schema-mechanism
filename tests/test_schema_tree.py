@@ -1,5 +1,8 @@
+import os
 from copy import copy
+from pathlib import Path
 from random import sample
+from tempfile import TemporaryDirectory
 from time import time
 from unittest import TestCase
 
@@ -16,7 +19,10 @@ from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import create_context_spin_off
 from schema_mechanism.modules import create_result_spin_off
+from schema_mechanism.persistence import deserialize
+from schema_mechanism.persistence import serialize
 from test_share.test_func import common_test_setup
+from test_share.test_func import file_was_written
 from test_share.test_func import is_eq_consistent
 from test_share.test_func import is_eq_reflexive
 from test_share.test_func import is_eq_symmetric
@@ -487,6 +493,22 @@ class TestSchemaTree(TestCase):
         ]
 
         self.assertSetEqual(set(expected_nodes), set(nodes))
+
+    def test_serialize(self):
+        with TemporaryDirectory() as tmp_dir:
+            path = Path(os.path.join(tmp_dir, 'test-file-schema-tree-serialize.sav'))
+
+            # sanity check: file SHOULD NOT exist
+            self.assertFalse(path.exists())
+
+            serialize(self.tree, path)
+
+            # test: file SHOULD exist after call to save
+            self.assertTrue(file_was_written(path))
+
+            recovered: SchemaTree = deserialize(path)
+
+            self.assertEqual(self.tree, recovered)
 
     @test_share.performance_test
     def test_performance_1(self):

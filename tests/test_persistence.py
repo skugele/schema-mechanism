@@ -6,6 +6,7 @@ from unittest import TestCase
 from schema_mechanism.persistence import check_readable
 from schema_mechanism.persistence import check_writable
 from schema_mechanism.persistence import deserialize
+from schema_mechanism.persistence import get_serialization_filename
 from schema_mechanism.persistence import serialize
 from test_share.test_func import common_test_setup
 
@@ -48,6 +49,26 @@ class TestPersistence(TestCase):
                 check_readable(path=path)
             except ValueError as e:
                 self.fail(f'Raised unexpected ValueError: {e}')
+
+    def test_get_serialization_file_path(self):
+        expected_object_name = 'ObjectName'
+        expected_version = 'v1.0'
+        expected_prefix = 'P'
+        expected_suffix = 'S'
+
+        filename = get_serialization_filename(object_name=expected_object_name,
+                                              version=expected_version,
+                                              prefix=expected_prefix,
+                                              suffix=expected_suffix,
+                                              format_string='{prefix}-{object_name}-{version}-{unique_id}-{suffix}')
+
+        prefix, object_name, version, unique_id, suffix = filename.split('-')
+
+        self.assertEqual(expected_prefix, prefix)
+        self.assertEqual(expected_object_name, object_name)
+        self.assertEqual(expected_version, version)
+        self.assertGreater(len(unique_id), 0)
+        self.assertEqual(expected_suffix, suffix)
 
     def test_serialize_and_deserialize(self):
         original = [101, '101', None, [], {1, 2, 3}, {'one': 1, 'two': 2}]

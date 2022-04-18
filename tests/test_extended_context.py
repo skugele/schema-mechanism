@@ -1,4 +1,7 @@
+import os
+from pathlib import Path
 from random import sample
+from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import PropertyMock
 from unittest.mock import patch
@@ -14,10 +17,13 @@ from schema_mechanism.func_api import sym_asserts
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
+from schema_mechanism.persistence import deserialize
+from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.stats import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
+from test_share.test_func import file_was_written
 
 
 class TestExtendedContext(TestCase):
@@ -252,3 +258,28 @@ class TestExtendedContext(TestCase):
         self.assertEqual(0, len(self.ec.pending_relevant_items))
         self.assertEqual(0, len(self.ec.relevant_items))
         self.assertNotIn(ItemAssertion(i1), self.ec.relevant_items)
+
+    def test_serialize(self):
+        # update extended context before serialize
+        items = [sym_item(str(i)) for i in range(10)]
+
+        for item in items:
+            self.ec.update(item, on=False, success=True, count=100)
+            self.ec.update(item, on=False, success=False, count=200)
+            self.ec.update(item, on=True, success=False, count=50)
+            self.ec.update(item, on=True, success=True, count=100)
+
+        with TemporaryDirectory() as tmp_dir:
+            path = Path(os.path.join(tmp_dir, 'test-file-extended_context-serialize.sav'))
+
+            # sanity check: file SHOULD NOT exist
+            self.assertFalse(path.exists())
+
+            serialize(self.ec, path)
+
+            # test: file SHOULD exist after call to save
+            self.assertTrue(file_was_written(path))
+
+            recovered = deserialize(path)
+
+            self.assertEqual(self.ec, recovered)

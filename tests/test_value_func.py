@@ -22,7 +22,6 @@ from schema_mechanism.modules import pending_focus_values
 from schema_mechanism.modules import reliability_values
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.util import AccumulatingTrace
-from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSchema
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
@@ -199,10 +198,6 @@ class TestDelegatedValueFunctions(unittest.TestCase):
 class TestInstrumentalValues(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
-
-        GlobalParams().set('item_type', MockSymbolicItem)
-        GlobalParams().set('composite_item_type', MockCompositeItem)
-        GlobalParams().set('schema_type', MockSchema)
 
     def test_no_schemas(self):
         # test: should return an empty numpy array if no schemas provided and no pending

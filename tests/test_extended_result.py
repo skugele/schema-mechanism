@@ -1,4 +1,7 @@
+import os
+from pathlib import Path
 from random import sample
+from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from schema_mechanism.core import ExtendedResult
@@ -7,10 +10,13 @@ from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_ER_ITEM_STATS
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
+from schema_mechanism.persistence import deserialize
+from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.stats import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
+from test_share.test_func import file_was_written
 
 
 class TestExtendedResult(TestCase):
@@ -142,3 +148,28 @@ class TestExtendedResult(TestCase):
         # verify suppressed item NOT in relevant items list
         self.assertEqual(0, len(self.er.relevant_items))
         self.assertNotIn(ItemAssertion(i1), self.er.relevant_items)
+
+    def test_serialize(self):
+        # update extended result before serialize
+        items = [sym_item(str(i)) for i in range(10)]
+
+        for item in items:
+            self.er.update(item, on=False, activated=True, count=100)
+            self.er.update(item, on=False, activated=False, count=200)
+            self.er.update(item, on=True, activated=False, count=50)
+            self.er.update(item, on=True, activated=True, count=100)
+
+        with TemporaryDirectory() as tmp_dir:
+            path = Path(os.path.join(tmp_dir, 'test-file-extended_result-serialize.sav'))
+
+            # sanity check: file SHOULD NOT exist
+            self.assertFalse(path.exists())
+
+            serialize(self.er, path)
+
+            # test: file SHOULD exist after call to save
+            self.assertTrue(file_was_written(path))
+
+            recovered: ExtendedResult = deserialize(path)
+
+            self.assertEqual(self.er, recovered)

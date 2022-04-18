@@ -1,16 +1,33 @@
 from pathlib import Path
 from pickle import dump
 from pickle import load
+from time import time
 from typing import Any
-from typing import Protocol
-from typing import runtime_checkable
+from typing import Optional
+
+DEFAULT_SAVE_FILE_FORMAT = '{prefix}{object_name}-{version}-{unique_id}{suffix}'
 
 
-@runtime_checkable
-class Serializable(Protocol):
-    def save(self, path: Path, overwrite: bool = False) -> None: ...
+def get_unique_id() -> str:
+    return str(int(time()))
 
-    def load(self, path: Path) -> None: ...
+
+def get_serialization_filename(object_name: str,
+                               prefix: Optional[str] = None,
+                               suffix: Optional[str] = None,
+                               version: Optional[str] = None,
+                               format_string: Optional[str] = None) -> str:
+    prefix = prefix or ''
+    suffix = suffix or ''
+    version = version or 'v0.0'
+    unique_id = get_unique_id()
+    format_string = DEFAULT_SAVE_FILE_FORMAT if format_string is None else format_string
+
+    return format_string.format(object_name=object_name,
+                                unique_id=unique_id,
+                                version=version,
+                                prefix=prefix,
+                                suffix=suffix)
 
 
 def check_writable(path: Path, overwrite: bool) -> None:
