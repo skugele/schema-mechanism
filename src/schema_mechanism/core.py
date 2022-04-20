@@ -7,7 +7,6 @@ from collections import defaultdict
 from collections import deque
 from collections.abc import Collection
 from collections.abc import Iterator
-from collections.abc import MutableSet
 from enum import Enum
 from enum import auto
 from enum import unique
@@ -151,24 +150,47 @@ class DelegatedValueHelper(ABC):
 class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
     """ An eligibility-trace-based implementation of the DelegatedValueHelper.
 
-    Note: Drescher's implementation of delegated values used forwarding chaining based on "parallel broadcasts"
-    (see Drescher 1991, p. 101). The current implementation deviates from Drescher's for performance reasons (performant
-    parallel broadcasts are not possible in Python). This implementation has the additional advantage of supporting the
-    discounting of delegated values based on the temporal proximity between an item's inclusion in a selection state
-    and value-bearing result states that may follow. Drescher's original formulation is not discounted
-    (see Drescher 1991, p. 63).
+    Drescher stated that delegated value "accrues to states that generally tend to facilitate other things of
+    value" (p. 63). This occurs without reference to a specific goal. In other words, delegated value is the average,
+    goal-agnostic, utility of an Item being On. This implementation of the DelegatedValueHlper retains the spirit of
+    Drescher's delegated value, but deviates in the specifics how delegated value is learned for performance reasons.
+
+    In particular, Drescher's implementation of delegated values is based on forward chaining over learned schemas using
+    "parallel broadcasts" (see Drescher 1991, p. 101). By contrast, the implementation provided in this class leverages
+    the idea of eligibility traces from reinforcement learning to learn the goal-agnostic utility of items.
+
+    An additional benefit of this implementation over Drescher's is that the value of more distant accessible states
+    can be DISCOUNTED over that of more immediately accessible valuable states. This allows agents to discriminate
+    between Items that lead to more immediate vs. more distantly valuable states. Drescher's implementation is
+    undiscounted (see Drescher 1991, p. 63).
+
+    Items are given delegated value based on the regularity with which they are On prior to the occurrence of
+    (other) states of value; that is, based on whether they appear to facilitate the obtainment of those future states.
+    The value delegated to those Items (i.e., the credit given to them as facilitators of future states of value) can
+    be modulated by a discount factor and a trace decay parameter. The discount factor quantifies the attenuation of the
+    contribution of state values based on their temporal distance from an Item's most recent On state. The trace decay
+    parameter specifies a horizon over which state values can propagate back-in-time.
 
     For information on eligibility traces, see Chapter 12 of
         Sutton, R. S., & Barto, A. G. (2018). Reinforcement learning: An introduction. MIT press.
     """
 
-    def __init__(self, discount_factor: float, trace_decay: float):
+    def __init__(self, discount_factor: float, trace_decay: float) -> None:
+        """ Initializes the EligibilityTraceDelegatedValueHelper
+
+        Note: a discount factor of 0.0 will give NO VALUE to future states when calculating delegated value (i.e.,
+        delegated value will always be zero) while a discount factor of 1.0 will value more distant states EQUALLY with
+        less distant states (i.e., state value will be undiscounted).
+
+        :param discount_factor: quantifies the reduction in future state value w.r.t. an item's delegated value
+        :param trace_decay: quantifies the time horizon over which future states influence an item's delegated values
+        """
         self.discount_factor = discount_factor
 
         # note: eligibility traces usually multiply the decay rate by the discount factor. At the moment, it seems
         #       cleaner to disentangle these factors, but I may want to change this in the future.
-        self._eligibility_trace = ReplacingTrace(decay_rate=trace_decay)
-        self._delegated_values = AssociativeArrayList()
+        self._eligibility_trace: ReplacingTrace[Item] = ReplacingTrace(decay_rate=trace_decay)
+        self._delegated_values: AssociativeArrayList[Item] = AssociativeArrayList()
 
     @property
     def discount_factor(self) -> float:
@@ -1057,8 +1079,8 @@ class ExtendedItemCollection(Observable):
         self._suppressed_items: frozenset[Item] = frozenset(suppressed_items) or frozenset()
 
         # FIXME: these names are confusing... they are not items! They are item assertions.
-        self._relevant_items: MutableSet[ItemAssertion] = set()
-        self._new_relevant_items: MutableSet[ItemAssertion] = set()
+        self._relevant_items: set[ItemAssertion] = set()
+        self._new_relevant_items: set[ItemAssertion] = set()
 
         self._stats: dict[Any, ItemStats] = defaultdict(self._get_null_stats)
 
@@ -1654,17 +1676,17 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         self._stats: SchemaStats = SchemaStats()
 
-        self._is_primitive = not (context or result)
+        self._is_bare = not (context or result)
 
         self._extended_context: ExtendedContext = (
             None
-            if self._is_primitive else
+            if self._is_bare else
             ExtendedContext(self._context)
         )
 
         self._extended_result: ExtendedResult = (
             ExtendedResult(self._result)
-            if self._is_primitive or is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) else
+            if self._is_bare or is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) else
             None
         )
 
@@ -1673,10 +1695,10 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         # This observer registration is used to notify the schema when a relevant item has been detected in its
         # extended context or extended result
-        if not self._is_primitive:
+        if not self._is_bare:
             self._extended_context.register(self)
 
-        if self._is_primitive or is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
+        if self._is_bare or is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
             self._extended_result.register(self)
 
         self._avg_duration: Optional[float] = None
@@ -1757,7 +1779,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         :return: the schema's reliability
         """
         return (
-            np.NAN if self.is_primitive() or self.stats.n_activated == 0
+            np.NAN if self.is_bare() or self.stats.n_activated == 0
             else self.stats.n_success / self.stats.n_activated
         )
 
@@ -1855,12 +1877,12 @@ class Schema(Observer, Observable, UniqueIdMixin):
         else:
             return self.action == schema.action
 
-    def is_primitive(self) -> bool:
-        """ Returns whether this instance is a primitive (action-only) schema.
+    def is_bare(self) -> bool:
+        """ Returns whether this instance is a bare (action-only) schema.
 
-        :return: True if this is a primitive schema; False otherwise.
+        :return: True if this is a bare schema; False otherwise.
         """
-        return self._is_primitive
+        return self._is_bare
 
     def predicts_state(self, state: State) -> bool:
         if not self.result:
@@ -2078,17 +2100,22 @@ class SchemaTree:
 
     """
 
-    def __init__(self, primitives: Collection[Schema]) -> None:
-        if not primitives:
-            raise ValueError('SchemaTree must be initialized with a collection of primitive schemas.')
+    def __init__(self, schemas: Collection[Schema]) -> None:
+        """ Initializes this SchemaTree from a set of bare, primitive schemas for built-in, primitive actions.
+
+        :param schemas: a collection of bare schemas (should contain one for each primitive action)
+        """
+        if not schemas:
+            raise ValueError('SchemaTree must be initialized with a collection of bare schemas.')
 
         self._root = SchemaTreeNode(label='root')
-        self._root.schemas_satisfied_by.update(primitives)
 
         self._nodes: dict[StateAssertion, SchemaTreeNode] = dict()
         self._nodes[self._root.context] = self._root
 
-        self._n_schemas = len(primitives)
+        self._n_schemas: int = 0
+
+        self.add_bare_schemas(schemas)
 
     def __iter__(self) -> Iterator[SchemaTreeNode]:
         return LevelOrderIter(node=self.root)
@@ -2141,8 +2168,8 @@ class SchemaTree:
         """
         return self._nodes[assertion]
 
-    def add_primitives(self, schemas: Collection[Schema]) -> None:
-        trace(f'adding primitive schemas! [{[str(s) for s in schemas]}]')
+    def add_bare_schemas(self, schemas: Collection[Schema]) -> None:
+        trace(f'adding bare schemas! [{[str(s) for s in schemas]}]')
         if not schemas:
             raise ValueError('Schemas cannot be empty or None')
 
@@ -2175,7 +2202,7 @@ class SchemaTree:
         :param state: the state
         :return: a collection of schemas
         """
-        matches: MutableSet[SchemaTreeNode] = set()
+        matches: set[SchemaTreeNode] = set()
 
         nodes_to_process = [self._root]
         while nodes_to_process:
@@ -2188,7 +2215,7 @@ class SchemaTree:
         return matches
 
     def find_all_would_satisfy(self, assertion: StateAssertion, **kwargs) -> Collection[SchemaTreeNode]:
-        matches: MutableSet[SchemaTreeNode] = set()
+        matches: set[SchemaTreeNode] = set()
 
         nodes_to_process: list[SchemaTreeNode] = [*self._root.leaves]
         while nodes_to_process:
@@ -2450,7 +2477,7 @@ def _(state: State) -> float:
     if len(state) == 0:
         return 0.0
     items = [ReadOnlyItemPool().get(se) for se in state]
-    return sum(calc_primitive_value(i) for i in items if i)
+    return sum(i.primitive_value for i in items if i)
 
 
 @calc_primitive_value.register
@@ -2473,7 +2500,7 @@ def _(se: StateElement) -> float:
     item = ReadOnlyItemPool().get(se)
     if not item:
         return 0.0
-    return item.calc_primitive_value
+    return item.primitive_value
 
 
 @calc_primitive_value.register
@@ -2528,7 +2555,7 @@ def _(se: StateElement) -> float:
     item = ReadOnlyItemPool().get(se)
     if not item:
         return 0.0
-    return item.calc_delegated_value
+    return item.delegated_value
 
 
 @calc_delegated_value.register

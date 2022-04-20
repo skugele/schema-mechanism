@@ -309,11 +309,11 @@ def get_agent_observation(world: WumpusWorld, agent: WumpusWorldAgent, wumpus: W
     state_elements = [
         f'AGENT.POSITION={agent.position[0]};{agent.position[1]}',
         f'AGENT.DIR={agent.direction}',
-        f'AGENT.HEALTH={agent.health}',
+        # f'AGENT.HEALTH={agent.health}',
 
         # agent's possessions
-        f'AGENT.HAS[ARROWS:{agent.n_arrows}]',
-        f'AGENT.HAS[GOLD:{agent.n_gold}]',
+        # f'AGENT.HAS[ARROWS:{agent.n_arrows}]',
+        # f'AGENT.HAS[GOLD:{agent.n_gold}]',
     ]
 
     # objects/entities in agent's cell

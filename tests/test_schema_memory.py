@@ -35,7 +35,9 @@ class TestSchemaMemory(TestCase):
         common_test_setup()
 
         # allows direct setting of reliability (only reliable schemas are eligible for chaining)
+        # FIXME: this doesn't do anything at present!
         GlobalParams().set('schema_type', MockSchema)
+
         GlobalParams().set('backward_chains.update_frequency', 1.0)
 
         # always create composite actions for novel results
@@ -91,6 +93,10 @@ class TestSchemaMemory(TestCase):
         s1_1_r101 = sym_schema('1,/A1/101,', reliability=1.0)
         self.tree.add_context_spin_offs(s1_r101, (s1_1_r101,))
 
+        self.bare_schemas = {
+            s1, s2, self.s101, self.s102
+        }
+
         self.no_context_schemas = {
             s1, s2, self.s101, self.s101_r100, self.s102
         }
@@ -99,6 +105,10 @@ class TestSchemaMemory(TestCase):
             s1, s2, s1_1, s1_2, s1_3, s1_4, s2_1, s2_2, s1_1_1, s1_1_2, s1_1_3, s1_1_4, s1_1_2_1, s1_1_2_2, s1_1_2_3,
             s1_1_2_1_1, s1_1_2_3_1, s1_r101, s1_1_r101,
         }
+
+        self.actions = {schema.action for schema in self.schemas}
+
+        self.non_bare_schemas = self.schemas.difference(self.bare_schemas)
 
         self.composite_schemas = {
             self.s101, self.s101_r100, self.s101_1_r100, self.s102
@@ -131,9 +141,21 @@ class TestSchemaMemory(TestCase):
     def test_init(self):
         self.assertEqual(self.tree.n_schemas, len(self.sm))
 
-        # invalid primitives should generate ValueErrors
-        invalid_primitive_schema = sym_schema('1,2,3/A1/')
-        self.assertRaises(ValueError, lambda: SchemaMemory(primitives=(invalid_primitive_schema,)))
+        # test: one or more bare schemas should be allowed in initializer
+        try:
+            # test with a single bare schema
+            sm = SchemaMemory(schemas=list(self.bare_schemas)[:1])
+            self.assertEqual(1, len(sm))
+
+            # test with multiple bare schemas
+            sm = SchemaMemory(schemas=self.bare_schemas)
+            self.assertEqual(len(self.bare_schemas), len(sm))
+        except ValueError as e:
+            self.fail(f'Caught unexpected ValueError: {e}')
+
+        # test: non-bare, built-in schemas SHOULD raise a ValueError
+        self.assertRaises(ValueError, lambda: SchemaMemory(schemas=list(self.non_bare_schemas)[:1]))
+        self.assertRaises(ValueError, lambda: SchemaMemory(schemas=self.non_bare_schemas))
 
     def test_from_tree(self):
         primitives = primitive_schemas(actions(5))

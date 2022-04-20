@@ -1,24 +1,35 @@
+import argparse
 from time import sleep
 from time import time
 
 from pynput import keyboard
 
-from examples import display_schema_info
+from examples import display_item_values
 from examples import display_summary
 from examples.environments.wumpus_world import Wumpus
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
+from schema_mechanism.core import SchemaPool
+from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.func_api import sym_item
-from schema_mechanism.func_api import sym_schema
+from schema_mechanism.modules import AbsoluteDiffMatchStrategy
+from schema_mechanism.modules import ExploratoryEvaluationStrategy
+from schema_mechanism.modules import GoalPursuitEvaluationStrategy
+from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
-from schema_mechanism.share import GlobalParams
+from schema_mechanism.modules import SchemaMemory
+from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import display_params
 from schema_mechanism.share import info
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import DrescherCorrelationTest
+
+# global constants
+N_STEPS = 500
+N_EPISODES = 100
 
 # Wumpus @ (6,3); Agent starts @ (1,8) facing 'W'
 agent_spec = WumpusWorldAgent(position=(1, 1), direction='N', n_arrows=0)
@@ -50,7 +61,8 @@ wwwwww
 # """
 
 # global constants
-N_EPISODES = 5000
+MAX_EPISODES = 5000
+MAX_STEPS = 500
 
 pause = False
 running = True
@@ -66,25 +78,95 @@ def on_press(key):
         running = False
 
 
-def run(sm: SchemaMechanism) -> None:
+def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
+    primitive_items = [
+        sym_item('EVENT[AGENT ESCAPED]', primitive_value=100.0),
+    ]
+    bare_schemas = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in env.actions]
+    schema_memory = SchemaMemory(bare_schemas)
+    schema_selection = SchemaSelection(
+        select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
+        value_strategies=[
+            GoalPursuitEvaluationStrategy(),
+            ExploratoryEvaluationStrategy(),
+        ],
+        weights=[0.1, 0.9]
+    )
+
+    sm: SchemaMechanism = SchemaMechanism(
+        items=primitive_items,
+        schema_memory=schema_memory,
+        schema_selection=schema_selection)
+
+    sm.params.set('backward_chains.max_len', 10)
+    sm.params.set('backward_chains.update_frequency', 0.1)
+    sm.params.set('composite_action_min_baseline_advantage', 10.0)
+    sm.params.set('delegated_value_helper.decay_rate', 0.8)
+    sm.params.set('delegated_value_helper.discount_factor', 0.8)
+    sm.params.set('ext_context.correlation_test', DrescherCorrelationTest)
+    sm.params.set('ext_context.positive_correlation_threshold', 0.95)
+    sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
+    sm.params.set('ext_result.positive_correlation_threshold', 0.95)
+    sm.params.set('goal_pursuit_strategy.reliability.max_penalty', 5.0)
+    sm.params.set('habituation_exploratory_strategy.decay.rate', 0.6)
+    sm.params.set('habituation_exploratory_strategy.multiplier', 1.0)
+    sm.params.set('learning_rate', 0.01)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.3)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.999999)
+    sm.params.set('reliability_threshold', 0.9)
+
+    sm.params.get('features').remove(SupportedFeature.COMPOSITE_ACTIONS)
+
+    return sm
+
+
+def parse_args():
+    """ Parses command line arguments.
+    :return: argparse parser with parsed command line args
+    """
+    parser = argparse.ArgumentParser(description='Wumpus World Example Environment (Schema Mechanism)')
+
+    parser.add_argument('--steps', type=int, required=False, default=N_STEPS,
+                        help=f'the maximum number of steps before terminating an episode (default: {N_STEPS})')
+    parser.add_argument('--episodes', type=int, required=False, default=N_EPISODES,
+                        help=f'the maximum number of episodes (default: {N_EPISODES})')
+
+    return parser.parse_args()
+
+
+def run() -> None:
+    args = parse_args()
+
+    # note: randomizing the start seems to be extremely important in episodic environments because the SchemaMechanism
+    # will learn unintended correlations due to repeated exposure to the same state state. For example, that turning
+    # left results in a northerly orientation, or that moving forward (without constraint) leads to a particular
+    # position.
+    env = WumpusWorldMDP(worldmap=world, agent=agent_spec, wumpus=None, randomized_start=True)
+    sm = create_schema_mechanism(env)
+
+    display_params()
+
     listener = keyboard.Listener(on_press=on_press)
     listener.start()
 
     start_time = time()
-    while running:
+
+    for episode in range(args.episodes):
 
         # Initialize the world
         state, is_terminal = env.reset()
 
         # While not terminal state
-        n = 0
-        while not is_terminal and running and n < 250:
+        for step in range(args.steps):
+            if is_terminal or not running:
+                break
+
             info(f'n items: {len(ItemPool())}')
             info(f'n schemas: {len(sm.schema_memory)}')
 
             env.render()
 
-            info(f'selection state[{n}]: {state}')
+            info(f'selection state[{step}]: {state}')
 
             selection_details = sm.select(state)
 
@@ -105,17 +187,15 @@ def run(sm: SchemaMechanism) -> None:
                 i += 1
 
             schema = selection_details.selected
-            info(f'selected schema[{n}]: {schema}')
+            info(f'selected schema[{step}]: {schema}')
 
             state, is_terminal = env.step(schema.action)
 
             sm.learn(selection_details, result_state=state)
 
-            n += 1
-
             if pause:
-                display_summary(sm)
-                display_schema_info(sym_schema('/MOVE[FORWARD]/'))
+                display_item_values()
+                # display_schema_info(sym_schema('/MOVE[FORWARD]/'))
 
                 try:
                     while pause:
@@ -129,57 +209,12 @@ def run(sm: SchemaMechanism) -> None:
 
     info(f'terminating execution after {end_time - start_time} seconds')
 
+    display_summary(sm)
 
-def set_params():
-    GlobalParams().set('backward_chains.max_len', 3)
-    GlobalParams().set('backward_chains.update_frequency', 0.01)
-    GlobalParams().set('composite_action_min_baseline_advantage', 10.0)
-    GlobalParams().set('delegated_value_helper.decay_rate', 0.8)
-    GlobalParams().set('delegated_value_helper.discount_factor', 0.2)
-    GlobalParams().set('ext_context.correlation_test', DrescherCorrelationTest)
-    GlobalParams().set('ext_context.positive_correlation_threshold', 0.95)
-    GlobalParams().set('ext_result.correlation_test', CorrelationOnEncounter)
-    GlobalParams().set('ext_result.positive_correlation_threshold', 0.95)
-    GlobalParams().set('goal_pursuit_strategy.reliability.max_penalty', 5.0)
-    GlobalParams().set('habituation_exploratory_strategy.decay.rate', 0.6)
-    GlobalParams().set('habituation_exploratory_strategy.multiplier', 1.0)
-    GlobalParams().set('learning_rate', 0.01)
-    GlobalParams().set('random_exploratory_strategy.epsilon.decay.rate.min', 0.2)
-    GlobalParams().set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.9999)
-    GlobalParams().set('reliability_threshold', 0.9)
-    GlobalParams().set('schema_selection.weights.explore_weight', 0.5)
-    GlobalParams().set('schema_selection.weights.goal_weight', 0.5)
-
-    GlobalParams().get('features').remove(SupportedFeature.COMPOSITE_ACTIONS)
+    # TODO: Add code to save a serialized instance of this schema mechanism to disk
 
 
 if __name__ == "__main__":
-    set_params()
-    display_params()
+    # TODO: Add code to load a serialized instance that was saved to disk
 
-    # env = WumpusWorldMDP(world, agent_spec, wumpus_spec)
-
-    # note: randomizing the start seems to be extremely important in episodic environments because the SchemaMechanism
-    # will learn unintended correlations due to repeated exposure to the same state state. For example, that turning
-    # left results in a northerly orientation, or that moving forward (without constraint) leads to a particular
-    # position.
-    env = WumpusWorldMDP(worldmap=world, agent=agent_spec, wumpus=None, randomized_start=True)
-
-    n_episodes = 0
-
-    # item_wumpus_wounded = sym_item('EVENT[WUMPUS WOUNDED]', primitive_value=250.0)
-    # item_wumpus_dead = sym_item('EVENT[WUMPUS DEAD]', primitive_value=500.0)
-    item_agent_escaped = sym_item('EVENT[AGENT ESCAPED]', primitive_value=100.0)
-    # item_agent_dead = sym_item('EVENT[AGENT DEAD]', primitive_value=-10000.0)
-    # item_agent_dead = sym_item('AGENT.HEALTH=0', primitive_value=-10000.0)
-    # items_has_gold = (sym_item(f'AGENT.HAS[GOLD]', primitive_value=500.0))
-
-    items = [
-        # item_agent_dead,
-        item_agent_escaped,
-        # items_has_gold,
-    ]
-
-    sm = SchemaMechanism(primitive_actions=env.actions, primitive_items=items)
-
-    run(sm)
+    run()

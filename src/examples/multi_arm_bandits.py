@@ -5,17 +5,27 @@ from typing import Optional
 
 from examples import display_summary
 from schema_mechanism.core import Action
+from schema_mechanism.core import Schema
 from schema_mechanism.core import State
 from schema_mechanism.core import StateElement
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
+from schema_mechanism.modules import AbsoluteDiffMatchStrategy
+from schema_mechanism.modules import ExploratoryEvaluationStrategy
+from schema_mechanism.modules import GoalPursuitEvaluationStrategy
+from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
-from schema_mechanism.share import GlobalParams
+from schema_mechanism.modules import SchemaMemory
+from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import info
 from schema_mechanism.share import rng
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.util import Observable
+
+# global constants
+N_MACHINES = 10
+N_STEPS = 500
 
 
 class Machine:
@@ -160,7 +170,7 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description='Multi-Armed Bandit Example Environment (Schema Mechanism)')
 
-    parser.add_argument('--n_machines', type=int, required=False, default=N_MACHINES,
+    parser.add_argument('--machines', type=int, required=False, default=N_MACHINES,
                         help=f'the id of the agent to which this action will be sent (default: {N_MACHINES})')
     parser.add_argument('--steps', type=int, required=False, default=N_STEPS,
                         help=f'the id of the agent to which this action will be sent (default: {N_STEPS})')
@@ -168,51 +178,65 @@ def parse_args():
     return parser.parse_args()
 
 
-# global constants
-N_MACHINES = 4
-N_STEPS = 1000
+def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
+    primitive_items = [
+        sym_item('W', primitive_value=100.0),
+        sym_item('L', primitive_value=-100.0),
+        sym_item('P', primitive_value=-5.0),
+    ]
+    bare_schemas = [Schema(action=a) for a in env.actions]
+    schema_memory = SchemaMemory(bare_schemas)
+    schema_selection = SchemaSelection(
+        select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
+        value_strategies=[
+            GoalPursuitEvaluationStrategy(),
+            ExploratoryEvaluationStrategy(),
+        ],
+        weights=[0.1, 0.9]
+    )
+
+    sm: SchemaMechanism = SchemaMechanism(
+        items=primitive_items,
+        schema_memory=schema_memory,
+        schema_selection=schema_selection)
+
+    sm.params.set('composite_action_min_baseline_advantage', 25.0)
+    sm.params.set('delegated_value_helper.decay_rate', 0.2)
+    sm.params.set('delegated_value_helper.discount_factor', 0.5)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.999)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.1)
+    sm.params.set('schema_selection.weights.explore_weight', 0.9)
+    sm.params.set('schema_selection.weights.goal_weight', 0.1)
+    sm.params.set('habituation_exploratory_strategy.decay.rate', 0.9)
+    sm.params.set('habituation_exploratory_strategy.multiplier', 10.0)
+    sm.params.set('learning_rate', 0.05)
+    sm.params.set('goal_pursuit_strategy.reliability.max_penalty', 10.0)
+    sm.params.set('reliability_threshold', 0.7)
+
+    # item correlation test used for determining relevance of extended context items
+    sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
+
+    # thresholds for determining the relevance of extended result items
+    #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
+    sm.params.set('ext_context.positive_correlation_threshold', 0.95)
+
+    # item correlation test used for determining relevance of extended result items
+    sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
+
+    # thresholds for determining the relevance of extended result items
+    #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
+    sm.params.set('ext_result.positive_correlation_threshold', 0.95)
+
+    return sm
 
 
 def run():
     args = parse_args()
 
-    GlobalParams().set('composite_action_min_baseline_advantage', 25.0)
-    GlobalParams().set('delegated_value_helper.decay_rate', 0.2)
-    GlobalParams().set('delegated_value_helper.discount_factor', 0.5)
-    GlobalParams().set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.999)
-    GlobalParams().set('random_exploratory_strategy.epsilon.decay.rate.min', 0.1)
-    GlobalParams().set('schema_selection.weights.explore_weight', 0.9)
-    GlobalParams().set('schema_selection.weights.goal_weight', 0.1)
-    GlobalParams().set('habituation_exploratory_strategy.decay.rate', 0.9)
-    GlobalParams().set('habituation_exploratory_strategy.multiplier', 10.0)
-    GlobalParams().set('learning_rate', 0.05)
-    GlobalParams().set('goal_pursuit_strategy.reliability.max_penalty', 10.0)
-    GlobalParams().set('reliability_threshold', 0.7)
-
-    # item correlation test used for determining relevance of extended context items
-    GlobalParams().set('ext_context.correlation_test', FisherExactCorrelationTest)
-
-    # thresholds for determining the relevance of extended result items
-    #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
-    GlobalParams().set('ext_context.positive_correlation_threshold', 0.95)
-
-    # item correlation test used for determining relevance of extended result items
-    GlobalParams().set('ext_result.correlation_test', CorrelationOnEncounter)
-
-    # thresholds for determining the relevance of extended result items
-    #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
-    GlobalParams().set('ext_result.positive_correlation_threshold', 0.95)
-
-    machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.n_machines)]
+    machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.machines)]
     env = BanditEnvironment(machines)
 
-    # primitive items
-    i_win = sym_item('W', primitive_value=100.0)
-    i_lose = sym_item('L', primitive_value=-100.0)
-    i_pay = sym_item('P', primitive_value=-5.0)
-
-    sm = SchemaMechanism(primitive_actions=env.actions,
-                         primitive_items=[i_win, i_lose, i_pay])
+    sm = create_schema_mechanism(env)
 
     start_time = time()
 

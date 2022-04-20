@@ -50,6 +50,7 @@ class TestSchema(TestCase):
 
         self.obs = MockObserver()
         self.schema.register(self.obs)
+        self.schema_ca.register(self.obs)
 
     def test_init(self):
         # Action CANNOT be None
@@ -121,7 +122,7 @@ class TestSchema(TestCase):
         self.assertTrue(self.schema_ca.context.is_satisfied(state=sym_state('0,1,2')))
 
     def test_is_applicable(self):
-        # test: primitive schemas should always be applicable
+        # test: bare schemas should always be applicable
         schema = Schema(action=Action())
         self.assertTrue(schema.is_applicable(state=sym_state('1')))
 
@@ -534,7 +535,7 @@ class TestSchema(TestCase):
             # test: file SHOULD exist after call to save
             self.assertTrue(file_was_written(path))
 
-            recovered = deserialize(path)
+            recovered: Schema = deserialize(path)
 
             self.assertEqual(self.schema_ca, recovered)
 

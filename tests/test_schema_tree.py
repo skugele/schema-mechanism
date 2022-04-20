@@ -168,7 +168,7 @@ class TestSchemaTree(TestCase):
         p1 = sym_schema('/A1/')
         p2 = sym_schema('/A2/')
 
-        tree = SchemaTree(primitives=[p1, p2])
+        tree = SchemaTree(schemas=[p1, p2])
 
         # test: ValueError should be raised raised if collection of spin_offs is empty
         self.assertRaises(ValueError, lambda: tree.add_result_spin_offs(p1, spin_offs=[]))
@@ -190,7 +190,7 @@ class TestSchemaTree(TestCase):
         p1 = sym_schema('/A1/')
         p2 = sym_schema('/A2/')
 
-        tree = SchemaTree(primitives=[p1, p2])
+        tree = SchemaTree(schemas=[p1, p2])
 
         # test: ValueError should be raised if collection of spin_offs is empty
         self.assertRaises(ValueError, lambda: tree.add_context_spin_offs(p1, spin_offs=[]))
@@ -223,7 +223,7 @@ class TestSchemaTree(TestCase):
         s2 = sym_schema('/A2/')
         s3 = sym_schema('/A3/')
 
-        tree = SchemaTree(primitives=(s1, s2, s3))
+        tree = SchemaTree(schemas=(s1, s2, s3))
 
         # test: adding result spin-offs to primitives [ROUND 1]
         s1_r1 = sym_schema('/A1/101,')
@@ -294,7 +294,7 @@ class TestSchemaTree(TestCase):
         p1 = sym_schema('/A1/')
         p2 = sym_schema('/A2/')
 
-        tree = SchemaTree(primitives=[p1, p2])
+        tree = SchemaTree(schemas=[p1, p2])
 
         # test: primitive actions
         new_primitives = [sym_schema(f'/A{i}/') for i in range(5, 10)]
@@ -302,7 +302,7 @@ class TestSchemaTree(TestCase):
         for s in new_primitives:
             self.assertNotIn(s, tree)
 
-        tree.add_primitives(new_primitives)
+        tree.add_bare_schemas(new_primitives)
 
         for s in new_primitives:
             self.assertIn(s, tree)
@@ -314,7 +314,7 @@ class TestSchemaTree(TestCase):
             sym_schema(f'/2,3/'),
             sym_schema(f'/3,~4/'),
         ]
-        tree.add_primitives(new_primitives)
+        tree.add_bare_schemas(new_primitives)
 
         for s in new_primitives:
             self.assertIn(s, tree)
@@ -338,7 +338,7 @@ class TestSchemaTree(TestCase):
         s2 = sym_schema('1,2/A1/1,')
         s3 = sym_schema('/A1/(1,2),')
 
-        tree = SchemaTree(primitives=(p1,))
+        tree = SchemaTree(schemas=(p1,))
         tree.add_result_spin_offs(p1, [p2_r1])
 
         tree.add_context_spin_offs(p2_r1, [s1])
@@ -357,7 +357,7 @@ class TestSchemaTree(TestCase):
         p1_r1 = sym_schema('/A1/1,')
         s1 = sym_schema('3,/A1/1,')
 
-        tree = SchemaTree(primitives=(p1,))
+        tree = SchemaTree(schemas=(p1,))
         tree.add_result_spin_offs(p1, [p1_r1])
         tree.add_context_spin_offs(p1_r1, [s1])
 
@@ -377,7 +377,7 @@ class TestSchemaTree(TestCase):
         # should result in invalid node due to depth
         s3 = sym_schema('1,2,3,4/A1/1,')
 
-        tree = SchemaTree(primitives=(p1,))
+        tree = SchemaTree(schemas=(p1,))
         tree.add_result_spin_offs(p1, [p1_r1])
         tree.add_context_spin_offs(p1_r1, [s1])
         tree.add_context_spin_offs(s1, [s2])

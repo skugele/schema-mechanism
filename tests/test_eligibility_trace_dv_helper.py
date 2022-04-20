@@ -3,11 +3,13 @@ import unittest
 import numpy as np
 
 from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
+from schema_mechanism.core import ItemPool
 from schema_mechanism.core import calc_value
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.util import pairwise
+from test_share import disable_test
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
 
@@ -462,7 +464,45 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
 
         self.assertEqual(eff_value * trace_values[0], self.dv_helper.delegated_value(self.item_a))
         self.assertEqual(eff_value * trace_values[1], self.dv_helper.delegated_value(self.item_b))
-        pass
 
     def test_update_items_own_value_should_not_be_included(self):
         pass
+
+    @disable_test
+    def test_value_blowing_up(self):
+        ItemPool().clear()
+        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, trace_decay=0.2)
+
+        items = [
+            self.item_a,
+            sym_item('AA', primitive_value=0.0),
+            sym_item('AB', primitive_value=0.0),
+            sym_item('AC', primitive_value=10.0),
+            sym_item('AD', primitive_value=10.0),
+            sym_item('AE', primitive_value=10.0),
+            sym_item('(AA,AB,AC)'),
+            sym_item('(AD,AE)'),
+        ]
+
+        trajectory = [
+            (items[0].source,),  # A
+            (items[1].source,),  # AA
+            (items[2].source,),  # AB
+            (items[3].source,),  # AC
+            (items[5].source,),  # AE
+            (items[4].source,),  # AD
+            (items[6].source,),  # AA,AB,AC
+            (items[7].source,),  # AD,AE
+            (items[0].source,),  # A
+        ]
+
+        GlobalParams().set('learning_rate', 0.01)
+
+        pairwise_trajectory = list(pairwise(trajectory))
+        for n in range(1, 100_000):
+            for selection_state, result_state in pairwise_trajectory:
+                self.dv_helper.update(selection_state=selection_state, result_state=result_state)
+                # print(self.dv_helper.eligibility_trace.keys())
+
+        for item in items:
+            print(f'dv [{item}]: {self.dv_helper.delegated_value(item)}')

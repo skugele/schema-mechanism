@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+from collections import Iterable
 from collections import deque
 from collections.abc import Callable
 from collections.abc import Collection
@@ -32,7 +33,6 @@ from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import calc_delegated_value
 from schema_mechanism.core import calc_primitive_value
-from schema_mechanism.core import calc_value
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
@@ -50,16 +50,19 @@ from schema_mechanism.util import equal_weights
 
 
 class SchemaMemory(Observer):
-    def __init__(self, primitives: Optional[Collection[Schema]] = None) -> None:
+    def __init__(self, schemas: Optional[Collection[Schema]] = None) -> None:
+        """ Initializes SchemaMemory.
+
+        :param schemas: an optional collection of built-in, bare (action-only) schemas.
+        """
         super().__init__()
 
-        self._schema_tree = SchemaTree(primitives) if primitives else None
+        # built-in schemas sent to initializer must be bare (action-only) schemas
+        self._schema_tree = SchemaTree(schemas) if schemas else None
 
-        # register listeners for primitives
-        if primitives:
-            self._schema_tree.validate(raise_on_invalid=True)
-
-            for schema in primitives:
+        # register listeners for built-in schemas
+        if schemas:
+            for schema in schemas:
                 schema.register(self)
 
     def __len__(self) -> int:
@@ -81,8 +84,8 @@ class SchemaMemory(Observer):
             })
         return False if other is None else NotImplemented
 
-    @staticmethod
-    def from_tree(tree: SchemaTree) -> SchemaMemory:
+    @classmethod
+    def from_tree(cls, tree: SchemaTree) -> SchemaMemory:
         """ A factory method to initialize a SchemaMemory instance from a SchemaTree.
 
         Note: This method can be used to initialize SchemaMemory with arbitrary built-in schemas.
@@ -254,7 +257,7 @@ class SchemaMemory(Observer):
 
         spin_offs = frozenset([create_spin_off(schema, spin_off_type, ia) for ia in relevant_items])
 
-        if schema.is_primitive() and (spin_off_type is Schema.SpinOffType.RESULT):
+        if schema.is_bare() and (spin_off_type is Schema.SpinOffType.RESULT):
             self._create_composite_action_for_novel_spin_off_results(spin_offs)
 
         # register listeners for spin-offs
@@ -291,7 +294,7 @@ class SchemaMemory(Observer):
                 # TODO: is discovered very early. Note that allowing composite actions for all result states is
                 # TODO: not tractable for most environments.
                 min_adv = GlobalParams().get('composite_action_min_baseline_advantage')
-                if calc_value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
+                if calc_primitive_value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
                     continue
 
                 trace(f'Novel result detected: {spin_off.result}. Creating new composite action.')
@@ -306,7 +309,7 @@ class SchemaMemory(Observer):
                 ca_schema = SchemaPool().get(SchemaUniqueKey(action=ca))
                 ca_schema.register(self)
 
-                self._schema_tree.add_primitives([ca_schema])
+                self._schema_tree.add_bare_schemas([ca_schema])
 
 
 def schema_succeeded(applicable: bool, activated: bool, satisfied: bool) -> bool:
@@ -705,20 +708,28 @@ class SchemaSelection:
     def __init__(self,
                  select_strategy: Optional[SelectionStrategy] = None,
                  value_strategies: Optional[Collection[SchemaEvaluationStrategy]] = None,
-                 weights: Optional[Collection[float]] = None,
-                 **kwargs) -> None:
-        """ Blah Blah Blah
+                 weights: Optional[Collection[float]] = None) -> None:
+        """ Initializes SchemaSelection based on a set of strategies that define its operation.
 
-        :param select_strategy:
-        :param value_strategies:
-        :param weights:
-        :param kwargs:
+        :param select_strategy: a strategy for selecting a single, applicable schema.
+        :param value_strategies: a collection of strategies for evaluating schemas.
+        :param weights: an optional collection of weights, one for each value strategy (weights must sum to 1.0).
         """
-
         self.select_strategy: SelectionStrategy = (
                 select_strategy or RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0))
         )
         self.value_strategies: Collection[SchemaEvaluationStrategy] = value_strategies or []
+
+        # TODO: Update goal/explore weights. Perhaps this should be a strategy that is passed into the class?
+        # "The schema mechanism maintains a cyclic balance between emphasizing goal-directed value and exploration
+        #  value. The emphasis is achieved by changing the weights of the relative contributions of these components
+        #  to the importance asserted by each schema. Goal-directed value is emphasized most of the time, but a
+        #  significant part of the time, goal-directed value is diluted so that only very important goals take
+        #  precedence over exploration criteria." (See Drescher, 1991, p. 66)
+
+        # “To strike a balance between goal-pursuit and exploration criteria, the [schema] mechanism alternates
+        #  between emphasizing goal-pursuit criterion for a time, then emphasizing exploration criterion; currently,
+        #  the exploration criterion is emphasized most often (about 90% of the time).” (See Drescher, 1991, p. 61)
         self.weights = weights or equal_weights(len(self._value_strategies))
 
         # a stack of previously selected, non-terminated schemas with composite actions used for nested invocations
@@ -909,40 +920,25 @@ class SchemaSelection:
 
 
 class SchemaMechanism:
-    def __init__(self, primitive_actions: Collection[Action], primitive_items: Collection[Item]):
+    def __init__(self, items: Iterable[Item], schema_memory: SchemaMemory, schema_selection: SchemaSelection):
         super().__init__()
 
-        self._primitive_actions = primitive_actions
-        self._primitive_items = primitive_items
-
-        self._primitive_schemas = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in self._primitive_actions]
-
-        self._schema_memory = SchemaMemory(self._primitive_schemas)
-        self._schema_selection = SchemaSelection(
-            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
-            value_strategies=[
-                GoalPursuitEvaluationStrategy(),
-                ExploratoryEvaluationStrategy(),
-            ],
-            weights=[
-                GlobalParams().get('schema_selection.weights.goal_weight'),
-                GlobalParams().get('schema_selection.weights.explore_weight'),
-            ]
-        )
-
-        # TODO: update goal/explore weights.
-        # "The schema mechanism maintains a cyclic balance between emphasizing goal-directed value and exploration
-        #  value. The emphasis is achieved by changing the weights of the relative contributions of these components
-        #  to the importance asserted by each schema. Goal-directed value is emphasized most of the time, but a
-        #  significant part of the time, goal-directed value is diluted so that only very important goals take
-        #  precedence over exploration criteria." (See Drescher, 1991, p. 66)
-
-        # “To strike a balance between goal-pursuit and exploration criteria, the [schema] mechanism alternates
-        #  between emphasizing goal-pursuit criterion for a time, then emphasizing exploration criterion; currently,
-        #  the exploration criterion is emphasized most often (about 90% of the time).” (See Drescher, 1991, p. 61)
+        self._schema_memory: SchemaMemory = schema_memory
+        self._schema_selection: SchemaSelection = schema_selection
+        self._params: GlobalParams = GlobalParams()
+        self._stats: GlobalStats = GlobalStats()
 
         # initialize traces
-        GlobalStats().action_trace.add(self._primitive_actions)
+        built_in_actions = {schema.action for schema in self.schema_memory}
+        self._stats.action_trace.add(built_in_actions)
+
+        # pool references (used primarily for serialization)
+        self._item_pool: ItemPool = ItemPool()
+        self._schema_pool: SchemaPool = SchemaPool()
+
+        # ensure that all primitive items exist in the ItemPool
+        for item in items:
+            self._item_pool.get(item.source)
 
     @property
     def schema_memory(self) -> SchemaMemory:
@@ -952,22 +948,38 @@ class SchemaMechanism:
     def schema_selection(self) -> SchemaSelection:
         return self._schema_selection
 
+    @property
+    def params(self) -> GlobalParams:
+        """ Retrieves the global parameters.
+
+        :return: a reference to the GlobalParams
+        """
+        return self._params
+
+    @property
+    def stats(self) -> GlobalStats:
+        """ Retrieves the global statistics.
+
+        :return: a reference to the GlobalStats
+        """
+        return self._stats
+
     def select(self, state: State, **kwargs) -> SelectionDetails:
-        applicable_schemas = self._schema_memory.all_applicable(state)
-        return self._schema_selection.select(applicable_schemas, state)
+        applicable_schemas = self.schema_memory.all_applicable(state)
+        return self.schema_selection.select(applicable_schemas, state)
 
     def learn(self, selection_details: SelectionDetails, result_state: State, **kwargs) -> None:
-        self._schema_memory.update_all(selection_details=selection_details, result_state=result_state)
+        self.schema_memory.update_all(selection_details=selection_details, result_state=result_state)
 
         selected_schema = selection_details.selected
         selection_state = selection_details.selection_state
 
-        GlobalStats().action_trace.update([selected_schema.action])
-        GlobalStats().delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
+        self._stats.action_trace.update([selected_schema.action])
+        self._stats.delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
 
         # updates unconditional state value average
-        GlobalStats().n += 1
-        GlobalStats().update_baseline(result_state)
+        self._stats.n += 1
+        self._stats.update_baseline(result_state)
 
 
 def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion: ItemAssertion) -> Schema:
@@ -1000,7 +1012,7 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
         return SchemaPool().get(SchemaUniqueKey(action=schema.action, context=new_context, result=schema.result))
 
     elif Schema.SpinOffType.RESULT == spin_off_type:
-        if not is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) and not schema.is_primitive():
+        if not is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) and not schema.is_bare():
             raise ValueError('Result spin-off for primitive schemas only (unless ER_INCREMENTAL_RESULTS enabled)')
 
         new_result = (

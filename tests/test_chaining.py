@@ -29,7 +29,7 @@ class TestBackwardChaining(unittest.TestCase):
         self.s3_c_d = sym_schema('C,/A3/D,', schema_type=MockSchema, reliability=1.0)
         self.s3_d_e = sym_schema('D,/A3/E,', schema_type=MockSchema, reliability=1.0)
 
-        self.tree = SchemaTree(primitives=[self.s1, self.s2, self.s3])
+        self.tree = SchemaTree(schemas=[self.s1, self.s2, self.s3])
 
         # L2 result spin-offs
         self.tree.add_result_spin_offs(self.s1, [self.s1_b])
@@ -304,7 +304,7 @@ class TestBackwardChaining(unittest.TestCase):
         # primitives with composite actions
         se = sym_schema('/E,/')
 
-        self.tree.add_primitives([se])
+        self.tree.add_bare_schemas([se])
 
         se_e = sym_schema('/E,/E,')
         self.tree.add_result_spin_offs(se, spin_offs=[se_e])
