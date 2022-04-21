@@ -122,8 +122,14 @@ class TestCompositeItem(unittest.TestCase):
         self.assertEqual(self.sa, self.item.source)
 
         # test: default primitive value should be 0.0
-        i = SymbolicItem(source='UNK1')
-        self.assertEqual(0.0, i.primitive_value)
+        item = CompositeItem(source=sym_state_assert('UNK1, UNK2'))
+        self.assertEqual(0.0, item.primitive_value)
+
+        # test: when a primitive value is supplied to initializer, it should be properly set and override the
+        #     : primitive value of the underlying state assertion
+        primitive_value = -100.0
+        item = CompositeItem(source=self.sa, primitive_value=primitive_value)
+        self.assertEqual(primitive_value, item.primitive_value)
 
     def test_state_elements(self):
         # test: all state elements from positive assertions should be returned
@@ -133,8 +139,21 @@ class TestCompositeItem(unittest.TestCase):
         self.assertSetEqual(set(), sym_item('(~1,~2,~3,~4)').state_elements)
 
     def test_primitive_value(self):
-        # test: a item's primitive value should equal the primitive value of its source assertion
+        # test: a item's primitive value SHOULD equal the primitive value of its source assertion
         self.assertEqual(calc_primitive_value(self.sa), self.item.primitive_value)
+
+        # test: if explicitly set, a composite item's primitive value SHOULD remain fixed to that primitive value
+        #       regardless of the primitive state value associated with the underlying state elements
+        expected_value = 5.5
+        self.item.primitive_value = expected_value
+        self.assertEqual(expected_value, self.item.primitive_value)
+
+        for item in self.sa.items:
+            item.primitive_value = 1000.0
+
+        # sanity check: composite item's state should be (much) greater than its primitive value
+        self.assertGreater(calc_primitive_value(self.sa), expected_value)
+        self.assertEqual(expected_value, self.item.primitive_value)
 
     def test_is_on(self):
         # item expected to be ON for these states
