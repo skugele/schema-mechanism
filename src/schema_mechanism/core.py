@@ -77,8 +77,10 @@ def new_state(s_prev: Optional[State], s_curr: Optional[State]) -> frozenset[Ite
 
     :return: a (potentially empty) set of Items
     """
-    if not all((s_prev, s_curr)):
+    if not s_curr:
         return frozenset()
+
+    s_prev = [] if s_prev is None else s_prev
 
     # singular
     new = [ItemPool().get(se) for se in s_curr if se not in s_prev]
@@ -99,8 +101,10 @@ def lost_state(s_prev: Optional[State], s_curr: Optional[State]) -> frozenset[It
 
     :return: a (potentially empty) set of Items
     """
-    if not all((s_prev, s_curr)):
+    if not s_prev:
         return frozenset()
+
+    s_curr = [] if s_curr is None else s_curr
 
     # singular
     lost = [ItemPool().get(se) for se in s_prev if se not in s_curr]
@@ -306,7 +310,7 @@ class Item(ABC):
 
     @property
     def primitive_value(self) -> float:
-        return self._primitive_value
+        return 0.0 if self._primitive_value is None else self._primitive_value
 
     @primitive_value.setter
     def primitive_value(self, value: float) -> None:
@@ -1033,12 +1037,12 @@ class CompositeItem(StateAssertion, Item):
     This class is primarily used to support ExtendedResult statistics when the ER_INCREMENTAL_RESULTS is disabled.
     """
 
-    def __init__(self, source: StateAssertion, **kwargs) -> None:
+    def __init__(self, source: StateAssertion, primitive_value: float = None, **kwargs) -> None:
         if len(source) < 2:
             raise ValueError('Source assertion must have at least two elements')
 
         super().__init__(source=source,
-                         primitive_value=calc_primitive_value(source),
+                         primitive_value=primitive_value,
                          asserts=[*source.asserts, *source.negated_asserts])
 
     @property
@@ -1048,6 +1052,14 @@ class CompositeItem(StateAssertion, Item):
     @property
     def state_elements(self) -> set[StateElement]:
         return set(itertools.chain.from_iterable([ia.item.state_elements for ia in self.source.asserts]))
+
+    @property
+    def primitive_value(self) -> float:
+        return self._primitive_value if self._primitive_value else calc_primitive_value(self.source)
+
+    @primitive_value.setter
+    def primitive_value(self, value: float) -> None:
+        self._primitive_value = value
 
     def is_on(self, state: State, **kwargs) -> bool:
         return self.source.is_satisfied(state)
@@ -2172,6 +2184,9 @@ class SchemaTree:
         trace(f'adding bare schemas! [{[str(s) for s in schemas]}]')
         if not schemas:
             raise ValueError('Schemas cannot be empty or None')
+
+        if any({not schema.is_bare() for schema in schemas}):
+            raise ValueError('Schemas must be bare (action-only) schemas')
 
         # needed because schemas to add may already exist in set reducing total new count
         len_before_add = len(self.root.schemas_satisfied_by)

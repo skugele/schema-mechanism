@@ -3,6 +3,7 @@ from unittest import TestCase
 
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import Item
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import calc_delegated_value
 from schema_mechanism.core import composite_items
@@ -10,6 +11,7 @@ from schema_mechanism.core import held_state
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
 from schema_mechanism.core import non_composite_items
+from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_items
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
@@ -101,63 +103,256 @@ class TestStateFunctions(TestCase):
         self.s_none = None
 
         # add composite items to pool
-        pool = ItemPool()
+        self.pool: ItemPool = ItemPool()
 
-        self.ci1 = pool.get(sym_state_assert('1,2,3'), item_type=CompositeItem)  # On in s_1
-        self.ci2 = pool.get(sym_state_assert('4,5'), item_type=CompositeItem)  # On in s_1 and s_2
-        self.ci3 = pool.get(sym_state_assert('6,7,8'), item_type=CompositeItem)  # On in s_2
-        self.ci4 = pool.get(sym_state_assert('~2,~3'), item_type=CompositeItem)  # On in s_2
+        self.items: list[Item] = [sym_item(str(i)) for i in range(10)]
 
-    def test_held_state_1(self):
-        self.assertEqual(0, len(held_state(s_prev=self.s_empty, s_curr=self.s_empty)))
-        self.assertEqual(0, len(held_state(s_prev=self.s_none, s_curr=self.s_empty)))
-        self.assertEqual(0, len(held_state(s_prev=self.s_empty, s_curr=self.s_none)))
-        self.assertEqual(0, len(held_state(s_prev=self.s_none, s_curr=self.s_none)))
+        self.ci1: Item = self.pool.get(sym_state_assert('1,2,3'), item_type=CompositeItem)  # On in s_1
+        self.ci2: Item = self.pool.get(sym_state_assert('4,5'), item_type=CompositeItem)  # On in s_1 and s_2
+        self.ci3: Item = self.pool.get(sym_state_assert('6,7,8'), item_type=CompositeItem)  # On in s_2
+        self.ci4: Item = self.pool.get(sym_state_assert('~2,~3'), item_type=CompositeItem)  # On in s_2
 
-    def test_held_state_2(self):
-        # basic (non-composite) items
-        self.assertSetEqual(set(sym_items('4,5')),
-                            set(non_composite_items(held_state(s_prev=self.s_1, s_curr=self.s_2))))
-        self.assertSetEqual(set(sym_items('4,5')),
-                            set(non_composite_items(held_state(s_prev=self.s_2, s_curr=self.s_1))))
+    def test_all_state_functions_with_both_arguments_empty_or_none(self):
+        # tests for empty or None states
+        ################################
 
-    def test_held_state_3(self):
-        # composite items
-        self.assertSetEqual({self.ci2}, set(composite_items(held_state(s_prev=self.s_1, s_curr=self.s_2))))
-        self.assertSetEqual({self.ci2}, set(composite_items(held_state(s_prev=self.s_2, s_curr=self.s_1))))
+        # test: no items should be returned when both states are either empty or None
+        for state_function in (held_state, lost_state, new_state):
+            self.assertEqual(0, len(state_function(s_prev=self.s_empty, s_curr=self.s_empty)))
+            self.assertEqual(0, len(state_function(s_prev=self.s_none, s_curr=self.s_empty)))
+            self.assertEqual(0, len(state_function(s_prev=self.s_empty, s_curr=self.s_none)))
+            self.assertEqual(0, len(state_function(s_prev=self.s_none, s_curr=self.s_none)))
 
-    def test_lost_state_1(self):
-        self.assertEqual(0, len(lost_state(s_prev=self.s_empty, s_curr=self.s_empty)))
-        self.assertEqual(0, len(lost_state(s_prev=self.s_none, s_curr=self.s_empty)))
-        self.assertEqual(0, len(lost_state(s_prev=self.s_empty, s_curr=self.s_none)))
-        self.assertEqual(0, len(lost_state(s_prev=self.s_none, s_curr=self.s_none)))
+    def test_held_with_single_argument_empty_or_none(self):
+        # test: no items should be returned when either state is None or empty
+        self.assertEqual(0, len(held_state(s_prev=self.s_empty, s_curr=self.s_1)))
+        self.assertEqual(0, len(held_state(s_prev=self.s_1, s_curr=self.s_empty)))
+        self.assertEqual(0, len(held_state(s_prev=self.s_none, s_curr=self.s_1)))
+        self.assertEqual(0, len(held_state(s_prev=self.s_1, s_curr=self.s_none)))
 
-    def test_lost_state_2(self):
-        # basic (non-composite) items
-        self.assertSetEqual(set(sym_items('1,2,3')),
-                            set(non_composite_items(lost_state(s_prev=self.s_1, s_curr=self.s_2))))
-        self.assertSetEqual(set(sym_items('6,7,8')),
-                            set(non_composite_items(lost_state(s_prev=self.s_2, s_curr=self.s_1))))
+    def test_held_state_with_disjoint_current_and_previous_states(self):
+        # test: no items should be returned when previous and current states share no common elements
+        self.assertSetEqual(
+            set(),
+            set(non_composite_items(
+                held_state(
+                    s_prev=sym_state('4,5,6'),
+                    s_curr=sym_state('1,2,3')))))
 
-    def test_lost_state_3(self):
-        # composite items
-        self.assertSetEqual({self.ci1}, set(composite_items(lost_state(s_prev=self.s_1, s_curr=self.s_2))))
-        self.assertSetEqual({self.ci3, self.ci4}, set(composite_items(lost_state(s_prev=self.s_2, s_curr=self.s_1))))
+    def test_held_state_with_non_composite_items(self):
+        # test: non-composite items that are On in both previous and current state should be returned
+        self.assertSetEqual(
+            {sym_item('3')},
+            set(non_composite_items(
+                held_state(
+                    s_prev=sym_state('1,2,3'),
+                    s_curr=sym_state('3,4,5')))))
 
-    def test_new_state_1(self):
-        self.assertEqual(0, len(new_state(s_prev=self.s_empty, s_curr=self.s_empty)))
-        self.assertEqual(0, len(new_state(s_prev=self.s_none, s_curr=self.s_empty)))
-        self.assertEqual(0, len(new_state(s_prev=self.s_empty, s_curr=self.s_none)))
-        self.assertEqual(0, len(new_state(s_prev=self.s_none, s_curr=self.s_none)))
+        # test: non-composite items that are On in both previous and current state should be returned
+        self.assertSetEqual(
+            {sym_item('3')},
+            set(non_composite_items(
+                held_state(
+                    s_prev=sym_state('3,4,5'),
+                    s_curr=sym_state('1,2,3')))))
 
-    def test_new_state_2(self):
-        # basic (non-composite) items
-        self.assertSetEqual(set(sym_items('6,7,8')),
-                            set(non_composite_items(new_state(s_prev=self.s_1, s_curr=self.s_2))))
-        self.assertSetEqual(set(sym_items('1,2,3')),
-                            set(non_composite_items(new_state(s_prev=self.s_2, s_curr=self.s_1))))
+        # test: non-composite items that are On in both previous and current state should be returned
+        self.assertSetEqual(
+            set(sym_items('4,5')),
+            set(non_composite_items(
+                held_state(
+                    s_prev=sym_state('3,4,5'),
+                    s_curr=sym_state('4,5,6')))))
 
-    def test_new_state_3(self):
-        # composite items
-        self.assertSetEqual({self.ci3, self.ci4}, set(composite_items(new_state(s_prev=self.s_1, s_curr=self.s_2))))
-        self.assertSetEqual({self.ci1}, set(composite_items(new_state(s_prev=self.s_2, s_curr=self.s_1))))
+        # test: non-composite items that are On in both previous and current state should be returned
+        self.assertSetEqual(
+            set(sym_items('4,5')),
+            set(non_composite_items(
+                held_state(
+                    s_prev=sym_state('4,5,6'),
+                    s_curr=sym_state('3,4,5')))))
+
+    def test_held_state_with_composite_items(self):
+        # test: composite items that are On in both previous and current state should be returned (single item test)
+        self.assertSetEqual(
+            {self.ci1},
+            set(composite_items(
+                held_state(
+                    s_prev=sym_state('1,2,3'),
+                    s_curr=sym_state('1,2,3,4')))))
+
+        # test: composite items that are On in both previous and current state should be returned (single item test)
+        self.assertSetEqual(
+            {self.ci1},
+            set(composite_items(
+                held_state(
+                    s_prev=sym_state('1,2,3,4'),
+                    s_curr=sym_state('1,2,3')))))
+
+        # test: composite items that are On in both previous and current state should be returned (multiple item test)
+        self.assertSetEqual(
+            {self.ci1, self.ci2},
+            set(composite_items(
+                held_state(
+                    s_prev=sym_state('1,2,3,4,5'),
+                    s_curr=sym_state('1,2,3,4,5,6,7,8')))))
+
+        # test: composite items that are On in both previous and current state should be returned (multiple item test)
+        self.assertSetEqual(
+            {self.ci1, self.ci2},
+            set(composite_items(
+                held_state(
+                    s_prev=sym_state('1,2,3,4,5,6,7,8'),
+                    s_curr=sym_state('1,2,3,4,5')))))
+
+        # test: composite items with negated elements that are absent in both states should be returned
+        self.assertSetEqual(
+            {self.ci4},
+            set(composite_items(
+                held_state(
+                    s_prev=sym_state('1,7,8'),
+                    s_curr=sym_state('4,5,6')))))
+
+    def test_lost_with_single_argument_empty_or_none(self):
+        # test: no items should be returned if PREVIOUS state is empty or none
+        self.assertSetEqual(set(), lost_state(s_prev=self.s_empty, s_curr=self.s_1))
+        self.assertSetEqual(set(), lost_state(s_prev=self.s_none, s_curr=self.s_1))
+
+        # test: all items in previous state should be returned if CURRENT state is empty or none
+        self.assertSetEqual(
+            {*sym_items('1,2,3,4,5'), self.ci1, self.ci2},
+            lost_state(s_prev=self.s_1, s_curr=self.s_empty)
+        )
+
+        self.assertSetEqual(
+            {*sym_items('1,2,3,4,5'), self.ci1, self.ci2},
+            lost_state(s_prev=self.s_1, s_curr=self.s_none)
+        )
+
+    def test_lost_state_with_disjoint_current_and_previous_states(self):
+        # test: all items On in previous state should be returned if previous and current states share no elements
+        expected = {*sym_items('4,5,6'), self.ci2, self.ci4}
+        actual = set(lost_state(s_prev=sym_state('4,5,6'), s_curr=sym_state('1,2,3')))
+
+        self.assertSetEqual(expected, actual)
+
+    def test_lost_state_with_non_composite_items(self):
+        # test: non-composite items that are On in previous state but not current state should be returned
+        self.assertSetEqual(
+            {sym_item('1')},
+            set(non_composite_items(
+                lost_state(
+                    s_prev=sym_state('1,2,3'),
+                    s_curr=sym_state('2,3,4')))))
+
+        self.assertSetEqual(
+            set(sym_items('4,5')),
+            set(non_composite_items(
+                lost_state(
+                    s_prev=sym_state('3,4,5'),
+                    s_curr=sym_state('1,2,3')))))
+
+        # test: non-composite items that are On in both previous and current state SHOULD NOT be returned
+        self.assertSetEqual(
+            set(),
+            set(non_composite_items(
+                lost_state(
+                    s_prev=sym_state('3,4,5'),
+                    s_curr=sym_state('3,4,5')))))
+
+    def test_lost_state_with_composite_items(self):
+        # test: composite items that are On in previous state but not current state should be returned
+        self.assertSetEqual(
+            {self.ci1, self.ci2, self.ci3},
+            set(composite_items(
+                lost_state(
+                    s_prev=sym_state('1,2,3,4,5,6,7,8'),
+                    s_curr=sym_state('2,3,4')))))
+
+        # same test but with respect to composite item with negated assertions
+        self.assertSetEqual(
+            {self.ci4},
+            set(composite_items(
+                lost_state(
+                    s_prev=sym_state('4'),
+                    s_curr=sym_state('2,3')))))
+
+        # test: composite items that are On in both previous and current state SHOULD NOT be returned
+        self.assertSetEqual(
+            set(),
+            set(composite_items(
+                lost_state(
+                    s_prev=sym_state('1,2,3,4,5,6,7,8'),
+                    s_curr=sym_state('1,2,3,4,5,6,7,8')))))
+
+    def test_new_with_single_argument_empty_or_none(self):
+        # test: no items should be returned if CURRENT state is empty or none
+        self.assertSetEqual(set(), new_state(s_prev=self.s_1, s_curr=self.s_empty))
+        self.assertSetEqual(set(), new_state(s_prev=self.s_1, s_curr=self.s_none))
+
+        # test: all items in CURRENT state should be returned if PREVIOUS state is empty or none
+        self.assertSetEqual(
+            {*sym_items('1,2,3,4,5'), self.ci1, self.ci2},
+            new_state(s_prev=self.s_empty, s_curr=self.s_1)
+        )
+
+        self.assertSetEqual(
+            {*sym_items('1,2,3,4,5'), self.ci1, self.ci2},
+            new_state(s_prev=self.s_empty, s_curr=self.s_1)
+        )
+
+    def test_new_state_with_disjoint_current_and_previous_states(self):
+        # test: all items On in CURRENT state should be returned if previous and current states share no elements
+        expected = {*sym_items('4,5,6'), self.ci2, self.ci4}
+        actual = set(new_state(s_prev=sym_state('1,2,3'), s_curr=sym_state('4,5,6')))
+
+        self.assertSetEqual(expected, actual)
+
+    def test_new_state_with_non_composite_items(self):
+        # test: non-composite items that are On in CURRENT state but not PREVIOUS state should be returned
+        self.assertSetEqual(
+            {sym_item('4')},
+            set(non_composite_items(
+                new_state(
+                    s_prev=sym_state('1,2,3'),
+                    s_curr=sym_state('2,3,4')))))
+
+        self.assertSetEqual(
+            set(sym_items('1,2')),
+            set(non_composite_items(
+                new_state(
+                    s_prev=sym_state('3,4,5'),
+                    s_curr=sym_state('1,2,3')))))
+
+        # test: non-composite items that are On in both previous and current state SHOULD NOT be returned
+        self.assertSetEqual(
+            set(),
+            set(non_composite_items(
+                new_state(
+                    s_prev=sym_state('3,4,5'),
+                    s_curr=sym_state('3,4,5')))))
+
+    def test_new_state_with_composite_items(self):
+        # test: composite items that are On in CURRENT state but not PREVIOUS state should be returned
+        self.assertSetEqual(
+            {self.ci1, self.ci2, self.ci3},
+            set(composite_items(
+                new_state(
+                    s_prev=sym_state('2,3,4'),
+                    s_curr=sym_state('1,2,3,4,5,6,7,8')))))
+
+        # same test but with respect to composite item with negated assertions
+        self.assertSetEqual(
+            {self.ci4},
+            set(composite_items(
+                new_state(
+                    s_prev=sym_state('2,3'),
+                    s_curr=sym_state('4')))))
+
+        # test: composite items that are On in both previous and current state SHOULD NOT be returned
+        self.assertSetEqual(
+            set(),
+            set(composite_items(
+                new_state(
+                    s_prev=sym_state('1,2,3,4,5,6,7,8'),
+                    s_curr=sym_state('1,2,3,4,5,6,7,8')))))
