@@ -185,10 +185,6 @@ class GlobalParams(metaclass=Singleton):
         self._defaults['random_exploratory_strategy.epsilon.decay.rate.initial'] = 0.999
         self._defaults['random_exploratory_strategy.epsilon.decay.rate.min'] = 0.01
 
-        # schema selection weighting (set in SchemaMechanism)
-        self._defaults['schema_selection.weights.goal_weight'] = 0.6
-        self._defaults['schema_selection.weights.explore_weight'] = 0.4
-
         # default features
         self._defaults['features'] = {
             SupportedFeature.COMPOSITE_ACTIONS,
@@ -207,7 +203,6 @@ class GlobalParams(metaclass=Singleton):
         self._defaults['schema_type'] = None
 
     def _set_validators(self):
-
         self._validators['backward_chains.max_len'] = MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
         self._validators['backward_chains.update_frequency'] = RangeValidator(0.0, 1.0)
         self._validators['composite_actions.learn.min_baseline_advantage'] = TypeValidator([float])
@@ -221,21 +216,17 @@ class GlobalParams(metaclass=Singleton):
         self._validators['ext_result.positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['features'] = SupportedFeatureValidator()
         self._validators['goal_pursuit_strategy.reliability.max_penalty'] = RangeValidator(0.0, exclude=[0.0])
+        self._validators['habituation_exploratory_strategy.decay.rate'] = RangeValidator(0.0, 1.0)
+        self._validators['habituation_exploratory_strategy.multiplier'] = RangeValidator(low=0.0)
         self._validators['learning_rate'] = RangeValidator(0.0, 1.0)
         self._validators['output_format'] = TypeValidator([str])
-        self._validators['random_exploratory_strategy.epsilon.decay.rate.min'] = RangeValidator(low=0.0)
         self._validators['random_exploratory_strategy.epsilon.decay.rate.initial'] = RangeValidator(0.0, 1.0,
                                                                                                     exclude=[0.0, 1.0])
+        self._validators['random_exploratory_strategy.epsilon.decay.rate.min'] = RangeValidator(low=0.0)
         self._validators['random_exploratory_strategy.epsilon.initial'] = RangeValidator(0.0, 1.0)
         self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['rng_seed'] = TypeValidator([int])
-        self._validators['schema_selection.weights.explore_weight'] = RangeValidator(0.0, 1.0)
-        self._validators['schema_selection.weights.goal_weight'] = RangeValidator(0.0, 1.0)
         self._validators['verbosity'] = TypeValidator([Verbosity])
-
-        # used by reliability_values
-        self._defaults['habituation_exploratory_strategy.decay.rate'] = 0.95
-        self._defaults['habituation_exploratory_strategy.multiplier'] = 10.0
 
         # TODO: is there any way to do validators for?
         # TODO:    correlation_test,

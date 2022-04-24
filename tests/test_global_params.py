@@ -267,8 +267,6 @@ class TestGlobalParams(unittest.TestCase):
     def test_defaults(self):
         self.assertEqual('{timestamp} [{severity}]\t{message}', self.gp.defaults['output_format'])
         self.assertEqual(0.01, self.gp.defaults['learning_rate'])
-        self.assertEqual(0.4, self.gp.defaults['schema_selection.weights.explore_weight'])
-        self.assertEqual(0.6, self.gp.defaults['schema_selection.weights.goal_weight'])
         self.assertEqual(0.95, self.gp.defaults['ext_context.negative_correlation_threshold'])
         self.assertEqual(0.95, self.gp.defaults['ext_context.positive_correlation_threshold'])
         self.assertEqual(0.95, self.gp.defaults['ext_result.negative_correlation_threshold'])
