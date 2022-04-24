@@ -265,9 +265,13 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         """
         # only include the value of items that were not On in the selection state
         new_items = new_state(selection_state, result_state)
+        if not new_items:
+            return 0.0
 
-        pv = sum(item.primitive_value for item in new_items)
-        dv = sum(item.delegated_value for item in new_items)
+        most_specific_new_items = reduce_to_most_specific_items(new_items)
+
+        pv = sum(item.primitive_value for item in most_specific_new_items)
+        dv = sum(item.delegated_value for item in most_specific_new_items)
 
         # the delegated value accessible from the current state
         return self.discount_factor * (pv + self.discount_factor * dv)
@@ -302,7 +306,6 @@ class Item(ABC):
     def source(self) -> Any:
         return self._source
 
-    # TODO: Is this needed? Couldn't this be accessed through the source? Perhaps we can create an external function?
     @property
     @abstractmethod
     def state_elements(self) -> set[StateElement]:
@@ -379,6 +382,50 @@ def composite_items(items: Collection[Item]) -> Collection[Item]:
     return list(filter(lambda i: isinstance(i, CompositeItem), items))
 
 
+def items_from_state(state: State) -> Collection[Item]:
+    return [ItemPool().get(se) for se in state] if state else []
+
+
+def item_contained_in(item_1: Item, item_2: Item) -> bool:
+    set_1 = item_1.state_elements
+    set_2 = item_2.state_elements
+
+    # all non-negated elements of item_1 in item_2's state elements
+    if set_1.issubset(set_2):
+
+        if isinstance(item_1, CompositeItem):
+            # if both args are composite, check negated item assertions
+            if isinstance(item_2, CompositeItem):
+                set_1 = item_1.negated_asserts
+                set_2 = item_2.negated_asserts
+
+                return set_1.issubset(set_2)
+
+            # if first argument is composite, but 2nd is non-composite return False
+            else:
+                return False
+        else:
+            return True
+
+    return False
+
+
+def reduce_to_most_specific_items(items: Optional[Collection[Item]]) -> Collection[Item]:
+    reduced_items = set(items) if items else set()
+
+    items_to_keep = set()
+
+    while reduced_items:
+        item = reduced_items.pop()
+
+        check_set = reduced_items.union(items_to_keep)
+        contained_in = check_set and any((item_contained_in(item, o) for o in check_set))
+        if not contained_in:
+            items_to_keep.add(item)
+
+    return items_to_keep
+
+
 class GlobalStats(metaclass=Singleton):
     def __init__(self, baseline_value: Optional[float] = None):
         self._n: int = 0
@@ -426,7 +473,8 @@ class GlobalStats(metaclass=Singleton):
         :param state: a state
         :return: None
         """
-        self._baseline_value += (1.0 / self._n) * (calc_primitive_value(state) - self._baseline_value)
+        lr = GlobalParams().get('learning_rate')
+        self._baseline_value += lr * (calc_primitive_value(state) - self._baseline_value)
 
     # TODO: implement this, and replace update_baseline
     def update(self):
@@ -912,7 +960,6 @@ class ItemAssertion(Assertion):
     def __repr__(self) -> str:
         return repr_str(self, {'item': self._item, 'negated': self.is_negated})
 
-    # TODO: This should be removed
     @property
     def item(self) -> Item:
         """ Returns the Item on which this ItemAssertion is based.
@@ -2488,6 +2535,14 @@ def calc_primitive_value(other: Optional[Any]) -> float:
 
 
 @calc_primitive_value.register
+def _(se: StateElement) -> float:
+    item = ReadOnlyItemPool().get(se)
+    if not item:
+        return 0.0
+    return item.primitive_value
+
+
+@calc_primitive_value.register
 def _(state: State) -> float:
     if len(state) == 0:
         return 0.0
@@ -2511,21 +2566,13 @@ def _(assertion: StateAssertion) -> float:
 
 
 @calc_primitive_value.register
-def _(se: StateElement) -> float:
-    item = ReadOnlyItemPool().get(se)
-    if not item:
-        return 0.0
-    return item.primitive_value
-
-
-@calc_primitive_value.register
 def _(item: Item) -> float:
     return item.primitive_value
 
 
 @calc_primitive_value.register
 def _(item: CompositeItem) -> float:
-    return calc_primitive_value(item.as_state())
+    return item.primitive_value
 
 
 @singledispatch
@@ -2536,33 +2583,30 @@ def calc_delegated_value(other: Optional[Any]) -> float:
 @calc_delegated_value.register
 def _(state: State) -> float:
     if len(state) == 0:
-        return 0.0 - GlobalStats().baseline_value
+        return 0.0
+
     items = [ReadOnlyItemPool().get(se) for se in state]
 
     if not items:
         return 0.0
-    elif any({i is None for i in items}):
-        raise ValueError(f'Unknown state elements encountered in state: {state}')
 
-    return np.max([i.delegated_value for i in items if i])
+    return sum(i.delegated_value for i in items if i)
 
 
 @calc_delegated_value.register
 def _(assertion: ItemAssertion) -> float:
-    if assertion.is_negated:
-        return 0.0 - GlobalStats().baseline_value
-    return calc_delegated_value(assertion.item)
+    return 0.0 if assertion.is_negated else calc_delegated_value(assertion.item)
 
 
 @calc_delegated_value.register
 def _(assertion: StateAssertion) -> float:
     if assertion.is_negated:
         return 0.0
-    items = [ia.item for ia in assertion.asserts]
+    items = [ia.item for ia in assertion.asserts if ia.item]
     if not items:
         return 0.0
 
-    return np.max([i.delegated_value for i in items if i])
+    return sum(i.delegated_value for i in items)
 
 
 @calc_delegated_value.register
@@ -2570,7 +2614,7 @@ def _(se: StateElement) -> float:
     item = ReadOnlyItemPool().get(se)
     if not item:
         return 0.0
-    return item.delegated_value
+    return calc_delegated_value(item)
 
 
 @calc_delegated_value.register
@@ -2580,7 +2624,7 @@ def _(item: Item) -> float:
 
 @calc_delegated_value.register
 def _(item: CompositeItem) -> float:
-    return calc_delegated_value(item.as_state())
+    return item.delegated_value
 
 
 def calc_value(o: Any) -> float:

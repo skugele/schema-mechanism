@@ -7,6 +7,7 @@ import lark.exceptions
 
 from schema_mechanism.core import Action
 from schema_mechanism.core import Assertion
+from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import Item
 from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import NULL_STATE_ASSERT
@@ -33,6 +34,12 @@ def sym_item(str_repr: str, **kwargs) -> Item:
     except lark.exceptions.UnexpectedInput:
         raise ValueError(f'String representation for item is invalid: {str_repr}')
     assert isinstance(obj, Item)
+    return obj
+
+
+def sym_composite_item(str_repr: str, **kwargs) -> CompositeItem:
+    obj = sym_item(str_repr, **kwargs)
+    assert isinstance(obj, CompositeItem)
     return obj
 
 

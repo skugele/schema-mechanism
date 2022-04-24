@@ -3,13 +3,15 @@ import unittest
 import numpy as np
 
 from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
-from schema_mechanism.core import ItemPool
 from schema_mechanism.core import calc_value
+from schema_mechanism.core import items_from_state
+from schema_mechanism.core import new_state
+from schema_mechanism.core import reduce_to_most_specific_items
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.util import pairwise
-from test_share import disable_test
+from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
 
@@ -111,27 +113,6 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         dv_b = self.dv_helper.delegated_value(self.item_b)
 
         self.assertGreater(dv_a, dv_b)
-
-    # TODO: this is true of accumulating traces, not replacing traces. This test case needs to be moved into a
-    # TODO: separate test suite for accumulating traces.
-    # def test_item_on_in_multiple_states_leading_up_to_result(self):
-    #     # test: items on multiple times in recent selection states should receive more delegated value than items
-    #     #     : that were only on once (ceteris paribus)
-    #
-    #     states = [
-    #         sym_state('A'),
-    #         sym_state('A'),
-    #         sym_state('A,B'),
-    #         sym_state('7,9')
-    #     ]
-    #
-    #     for selection_state, result_state in pairwise(states):
-    #         self.dv_helper.update(selection_state=selection_state, result_state=result_state)
-    #
-    #     dv_a = self.dv_helper.delegated_value(self.item_a)
-    #     dv_b = self.dv_helper.delegated_value(self.item_b)
-    #
-    #     self.assertGreater(dv_a, dv_b)
 
     def test_item_maximum_undiscounted_delegated_value(self):
         # undiscounted dv helper
@@ -260,19 +241,33 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, trace_decay=1.0)
 
         _ = sym_item('P1', item_type=MockSymbolicItem, primitive_value=1.0, delegated_value=1.0)
-        _ = sym_item('P2', item_type=MockSymbolicItem, primitive_value=1.0, delegated_value=1.0)
+        _ = sym_item('P2', item_type=MockSymbolicItem, primitive_value=-1.0, delegated_value=1.0)
         _ = sym_item('P3', item_type=MockSymbolicItem, primitive_value=1.0, delegated_value=1.0)
         _ = sym_item('P4', item_type=MockSymbolicItem, primitive_value=-1.0, delegated_value=-1.0)
 
-        # test: result state's value should be the SUM of the item primitive and delegated values of those states
-        eff_value = self.dv_helper.effective_state_value(selection_state=sym_state('P4'),
-                                                         result_state=sym_state('P1,P2,P3'))
-        self.assertEqual(6.0, eff_value)
+        # test: eff. value should equal the sum of the primitive and delegated values of new items in the result state
+        selection_state = sym_state('P4')
+        result_state = sym_state('P1,P2,P3')
+
+        actual_value = self.dv_helper.effective_state_value(selection_state=selection_state,
+                                                            result_state=result_state)
+
+        items = items_from_state(result_state)
+        expected_value = sum(i.primitive_value for i in items) + sum(i.delegated_value for i in items)
+
+        self.assertEqual(expected_value, actual_value)
 
         # test: negative and positive item values be summed properly
-        eff_value = self.dv_helper.effective_state_value(selection_state=sym_state('P2'),
-                                                         result_state=sym_state('P1,P4'))
-        self.assertEqual(0.0, eff_value)
+        selection_state = sym_state('P2')
+        result_state = sym_state('P3,P4')
+
+        actual_value = self.dv_helper.effective_state_value(selection_state=selection_state,
+                                                            result_state=result_state)
+
+        items = items_from_state(result_state)
+        expected_value = sum(i.primitive_value for i in items) + sum(i.delegated_value for i in items)
+
+        self.assertEqual(expected_value, actual_value)
 
     def test_effective_state_value_with_discount(self):
         discount_factor = 0.5
@@ -347,6 +342,38 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
 
         self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
         self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+
+    def test_effective_state_value_with_overlapping_items(self):
+        # these test cases feature states corresponding to composite and non-composite items that share elements
+
+        # simplifying this test by making discount factor and trace decay 1.0. (Only testing basic value calculations.)
+        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, trace_decay=1.0)
+
+        _ = sym_item('P1', item_type=MockSymbolicItem, primitive_value=1.0, delegated_value=1.0)
+        _ = sym_item('P2', item_type=MockSymbolicItem, primitive_value=-1.0, delegated_value=1.0)
+        _ = sym_item('P3', item_type=MockSymbolicItem, primitive_value=1.0, delegated_value=1.0)
+        _ = sym_item('P4', item_type=MockSymbolicItem, primitive_value=-1.0, delegated_value=-1.0)
+
+        _ = sym_item('(P1,P2)', item_type=MockCompositeItem, delegated_value=10.0)
+        _ = sym_item('(P1,P2,P3)', item_type=MockCompositeItem, delegated_value=5.0)
+        _ = sym_item('(P2,P3)', item_type=MockCompositeItem, delegated_value=1.0)
+        _ = sym_item('(P3,P4)', item_type=MockCompositeItem, delegated_value=-1.0)
+
+        # test: eff. value should equal the SUM of the primitive and delegated values of the most specific, new items
+        #     : from the result state
+        selection_state = sym_state('P1')
+        result_state = sym_state('P1,P2,P3')
+
+        actual_value = self.dv_helper.effective_state_value(selection_state=selection_state,
+                                                            result_state=result_state)
+
+        new_items = reduce_to_most_specific_items(new_state(selection_state, result_state))
+        expected_value = sum(i.primitive_value for i in new_items) + sum(i.delegated_value for i in new_items)
+
+        self.assertEqual(expected_value, actual_value)
+
+        # TODO: Add test case for large number of updates with overlapping values. Want to make sure that it converges
+        #     : and does not blow up to an infinite value.
 
     def test_update_item_not_on(self):
         # test: items that were not On in a recent selection state should not have their delegated value updated
@@ -464,45 +491,3 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
 
         self.assertEqual(eff_value * trace_values[0], self.dv_helper.delegated_value(self.item_a))
         self.assertEqual(eff_value * trace_values[1], self.dv_helper.delegated_value(self.item_b))
-
-    def test_update_items_own_value_should_not_be_included(self):
-        pass
-
-    @disable_test
-    def test_value_blowing_up(self):
-        ItemPool().clear()
-        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, trace_decay=0.2)
-
-        items = [
-            self.item_a,
-            sym_item('AA', primitive_value=0.0),
-            sym_item('AB', primitive_value=0.0),
-            sym_item('AC', primitive_value=10.0),
-            sym_item('AD', primitive_value=10.0),
-            sym_item('AE', primitive_value=10.0),
-            sym_item('(AA,AB,AC)'),
-            sym_item('(AD,AE)'),
-        ]
-
-        trajectory = [
-            (items[0].source,),  # A
-            (items[1].source,),  # AA
-            (items[2].source,),  # AB
-            (items[3].source,),  # AC
-            (items[5].source,),  # AE
-            (items[4].source,),  # AD
-            (items[6].source,),  # AA,AB,AC
-            (items[7].source,),  # AD,AE
-            (items[0].source,),  # A
-        ]
-
-        GlobalParams().set('learning_rate', 0.01)
-
-        pairwise_trajectory = list(pairwise(trajectory))
-        for n in range(1, 100_000):
-            for selection_state, result_state in pairwise_trajectory:
-                self.dv_helper.update(selection_state=selection_state, result_state=result_state)
-                # print(self.dv_helper.eligibility_trace.keys())
-
-        for item in items:
-            print(f'dv [{item}]: {self.dv_helper.delegated_value(item)}')

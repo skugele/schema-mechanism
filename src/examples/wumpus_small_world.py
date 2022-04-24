@@ -5,11 +5,11 @@ from time import time
 from pynput import keyboard
 
 from examples import display_item_values
+from examples import display_known_schemas
 from examples import display_summary
 from examples.environments.wumpus_world import Wumpus
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
-from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
@@ -21,11 +21,10 @@ from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
-from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import display_params
 from schema_mechanism.share import info
 from schema_mechanism.stats import CorrelationOnEncounter
-from schema_mechanism.stats import DrescherCorrelationTest
+from schema_mechanism.stats import FisherExactCorrelationTest
 
 # global constants
 N_STEPS = 500
@@ -90,7 +89,7 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
             GoalPursuitEvaluationStrategy(),
             ExploratoryEvaluationStrategy(),
         ],
-        weights=[0.1, 0.9]
+        weights=[0.5, 0.5]
     )
 
     sm: SchemaMechanism = SchemaMechanism(
@@ -98,24 +97,24 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
         schema_memory=schema_memory,
         schema_selection=schema_selection)
 
-    sm.params.set('backward_chains.max_len', 10)
-    sm.params.set('backward_chains.update_frequency', 0.1)
-    sm.params.set('composite_action_min_baseline_advantage', 10.0)
-    sm.params.set('delegated_value_helper.decay_rate', 0.8)
-    sm.params.set('delegated_value_helper.discount_factor', 0.8)
-    sm.params.set('ext_context.correlation_test', DrescherCorrelationTest)
+    sm.params.set('backward_chains.max_len', 5)
+    sm.params.set('backward_chains.update_frequency', 0.01)
+    sm.params.set('composite_action_min_baseline_advantage', 5.0)
+    sm.params.set('delegated_value_helper.decay_rate', 0.2)
+    sm.params.set('delegated_value_helper.discount_factor', 0.5)
+    sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
     sm.params.set('ext_context.positive_correlation_threshold', 0.95)
     sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
     sm.params.set('ext_result.positive_correlation_threshold', 0.95)
-    sm.params.set('goal_pursuit_strategy.reliability.max_penalty', 5.0)
-    sm.params.set('habituation_exploratory_strategy.decay.rate', 0.6)
-    sm.params.set('habituation_exploratory_strategy.multiplier', 1.0)
+    sm.params.set('goal_pursuit_strategy.reliability.max_penalty', 25.0)
+    sm.params.set('habituation_exploratory_strategy.decay.rate', 0.2)
+    sm.params.set('habituation_exploratory_strategy.multiplier', 10.0)
     sm.params.set('learning_rate', 0.01)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.99999)
     sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.3)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.999999)
     sm.params.set('reliability_threshold', 0.9)
 
-    sm.params.get('features').remove(SupportedFeature.COMPOSITE_ACTIONS)
+    # sm.params.get('features').remove(SupportedFeature.COMPOSITE_ACTIONS)
 
     return sm
 
@@ -151,6 +150,7 @@ def run() -> None:
 
     start_time = time()
 
+    total_steps = 0
     for episode in range(args.episodes):
 
         # Initialize the world
@@ -187,15 +187,17 @@ def run() -> None:
                 i += 1
 
             schema = selection_details.selected
-            info(f'selected schema[{step}]: {schema}')
+            info(f'selected schema[{step}]: {schema} [eff. value: {selection_details.effective_value}]')
 
             state, is_terminal = env.step(schema.action)
 
             sm.learn(selection_details, result_state=state)
 
+            total_steps += 1
             if pause:
+                info(f'total steps: {total_steps}')
                 display_item_values()
-                # display_schema_info(sym_schema('/MOVE[FORWARD]/'))
+                display_known_schemas(sm, composite_only=True)
 
                 try:
                     while pause:
@@ -203,7 +205,7 @@ def run() -> None:
                 except KeyboardInterrupt:
                     pass
 
-        GlobalStats().delegated_value_helper.eligibility_trace.clear()
+        # GlobalStats().delegated_value_helper.eligibility_trace.clear()
 
     end_time = time()
 

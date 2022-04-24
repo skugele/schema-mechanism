@@ -5,7 +5,6 @@ from typing import Optional
 
 from schema_mechanism.core import Action
 from schema_mechanism.core import CompositeItem
-from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Item
 from schema_mechanism.core import Schema
 from schema_mechanism.core import StateAssertion
@@ -55,32 +54,18 @@ class MockSymbolicItem(SymbolicItem):
     def __init__(self,
                  source: str,
                  primitive_value: Optional[float] = None,
-                 avg_accessible_value: Optional[float] = None,
                  delegated_value: Optional[float] = None,
                  **kwargs):
         super().__init__(source, primitive_value, **kwargs)
 
-        self._mock_avg_accessible_value = avg_accessible_value
         self._mock_delegated_value = delegated_value
-
-    @property
-    def avg_accessible_value(self) -> float:
-        return (
-            super().avg_accessible_value
-            if self._mock_avg_accessible_value is None
-            else self._mock_avg_accessible_value
-        )
-
-    @avg_accessible_value.setter
-    def avg_accessible_value(self, value: float) -> None:
-        self._mock_avg_accessible_value = value
 
     @property
     def delegated_value(self) -> float:
         if self._mock_delegated_value is not None:
             return self._mock_delegated_value
 
-        return self.avg_accessible_value - GlobalStats().baseline_value
+        return super().delegated_value
 
     @delegated_value.setter
     def delegated_value(self, value) -> None:
@@ -90,32 +75,18 @@ class MockSymbolicItem(SymbolicItem):
 class MockCompositeItem(CompositeItem):
     def __init__(self,
                  source: StateAssertion,
-                 avg_accessible_value: float,
                  delegated_value: Optional[float] = None,
                  **kwargs):
         super().__init__(source, **kwargs)
 
-        self._mock_avg_accessible_value = avg_accessible_value
         self._mock_delegated_value = delegated_value
-
-    @property
-    def avg_accessible_value(self) -> float:
-        return (
-            super().avg_accessible_value
-            if self._mock_avg_accessible_value is None
-            else self._mock_avg_accessible_value
-        )
-
-    @avg_accessible_value.setter
-    def avg_accessible_value(self, value: float) -> None:
-        self._mock_avg_accessible_value = value
 
     @property
     def delegated_value(self) -> float:
         if self._mock_delegated_value is not None:
             return self._mock_delegated_value
 
-        return self.avg_accessible_value - GlobalStats().baseline_value
+        return super().delegated_value
 
     @delegated_value.setter
     def delegated_value(self, value) -> None:

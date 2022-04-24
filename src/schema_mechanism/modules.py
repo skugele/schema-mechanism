@@ -44,8 +44,8 @@ from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import rng
 from schema_mechanism.share import trace
 from schema_mechanism.strategies import GeometricDecayStrategy
-from schema_mechanism.util import AccumulatingTrace
 from schema_mechanism.util import Observer
+from schema_mechanism.util import Trace
 from schema_mechanism.util import equal_weights
 
 
@@ -569,7 +569,7 @@ class EpsilonGreedyExploratoryStrategy:
 
 
 def habituation_exploratory_value(schemas: Sequence[Schema],
-                                  trace: AccumulatingTrace[Action],
+                                  trace: Trace[Action],
                                   multiplier: Optional[float] = None,
                                   pending: Optional[Schema] = None) -> np.ndarray:
     """ Modulates the selection value of actions based on the recency and frequency of their selection.
@@ -858,8 +858,8 @@ class SchemaSelection:
             action = details.schema.action
             goal_state = action.goal_state
 
-            # FIXME: this should be based on the action controller's max chain length
-            max_duration = 5
+            # TODO: not sure if this is a good way to do this
+            max_duration = 1.5 * GlobalParams().get('backward_chains.max_len')
 
             # sanity check
             assert action.is_composite()

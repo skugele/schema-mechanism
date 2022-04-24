@@ -19,12 +19,16 @@ params.set('rng_seed', RANDOM_SEED)
 params.set('verbosity', Verbosity.INFO)
 
 
-def display_known_schemas(sm: SchemaMechanism) -> None:
-    info(f'known schemas (n = {len(sm.schema_memory)})')
+def display_known_schemas(sm: SchemaMechanism, composite_only: bool = False) -> None:
+    info(f'known schemas: (n = {len(sm.schema_memory)})')
     for s in sm.schema_memory:
-        composite = s.action.is_composite()
-        info(f'\t{str(s)} [composite? {composite}]')
-        if composite:
+        is_composite = s.action.is_composite()
+
+        if composite_only and not is_composite:
+            continue
+
+        info(f'\t{str(s)} [composite? {is_composite}]')
+        if is_composite:
             display_components(s)
 
 

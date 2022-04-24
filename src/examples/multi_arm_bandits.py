@@ -1,7 +1,10 @@
 import argparse
 from collections.abc import Sequence
+from time import sleep
 from time import time
 from typing import Optional
+
+from pynput import keyboard
 
 from examples import display_summary
 from schema_mechanism.core import Action
@@ -17,6 +20,7 @@ from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
+from schema_mechanism.share import display_params
 from schema_mechanism.share import info
 from schema_mechanism.share import rng
 from schema_mechanism.stats import CorrelationOnEncounter
@@ -24,8 +28,21 @@ from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.util import Observable
 
 # global constants
-N_MACHINES = 10
-N_STEPS = 500
+N_MACHINES = 5
+N_STEPS = 5000
+
+pause = False
+running = True
+
+
+def on_press(key):
+    global pause, running
+
+    if key == keyboard.Key.space:
+        pause = not pause
+    if key == keyboard.Key.esc:
+        print('setting running to False', flush=True)
+        running = False
 
 
 class Machine:
@@ -182,7 +199,7 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     primitive_items = [
         sym_item('W', primitive_value=100.0),
         sym_item('L', primitive_value=-100.0),
-        sym_item('P', primitive_value=-5.0),
+        sym_item('P', primitive_value=-50.0),
     ]
     bare_schemas = [Schema(action=a) for a in env.actions]
     schema_memory = SchemaMemory(bare_schemas)
@@ -200,18 +217,18 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
         schema_memory=schema_memory,
         schema_selection=schema_selection)
 
-    sm.params.set('composite_action_min_baseline_advantage', 25.0)
-    sm.params.set('delegated_value_helper.decay_rate', 0.2)
+    sm.params.set('backward_chains.update_frequency', 0.01)
+    sm.params.set('backward_chains.max_len', 3)
+    sm.params.set('delegated_value_helper.decay_rate', 0.0)
     sm.params.set('delegated_value_helper.discount_factor', 0.5)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.999)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.1)
-    sm.params.set('schema_selection.weights.explore_weight', 0.9)
-    sm.params.set('schema_selection.weights.goal_weight', 0.1)
-    sm.params.set('habituation_exploratory_strategy.decay.rate', 0.9)
-    sm.params.set('habituation_exploratory_strategy.multiplier', 10.0)
-    sm.params.set('learning_rate', 0.05)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.9999)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.3)
+    sm.params.set('habituation_exploratory_strategy.decay.rate', 0.1)
+    sm.params.set('habituation_exploratory_strategy.multiplier', 5.0)
+    sm.params.set('learning_rate', 0.01)
     sm.params.set('goal_pursuit_strategy.reliability.max_penalty', 10.0)
     sm.params.set('reliability_threshold', 0.7)
+    sm.params.set('composite_action_min_baseline_advantage', 15.0)
 
     # item correlation test used for determining relevance of extended context items
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
@@ -232,6 +249,11 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
 
 def run():
     args = parse_args()
+
+    display_params()
+
+    listener = keyboard.Listener(on_press=on_press)
+    listener.start()
 
     machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.machines)]
     env = BanditEnvironment(machines)
@@ -259,6 +281,15 @@ def run():
                 info(f'selection state [{i}]: {pending_details.selection_state}')
                 info(f'duration [{i}]: {pending_details.duration}')
             i += 1
+
+        if pause:
+            display_summary(sm)
+
+            try:
+                while pause:
+                    sleep(0.1)
+            except KeyboardInterrupt:
+                pass
 
         schema = selection_details.selected
         info(f'selected schema[{n}]: {schema}')

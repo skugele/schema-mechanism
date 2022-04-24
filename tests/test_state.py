@@ -5,7 +5,6 @@ from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Item
 from schema_mechanism.core import ItemPool
-from schema_mechanism.core import calc_delegated_value
 from schema_mechanism.core import composite_items
 from schema_mechanism.core import held_state
 from schema_mechanism.core import lost_state
@@ -26,11 +25,11 @@ class TestState(TestCase):
         common_test_setup()
 
         # adds items to item pool
-        _ = ItemPool().get('1', primitive_value=-1.0, avg_accessible_value=3.0, item_type=MockSymbolicItem)
-        _ = ItemPool().get('2', primitive_value=0.0, avg_accessible_value=1.0, item_type=MockSymbolicItem)
-        _ = ItemPool().get('3', primitive_value=1.0, avg_accessible_value=-3.0, item_type=MockSymbolicItem)
-        _ = ItemPool().get('4', primitive_value=-1.0, avg_accessible_value=0.0, item_type=MockSymbolicItem)
-        _ = ItemPool().get('5', primitive_value=0.0, avg_accessible_value=-1.0, item_type=MockSymbolicItem)
+        _ = ItemPool().get('1', primitive_value=-1.0, delegated_value=3.0, item_type=MockSymbolicItem)
+        _ = ItemPool().get('2', primitive_value=0.0, delegated_value=1.0, item_type=MockSymbolicItem)
+        _ = ItemPool().get('3', primitive_value=1.0, delegated_value=-3.0, item_type=MockSymbolicItem)
+        _ = ItemPool().get('4', primitive_value=-1.0, delegated_value=0.0, item_type=MockSymbolicItem)
+        _ = ItemPool().get('5', primitive_value=0.0, delegated_value=-1.0, item_type=MockSymbolicItem)
 
         self.s = ('1', '2', '3')
         self.s_copy = copy(self.s)
@@ -72,25 +71,6 @@ class TestState(TestCase):
         for se in ['4', '5', '6']:
             self.assertNotIn(se, self.s)
             self.assertNotIn(se, self.s_empty)
-
-    def test_delegated_value(self):
-        # empty state
-        self.assertEqual(0.0 - GlobalStats().baseline_value, calc_delegated_value(self.s_empty))
-
-        # single element state (negative avg accessible value)
-        self.assertEqual(-1.0 - GlobalStats().baseline_value, calc_delegated_value(sym_state('5')))
-
-        # single element state (zero avg accessible value)
-        self.assertEqual(0.0 - GlobalStats().baseline_value, calc_delegated_value(sym_state('4')))
-
-        # single element state (positive avg accessible value)
-        self.assertEqual(1.0 - GlobalStats().baseline_value, calc_delegated_value(sym_state('2')))
-
-        # multiple element state (negative, zero, and positive avg accessible value)
-        self.assertEqual(3.0 - GlobalStats().baseline_value, calc_delegated_value(sym_state('1,2')))
-        self.assertEqual(1.0 - GlobalStats().baseline_value, calc_delegated_value(sym_state('2,3')))
-        self.assertEqual(0.0 - GlobalStats().baseline_value, calc_delegated_value(sym_state('3,4')))
-        self.assertEqual(-1.0 - GlobalStats().baseline_value, calc_delegated_value(sym_state('3,5')))
 
 
 class TestStateFunctions(TestCase):
