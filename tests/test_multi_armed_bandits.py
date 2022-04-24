@@ -31,8 +31,18 @@ class TestMultiArmedBandits(unittest.TestCase):
 
         # test: explicitly passing an initial state SHOULD be reflected in the environment's current state
         init_state = sym_state('M0')
-        env = BanditEnvironment(self.machines, init_state)
+        env = BanditEnvironment(machines=self.machines, init_state=init_state)
         self.assertEqual(init_state, env.current_state)
+
+        # test: explicitly passing an currency to play SHOULD be reflected in the environment's current state
+        currency_to_play = 25
+        env = BanditEnvironment(machines=self.machines, currency_to_play=currency_to_play)
+        self.assertEqual(currency_to_play, env.currency_to_play)
+
+        # test: explicitly passing an currency on win SHOULD be reflected in the environment's current state
+        currency_on_win = 100
+        env = BanditEnvironment(machines=self.machines, currency_on_win=currency_on_win)
+        self.assertEqual(currency_on_win, env.currency_on_win)
 
         # test: invalid initial states SHOULD generate a ValueError
         self.assertRaises(ValueError, lambda: BanditEnvironment(self.machines, init_state=sym_state('INVALID')))
@@ -114,5 +124,27 @@ class TestMultiArmedBandits(unittest.TestCase):
         env = BanditEnvironment(machines=self.machines, init_state=sym_state('M0,L'))
         for action in [Action(a_str) for a_str in ['play', *[f'sit(M{m.id})' for m in self.machines]]]:
             self.assertEqual(sym_state('M0'), env.step(action))
+
+    def test_step_deposit_reduces_winnings(self):
+        # test: deposit should decrease winnings by currency_to_play if 'P' not in current state
+        currency_to_play = 100
+        env = BanditEnvironment(machines=self.machines, currency_to_play=currency_to_play, init_state=sym_state('M0'))
+
+        winnings_before_pay = env.winnings
+        env.step(action=Action('deposit'))
+        winnings_after_pay = env.winnings
+
+        self.assertEqual(winnings_before_pay - currency_to_play, winnings_after_pay)
+
+    def test_step_win_increases_winnings(self):
+        # test: win should increase winnings by currency_on_win
+        currency_on_win = 100
+        env = BanditEnvironment(machines=self.machines, currency_on_win=currency_on_win, init_state=sym_state('M0,P'))
+
+        winnings_before_play = env.winnings
+        env.step(action=Action('play'))
+        winnings_after_play = env.winnings
+
+        self.assertEqual(winnings_before_play + currency_on_win, winnings_after_play)
 
     # TODO: test for invalid moves that return to the same state

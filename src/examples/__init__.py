@@ -20,7 +20,11 @@ params.set('verbosity', Verbosity.INFO)
 
 
 def display_known_schemas(sm: SchemaMechanism, composite_only: bool = False) -> None:
-    info(f'known schemas: (n = {len(sm.schema_memory)})')
+    if composite_only:
+        info(f'composite schemas: (n = {len(sm.schema_memory)})')
+    else:
+        info(f'known schemas: (n = {len(sm.schema_memory)})')
+
     for s in sm.schema_memory:
         is_composite = s.action.is_composite()
 

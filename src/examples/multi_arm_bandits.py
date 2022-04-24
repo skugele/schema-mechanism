@@ -10,7 +10,6 @@ from examples import display_summary
 from schema_mechanism.core import Action
 from schema_mechanism.core import Schema
 from schema_mechanism.core import State
-from schema_mechanism.core import StateElement
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import AbsoluteDiffMatchStrategy
@@ -28,7 +27,7 @@ from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.util import Observable
 
 # global constants
-N_MACHINES = 5
+N_MACHINES = 10
 N_STEPS = 5000
 
 pause = False
@@ -70,20 +69,32 @@ class Machine:
 class BanditEnvironment(Observable):
     DEFAULT_INIT_STATE = sym_state('S')  # standing
 
-    def __init__(self, machines: Sequence[Machine], init_state: Optional[State] = None) -> None:
+    def __init__(self,
+                 machines: Sequence[Machine],
+                 currency_to_play: int = 50,
+                 currency_on_win: int = 100,
+                 init_state: Optional[State] = None) -> None:
         super().__init__()
 
         if not machines:
-            raise ValueError('Must supply at least one machines must be a positive number')
+            raise ValueError('Must supply at least one machine')
 
         self._machines = machines
+        self._currency_to_play = currency_to_play
+        self._currency_on_win = currency_on_win
 
-        self._actions = [Action(a_str) for a_str in ['deposit', 'stand', 'play']]
+        self._actions = [Action(a_str) for a_str in ['deposit', 'stand', 'play', 'withdraw']]
+
         self._sit_actions = [Action(f'sit({m_})') for m_ in self._machines]
         self._actions.extend(self._sit_actions)
 
-        self._state_elements = ['W', 'L', 'S', 'P'] + [str(m_) for m_ in self._machines]
-        self._states = [sym_state('W'), sym_state('L'), sym_state('S'), sym_state('P')]
+        self._states = [
+            sym_state('W'),  # agent's last play won
+            sym_state('L'),  # agent's last play lost
+            sym_state('S'),  # agent is standing
+            sym_state('P'),  # money is deposited in current machine
+            sym_state('B'),  # agent is broke (not enough money to play),
+        ]
 
         # add machine related states
         self._machine_base_states = [sym_state(str(m_)) for m_ in self._machines]
@@ -99,10 +110,36 @@ class BanditEnvironment(Observable):
         ])
 
         self._init_state = init_state or sym_state('S')
-        if self._init_state not in self._states:
-            raise ValueError(f'init_state is invalid: {self._init_state}')
-
         self._current_state = self._init_state
+
+        if self._init_state not in self._states:
+            raise ValueError(f'initial state is an invalid state: {self._init_state}')
+
+        self._winnings: int = 0
+
+    @property
+    def winnings(self) -> int:
+        return self._winnings
+
+    @winnings.setter
+    def winnings(self, value: int) -> None:
+        self._winnings = value
+
+    @property
+    def currency_to_play(self) -> int:
+        return self._currency_to_play
+
+    @currency_to_play.setter
+    def currency_to_play(self, value: int) -> None:
+        self._currency_to_play = value
+
+    @property
+    def currency_on_win(self) -> int:
+        return self._currency_on_win
+
+    @currency_on_win.setter
+    def currency_on_win(self, value: int) -> None:
+        self._currency_on_win = value
 
     @property
     def machines(self) -> Sequence[Machine]:
@@ -111,10 +148,6 @@ class BanditEnvironment(Observable):
     @property
     def actions(self) -> Sequence[Action]:
         return self._actions
-
-    @property
-    def state_elements(self) -> Sequence[StateElement]:
-        return self._state_elements
 
     @property
     def states(self) -> Sequence[State]:
@@ -138,6 +171,7 @@ class BanditEnvironment(Observable):
         # at machine
         elif self._current_state in self._machine_base_states:
             if action == Action('deposit'):
+                self.winnings -= self._currency_to_play
                 m_ndx = self._machine_base_states.index(self._current_state)
                 self._current_state = self._machine_play_states[m_ndx]
             elif action == Action('stand'):
@@ -148,6 +182,7 @@ class BanditEnvironment(Observable):
             if action == Action('play'):
                 m_ndx = self._machine_play_states.index(self._current_state)
                 if self._machines[m_ndx].play()[0] == 'W':
+                    self._winnings += self._currency_on_win
                     self._current_state = self._machine_win_states[m_ndx]
                 else:
                     self._current_state = self._machine_lose_states[m_ndx]
@@ -158,6 +193,7 @@ class BanditEnvironment(Observable):
         elif self._current_state in self._machine_win_states:
             m_ndx = self._machine_win_states.index(self._current_state)
             if action == Action('deposit'):
+                self.winnings -= self._currency_to_play
                 self._current_state = self._machine_play_states[m_ndx]
             elif action == Action('stand'):
                 self._current_state = sym_state('S')
@@ -168,6 +204,7 @@ class BanditEnvironment(Observable):
         elif self._current_state in self._machine_lose_states:
             m_ndx = self._machine_lose_states.index(self._current_state)
             if action == Action('deposit'):
+                self.winnings -= self._currency_to_play
                 self._current_state = self._machine_play_states[m_ndx]
             elif action == Action('stand'):
                 self._current_state = sym_state('S')
@@ -221,13 +258,13 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     sm.params.set('backward_chains.max_len', 3)
     sm.params.set('delegated_value_helper.decay_rate', 0.0)
     sm.params.set('delegated_value_helper.discount_factor', 0.5)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.9999)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.3)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.999)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.1)
     sm.params.set('habituation_exploratory_strategy.decay.rate', 0.1)
-    sm.params.set('habituation_exploratory_strategy.multiplier', 5.0)
+    sm.params.set('habituation_exploratory_strategy.multiplier', 0.0)
     sm.params.set('learning_rate', 0.01)
     sm.params.set('goal_pursuit_strategy.reliability.max_penalty', 10.0)
-    sm.params.set('reliability_threshold', 0.7)
+    sm.params.set('reliability_threshold', 0.9)
     sm.params.set('composite_actions.learn.min_baseline_advantage', 15.0)
 
     # item correlation test used for determining relevance of extended context items
@@ -263,6 +300,7 @@ def run():
     start_time = time()
 
     for n in range(args.steps):
+        info(f'winnings: {env.winnings}')
         info(f'state[{n}]: {env.current_state}')
 
         selection_details = sm.select(env.current_state)
@@ -283,6 +321,7 @@ def run():
             i += 1
 
         if pause:
+            display_machine_info(machines)
             display_summary(sm)
 
             try:
@@ -302,12 +341,14 @@ def run():
 
     info(f'elapsed time: {end_time - start_time}s')
 
-    # displays machine properties
+    display_machine_info(machines)
+    display_summary(sm)
+
+
+def display_machine_info(machines):
     info(f'machines ({len(machines)}):')
     for m in machines:
         info(f'\t{repr(m)}')
-
-    display_summary(sm)
 
 
 if __name__ == '__main__':

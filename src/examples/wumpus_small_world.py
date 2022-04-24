@@ -1,6 +1,8 @@
 import argparse
+from statistics import mean
 from time import sleep
 from time import time
+from typing import Iterable
 
 from pynput import keyboard
 
@@ -10,7 +12,6 @@ from examples import display_summary
 from examples.environments.wumpus_world import Wumpus
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
-from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.func_api import sym_item
@@ -21,43 +22,12 @@ from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
+from schema_mechanism.share import debug
 from schema_mechanism.share import display_params
 from schema_mechanism.share import info
+from schema_mechanism.share import trace
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
-
-# global constants
-N_STEPS = 500
-N_EPISODES = 100
-
-# Wumpus @ (6,3); Agent starts @ (1,8) facing 'W'
-agent_spec = WumpusWorldAgent(position=(1, 1), direction='N', n_arrows=0)
-wumpus_spec = Wumpus(position=(3, 1), health=2)
-
-# world = """
-# www
-# w.w
-# www
-# """
-world = """
-wwwwww
-w....w
-w.ww.w
-w...ew
-wwwwww
-"""
-# world = """
-# wwwwwwwwww
-# w........w
-# w.wwa.wwww
-# w.ppwwwppw
-# w.pwww..ew
-# w.pgpw.ppw
-# w...w..www
-# w..ww.wwpw
-# w.......aw
-# wwwwwwwwww
-# """
 
 # global constants
 MAX_EPISODES = 5000
@@ -125,22 +95,50 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description='Wumpus World Example Environment (Schema Mechanism)')
 
-    parser.add_argument('--steps', type=int, required=False, default=N_STEPS,
-                        help=f'the maximum number of steps before terminating an episode (default: {N_STEPS})')
-    parser.add_argument('--episodes', type=int, required=False, default=N_EPISODES,
-                        help=f'the maximum number of episodes (default: {N_EPISODES})')
+    parser.add_argument('--steps', type=int, required=False, default=MAX_STEPS,
+                        help=f'the maximum number of steps before terminating an episode (default: {MAX_STEPS})')
+    parser.add_argument('--episodes', type=int, required=False, default=MAX_EPISODES,
+                        help=f'the maximum number of episodes (default: {MAX_EPISODES})')
 
     return parser.parse_args()
 
 
-def run() -> None:
-    args = parse_args()
+def create_world() -> WumpusWorldMDP:
+    agent_spec = WumpusWorldAgent(position=(1, 1), direction='N', n_arrows=0)
+    wumpus_spec = Wumpus(position=(3, 1), health=2)
+
+    world = """
+    wwwwww
+    w....w
+    w.ww.w
+    w...ew
+    wwwwww
+    """
+    # world = """
+    # wwwwwwwwww
+    # w........w
+    # w.wwa.wwww
+    # w.ppwwwppw
+    # w.pwww..ew
+    # w.pgpw.ppw
+    # w...w..www
+    # w..ww.wwpw
+    # w.......aw
+    # wwwwwwwwww
+    # """
 
     # note: randomizing the start seems to be extremely important in episodic environments because the SchemaMechanism
     # will learn unintended correlations due to repeated exposure to the same state state. For example, that turning
     # left results in a northerly orientation, or that moving forward (without constraint) leads to a particular
     # position.
     env = WumpusWorldMDP(worldmap=world, agent=agent_spec, wumpus=None, randomized_start=True)
+    return env
+
+
+def run() -> None:
+    args = parse_args()
+
+    env = create_world()
     sm = create_schema_mechanism(env)
 
     display_params()
@@ -150,52 +148,47 @@ def run() -> None:
 
     start_time = time()
 
-    total_steps = 0
+    steps_in_episode = []
+
     for episode in range(args.episodes):
 
-        # Initialize the world
-        state, is_terminal = env.reset()
+        # initialize the world
+        selection_state, is_terminal = env.reset()
 
-        # While not terminal state
         for step in range(args.steps):
             if is_terminal or not running:
                 break
 
-            info(f'n items: {len(ItemPool())}')
-            info(f'n schemas: {len(sm.schema_memory)}')
+            progress_id = f'{episode}:{step}'
 
-            env.render()
+            trace(f'\n{env.render()}\n')
 
-            info(f'selection state[{step}]: {state}')
-
-            selection_details = sm.select(state)
+            debug(f'state [{progress_id}]: {selection_state}')
+            selection_details = sm.select(selection_state)
 
             current_composite_schema = sm.schema_selection.pending_schema
             if current_composite_schema:
-                info(f'active composite action schema: {current_composite_schema} ')
+                debug(f'active composite action schema [{progress_id}]: {current_composite_schema} ')
 
             terminated_composite_schemas = selection_details.terminated_pending
-
             if terminated_composite_schemas:
                 info(f'terminated schemas:')
-                i = 1
-                for pending_details in terminated_composite_schemas:
-                    info(f'schema [{i}]: {pending_details.schema}')
-                    info(f'selection state [{i}]: {pending_details.selection_state}')
-                    info(f'status [{i}]: {pending_details.status}')
-                    info(f'duration [{i}]: {pending_details.duration}')
-                i += 1
+                for i, pending_details in enumerate(terminated_composite_schemas):
+                    debug(f'schema [{i}]: {pending_details.schema}')
+                    debug(f'selection state [{i}]: {pending_details.selection_state}')
+                    debug(f'status [{i}]: {pending_details.status}')
+                    debug(f'duration [{i}]: {pending_details.duration}')
 
             schema = selection_details.selected
-            info(f'selected schema[{step}]: {schema} [eff. value: {selection_details.effective_value}]')
+            action = schema.action
 
-            state, is_terminal = env.step(schema.action)
+            debug(f'selected schema [{progress_id}]: {schema} [eff. value: {selection_details.effective_value}]')
 
-            sm.learn(selection_details, result_state=state)
+            result_state, is_terminal = env.step(action)
 
-            total_steps += 1
+            sm.learn(selection_details, result_state=result_state)
+
             if pause:
-                info(f'total steps: {total_steps}')
                 display_item_values()
                 display_known_schemas(sm, composite_only=True)
 
@@ -205,15 +198,41 @@ def run() -> None:
                 except KeyboardInterrupt:
                     pass
 
+            selection_state = result_state
+
+            if is_terminal:
+                steps_in_episode.append(step)
+
+        display_performance_summary(args, steps_in_episode)
+
         # GlobalStats().delegated_value_helper.eligibility_trace.clear()
 
-    end_time = time()
-
-    info(f'terminating execution after {end_time - start_time} seconds')
-
-    display_summary(sm)
+    display_run_summary(sm, start_time)
 
     # TODO: Add code to save a serialized instance of this schema mechanism to disk
+
+
+def display_run_summary(sm: SchemaMechanism, start_time: float):
+    display_summary(sm)
+
+    info(f'terminating execution after {time() - start_time} seconds')
+
+
+def display_performance_summary(args, steps_in_episode: Iterable[int]) -> None:
+    steps_in_episode = list(steps_in_episode)
+
+    steps_in_last_episode = steps_in_episode[-1]
+    n_episodes = len(steps_in_episode)
+    n_episodes_agent_escaped = sum(1 for steps in steps_in_episode if steps < args.steps)
+    avg_steps_per_episode = mean(steps_in_episode)
+    min_steps_per_episode = min(steps_in_episode)
+
+    info('**** EPISODE SUMMARY ****')
+    info(f'\t# episodes: {n_episodes}')
+    info(f'\t# steps in last episode: {steps_in_last_episode}')
+    info(f'\t# episodes in which agent escaped: {n_episodes_agent_escaped}')
+    info(f'\taverage steps per episode: {avg_steps_per_episode}')
+    info(f'\tmin steps per episode: {min_steps_per_episode}')
 
 
 if __name__ == "__main__":

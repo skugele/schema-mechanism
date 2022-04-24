@@ -10,6 +10,7 @@ import numpy as np
 
 from schema_mechanism.core import Action
 from schema_mechanism.protocols import State
+from schema_mechanism.share import debug
 
 DIRECTIONS = 'NSEW'
 
@@ -166,11 +167,11 @@ class WumpusWorld:
 
 def agent_takes_damage(mdp):
     if mdp.agent.position in mdp.env.locations_of(PIT):
-        print("Agent fell in pit!")
+        debug("Agent fell in pit!")
         return True
 
     elif mdp.wumpus and is_alive(mdp.wumpus) and mdp.agent.position == mdp.wumpus.position:
-        print("Agent attacked by Wumpus!")
+        debug("Agent attacked by Wumpus!")
         return True
 
     return False
@@ -190,7 +191,7 @@ def move_forward(mdp):
 
 def pickup_gold(mdp):
     if mdp.agent.position in mdp.env.locations_of(GOLD):
-        print("Gold Found!")
+        debug("Gold Found!")
 
         mdp.agent.n_gold += 1
 
@@ -200,7 +201,7 @@ def pickup_gold(mdp):
 
 def pickup_arrow(mdp):
     if mdp.agent.position in mdp.env.locations_of(ARROW):
-        print("Arrow Found!")
+        debug("Arrow Found!")
 
         mdp.agent.n_arrows += 1
 
@@ -212,21 +213,20 @@ def fire_arrow(mdp) -> None:
     if mdp.agent.n_arrows <= 0:
         return
 
-    print("Arrow Fired!")
+    debug("Arrow Fired!")
     mdp.agent.n_arrows -= 1
 
     if pos_in_front_of(mdp.agent) == mdp.wumpus.position and is_alive(mdp.wumpus):
         mdp.wumpus.health -= 1
 
         if is_alive(mdp.wumpus):
-            print("Wumpus Hit!")
+            debug("Wumpus Hit!")
         else:
-            print("Wumpus Killed!")
+            debug("Wumpus Killed!")
 
 
 def use_exit(mdp):
     if mdp.agent.position in mdp.env.locations_of(EXIT):
-        print("Agent Escaped!")
         mdp.agent.has_escaped = True
 
 
@@ -375,7 +375,7 @@ class WumpusWorldMDP:
 
         return False
 
-    def render(self) -> None:
+    def render(self) -> str:
         displayed_cells = np.copy(self.env.cells)
 
         # Add agent and wumpus
@@ -384,7 +384,7 @@ class WumpusWorldMDP:
         if self.wumpus:
             displayed_cells[self.wumpus.position] = WUMPUS
 
-        print(displayed_cells)
+        return str(displayed_cells)
 
     def step(self, action: Action) -> tuple[State, bool]:
         """Update the mdp based on supplied agent action."""

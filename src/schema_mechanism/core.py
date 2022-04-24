@@ -1362,7 +1362,7 @@ class ExtendedContext(ExtendedItemCollection):
             )
 
             if deferring:
-                debug(f'deferring update to spin_off for state {state} due to relevant assertion {ia}')
+                trace(f'deferring update to spin_off for state {state} due to relevant assertion {ia}')
                 return True
         return False
 
@@ -2003,7 +2003,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         # update extended result stats
         if self._extended_result:
             if is_feature_enabled(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED) and explained:
-                debug(f'update suppressed for schema {self} because its result was explained by a reliable schema')
+                trace(f'update suppressed for schema {self} because its result was explained by a reliable schema')
             else:
                 self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
 
