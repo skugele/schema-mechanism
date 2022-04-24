@@ -99,7 +99,7 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
 
     sm.params.set('backward_chains.max_len', 5)
     sm.params.set('backward_chains.update_frequency', 0.01)
-    sm.params.set('composite_action_min_baseline_advantage', 5.0)
+    sm.params.set('composite_actions.learn.min_baseline_advantage', 5.0)
     sm.params.set('delegated_value_helper.decay_rate', 0.2)
     sm.params.set('delegated_value_helper.discount_factor', 0.5)
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)

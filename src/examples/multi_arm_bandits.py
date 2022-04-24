@@ -228,7 +228,7 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     sm.params.set('learning_rate', 0.01)
     sm.params.set('goal_pursuit_strategy.reliability.max_penalty', 10.0)
     sm.params.set('reliability_threshold', 0.7)
-    sm.params.set('composite_action_min_baseline_advantage', 15.0)
+    sm.params.set('composite_actions.learn.min_baseline_advantage', 15.0)
 
     # item correlation test used for determining relevance of extended context items
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)

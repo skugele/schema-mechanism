@@ -2537,9 +2537,7 @@ def calc_primitive_value(other: Optional[Any]) -> float:
 @calc_primitive_value.register
 def _(se: StateElement) -> float:
     item = ReadOnlyItemPool().get(se)
-    if not item:
-        return 0.0
-    return item.primitive_value
+    return item.primitive_value if item else 0.0
 
 
 @calc_primitive_value.register
@@ -2552,9 +2550,7 @@ def _(state: State) -> float:
 
 @calc_primitive_value.register
 def _(assertion: ItemAssertion) -> float:
-    if assertion.is_negated:
-        return 0.0
-    return calc_primitive_value(assertion.item)
+    return 0.0 if assertion.is_negated else calc_primitive_value(assertion.item)
 
 
 @calc_primitive_value.register
@@ -2586,11 +2582,7 @@ def _(state: State) -> float:
         return 0.0
 
     items = [ReadOnlyItemPool().get(se) for se in state]
-
-    if not items:
-        return 0.0
-
-    return sum(i.delegated_value for i in items if i)
+    return sum(i.delegated_value for i in items if i) if items else 0.0
 
 
 @calc_delegated_value.register
@@ -2603,18 +2595,13 @@ def _(assertion: StateAssertion) -> float:
     if assertion.is_negated:
         return 0.0
     items = [ia.item for ia in assertion.asserts if ia.item]
-    if not items:
-        return 0.0
-
-    return sum(i.delegated_value for i in items)
+    return sum(i.delegated_value for i in items) if items else 0.0
 
 
 @calc_delegated_value.register
 def _(se: StateElement) -> float:
     item = ReadOnlyItemPool().get(se)
-    if not item:
-        return 0.0
-    return calc_delegated_value(item)
+    return calc_delegated_value(item) if item else 0.0
 
 
 @calc_delegated_value.register

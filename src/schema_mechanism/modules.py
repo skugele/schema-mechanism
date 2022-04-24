@@ -293,7 +293,7 @@ class SchemaMemory(Observer):
                 # TODO: this will permanently prevent the creation of a composite action if the result state
                 # TODO: is discovered very early. Note that allowing composite actions for all result states is
                 # TODO: not tractable for most environments.
-                min_adv = GlobalParams().get('composite_action_min_baseline_advantage')
+                min_adv = GlobalParams().get('composite_actions.learn.min_baseline_advantage')
                 if calc_primitive_value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
                     continue
 

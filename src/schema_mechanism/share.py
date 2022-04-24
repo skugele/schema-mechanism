@@ -171,7 +171,7 @@ class GlobalParams(metaclass=Singleton):
 
         # composite actions are created for novel result states that have values that are greater than the baseline
         # value by AT LEAST this amount
-        self._defaults['composite_action_min_baseline_advantage'] = 1.0
+        self._defaults['composite_actions.learn.min_baseline_advantage'] = 1.0
 
         # used by reliability_values
         self._defaults['goal_pursuit_strategy.reliability.max_penalty'] = 10.0
@@ -210,7 +210,7 @@ class GlobalParams(metaclass=Singleton):
 
         self._validators['backward_chains.max_len'] = MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
         self._validators['backward_chains.update_frequency'] = RangeValidator(0.0, 1.0)
-        self._validators['composite_action_min_baseline_advantage'] = TypeValidator([float])
+        self._validators['composite_actions.learn.min_baseline_advantage'] = TypeValidator([float])
         self._validators['delegated_value_helper.decay_rate'] = RangeValidator(0.0, 1.0)
         self._validators['delegated_value_helper.discount_factor'] = RangeValidator(0.0, 1.0)
         self._validators['ext_context.correlation_test'] = TypeValidator([ItemCorrelationTest])
