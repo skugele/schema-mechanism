@@ -9,7 +9,7 @@ from typing import Optional
 import numpy as np
 
 from schema_mechanism.core import Action
-from schema_mechanism.protocols import State
+from schema_mechanism.core import State
 from schema_mechanism.share import debug
 
 DIRECTIONS = 'NSEW'

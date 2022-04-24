@@ -1,11 +1,26 @@
 from typing import Optional
+from typing import Protocol
+from typing import runtime_checkable
 
 import numpy as np
+
+
+@runtime_checkable
+class DecayStrategy(Protocol):
+    def decay(self, value: float, count: int = 1) -> float:
+        """ Decays a value based on a decay function.
+
+        :param value: the value to be decayed
+        :param count: the number of times decay will be applied
+
+        :return: the decayed value
+        """
 
 
 #################################################
 # implementations of the DecayStrategy protocol #
 #################################################
+
 
 class LinearDecayStrategy:
     def __init__(self, rate: float, minimum: Optional[float] = None) -> None:

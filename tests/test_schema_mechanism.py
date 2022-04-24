@@ -7,16 +7,16 @@ from unittest.mock import Mock
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
-from schema_mechanism.modules import AbsoluteDiffMatchStrategy
-from schema_mechanism.modules import ExploratoryEvaluationStrategy
-from schema_mechanism.modules import GoalPursuitEvaluationStrategy
-from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
+from schema_mechanism.strategies.evaluation import ExploratoryEvaluationStrategy
+from schema_mechanism.strategies.evaluation import GoalPursuitEvaluationStrategy
+from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
+from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from test_share.test_func import common_test_setup
 from test_share.test_func import file_was_written
 

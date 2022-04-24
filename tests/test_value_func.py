@@ -18,11 +18,11 @@ from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
-from schema_mechanism.modules import habituation_exploratory_value
-from schema_mechanism.modules import instrumental_values
-from schema_mechanism.modules import pending_focus_values
-from schema_mechanism.modules import reliability_values
 from schema_mechanism.share import GlobalParams
+from schema_mechanism.strategies.evaluation import habituation_exploratory_value
+from schema_mechanism.strategies.evaluation import instrumental_values
+from schema_mechanism.strategies.evaluation import pending_focus_values
+from schema_mechanism.strategies.evaluation import reliability_values
 from schema_mechanism.util import AccumulatingTrace
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSchema
@@ -123,6 +123,7 @@ class TestPrimitiveValueFunctions(unittest.TestCase):
         # test: composite item assertions should have values equal to the sum of their non-negated component assertions
         for state_str in ('(A,B)', '(B,C)', '(A,C)', '(~A,B)', '(~B,C)', '(~B,~C)',):
             item_assertion = sym_item_assert(state_str)
+
             item: CompositeItem = item_assertion.item
 
             # sum of non-negated component item assertions

@@ -15,11 +15,11 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaTreeNode
 from schema_mechanism.core import SchemaUniqueKey
+from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
 from schema_mechanism.func_api.parser import parse
-from schema_mechanism.protocols import State
 
 
 def sym_state(str_repr: str) -> State:

@@ -249,7 +249,7 @@ class AssociativeArrayList(Generic[T]):
         return indexes
 
 
-class Trace(ABC, AssociativeArrayList):
+class Trace(ABC, AssociativeArrayList[T]):
     def __init__(self, decay_rate: float = 0.5, **kwargs):
         super().__init__(**kwargs)
 

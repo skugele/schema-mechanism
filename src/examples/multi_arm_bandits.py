@@ -13,8 +13,6 @@ from schema_mechanism.core import State
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import AbsoluteDiffMatchStrategy
-from schema_mechanism.modules import ExploratoryEvaluationStrategy
-from schema_mechanism.modules import GoalPursuitEvaluationStrategy
 from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
@@ -24,6 +22,8 @@ from schema_mechanism.share import info
 from schema_mechanism.share import rng
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
+from schema_mechanism.strategies.evaluation import ExploratoryEvaluationStrategy
+from schema_mechanism.strategies.evaluation import GoalPursuitEvaluationStrategy
 from schema_mechanism.util import Observable
 
 # global constants

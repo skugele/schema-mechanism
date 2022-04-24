@@ -1,7 +1,7 @@
 from unittest import TestCase
 
-from schema_mechanism.strategies import GeometricDecayStrategy
-from schema_mechanism.strategies import LinearDecayStrategy
+from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.decay import LinearDecayStrategy
 from test_share.test_func import common_test_setup
 
 

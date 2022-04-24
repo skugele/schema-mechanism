@@ -15,10 +15,6 @@ from examples.environments.wumpus_world import WumpusWorldMDP
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.func_api import sym_item
-from schema_mechanism.modules import AbsoluteDiffMatchStrategy
-from schema_mechanism.modules import ExploratoryEvaluationStrategy
-from schema_mechanism.modules import GoalPursuitEvaluationStrategy
-from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
@@ -28,8 +24,12 @@ from schema_mechanism.share import info
 from schema_mechanism.share import trace
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
-
 # global constants
+from schema_mechanism.strategies.evaluation import ExploratoryEvaluationStrategy
+from schema_mechanism.strategies.evaluation import GoalPursuitEvaluationStrategy
+from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
+from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
+
 MAX_EPISODES = 5000
 MAX_STEPS = 500
 
@@ -69,19 +69,19 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
 
     sm.params.set('backward_chains.max_len', 5)
     sm.params.set('backward_chains.update_frequency', 0.01)
-    sm.params.set('composite_actions.learn.min_baseline_advantage', 5.0)
-    sm.params.set('delegated_value_helper.decay_rate', 0.2)
-    sm.params.set('delegated_value_helper.discount_factor', 0.5)
+    sm.params.set('composite_actions.learn.min_baseline_advantage', 10.0)
+    sm.params.set('delegated_value_helper.decay_rate', 0.3)
+    sm.params.set('delegated_value_helper.discount_factor', 0.8)
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
     sm.params.set('ext_context.positive_correlation_threshold', 0.95)
     sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
     sm.params.set('ext_result.positive_correlation_threshold', 0.95)
-    sm.params.set('goal_pursuit_strategy.reliability.max_penalty', 25.0)
-    sm.params.set('habituation_exploratory_strategy.decay.rate', 0.2)
-    sm.params.set('habituation_exploratory_strategy.multiplier', 10.0)
+    sm.params.set('goal_pursuit_strategy.reliability.max_penalty', 5.0)
+    sm.params.set('habituation_exploratory_strategy.decay.rate', 0.01)
+    sm.params.set('habituation_exploratory_strategy.multiplier', 1.0)
     sm.params.set('learning_rate', 0.01)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.99999)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.3)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.99)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.1)
     sm.params.set('reliability_threshold', 0.9)
 
     # sm.params.get('features').remove(SupportedFeature.COMPOSITE_ACTIONS)
@@ -155,6 +155,7 @@ def run() -> None:
         # initialize the world
         selection_state, is_terminal = env.reset()
 
+        step: int = 0
         for step in range(args.steps):
             if is_terminal or not running:
                 break
@@ -200,9 +201,7 @@ def run() -> None:
 
             selection_state = result_state
 
-            if is_terminal:
-                steps_in_episode.append(step)
-
+        steps_in_episode.append(step)
         display_performance_summary(args, steps_in_episode)
 
         # GlobalStats().delegated_value_helper.eligibility_trace.clear()

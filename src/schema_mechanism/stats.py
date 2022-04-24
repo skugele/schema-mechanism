@@ -2,15 +2,30 @@ from __future__ import annotations
 
 from functools import cache
 from functools import lru_cache
+from typing import Protocol
+from typing import runtime_checkable
 
 import numpy as np
 from scipy import stats as stats
 
-from schema_mechanism.protocols import CorrelationTable
-from schema_mechanism.protocols import ItemCorrelationTest
+CorrelationTable = tuple[int, int, int, int]  # type alias
 
 
-class DrescherCorrelationTest(ItemCorrelationTest):
+@runtime_checkable
+class ItemCorrelationTest(Protocol):
+
+    @classmethod
+    def positive_corr_statistic(cls, table: CorrelationTable) -> float: ...
+
+    @classmethod
+    def negative_corr_statistic(cls, table: CorrelationTable) -> float: ...
+
+
+#######################################################
+# Implementations of the ItemCorrelationTest Protocol #
+#######################################################
+
+class DrescherCorrelationTest:
 
     @classmethod
     @cache
@@ -110,7 +125,7 @@ class BarnardExactCorrelationTest(ItemCorrelationTest):
         return 1.0 - stats.barnard_exact(array, alternative='less').pvalue
 
 
-class FisherExactCorrelationTest(ItemCorrelationTest):
+class FisherExactCorrelationTest:
 
     @classmethod
     @lru_cache(maxsize=100000)
@@ -137,7 +152,7 @@ class FisherExactCorrelationTest(ItemCorrelationTest):
         return 1.0 - p_value
 
 
-class CorrelationOnEncounter(ItemCorrelationTest):
+class CorrelationOnEncounter:
     @classmethod
     def positive_corr_statistic(cls, table: CorrelationTable) -> float:
         """ Returns the part-to-part ratio Pr(A | X) : Pr(A | not X)
@@ -160,6 +175,10 @@ class CorrelationOnEncounter(ItemCorrelationTest):
         """
         return 1.0 if table[1] > 1 else 0.0
 
+
+####################
+# Helper Functions #
+####################
 
 def positive_correlation(table: CorrelationTable, test: ItemCorrelationTest, threshold: float) -> bool:
     return test.positive_corr_statistic(table) >= threshold

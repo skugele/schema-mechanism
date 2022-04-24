@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 from abc import ABC
+from abc import ABCMeta
 from abc import abstractmethod
 from collections import defaultdict
 from collections import deque
@@ -13,10 +14,13 @@ from enum import unique
 from functools import singledispatch
 from functools import singledispatchmethod
 from typing import Any
+from typing import Hashable
 from typing import NamedTuple
 from typing import Optional
+from typing import Protocol
 from typing import Type
 from typing import Union
+from typing import runtime_checkable
 
 import numpy as np
 from anytree import AsciiStyle
@@ -24,9 +28,6 @@ from anytree import LevelOrderIter
 from anytree import NodeMixin
 from anytree import RenderTree
 
-from schema_mechanism.protocols import ItemCorrelationTest
-from schema_mechanism.protocols import State
-from schema_mechanism.protocols import StateElement
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import debug
@@ -34,6 +35,7 @@ from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import trace
 from schema_mechanism.stats import CorrelationTable
 from schema_mechanism.stats import FisherExactCorrelationTest
+from schema_mechanism.stats import ItemCorrelationTest
 from schema_mechanism.util import AccumulatingTrace
 from schema_mechanism.util import AssociativeArrayList
 from schema_mechanism.util import DefaultDictWithKeyFactory
@@ -45,6 +47,22 @@ from schema_mechanism.util import Trace
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import pairwise
 from schema_mechanism.util import repr_str
+
+
+@runtime_checkable
+class StateElement(Hashable, Protocol, metaclass=ABCMeta):
+    """
+        This protocol is intended to enforce the hash-ability of state elements, and to allow for future required
+        methods without demanding strict sub-classing.
+    """
+    pass
+
+
+@runtime_checkable
+class State(Collection[StateElement], Hashable, Protocol):
+    """
+    """
+    pass
 
 
 def held_state(s_prev: State, s_curr: State) -> frozenset[Item]:
