@@ -1,14 +1,14 @@
 import argparse
 from statistics import mean
 from time import sleep
-from time import time
 from typing import Iterable
-
-from pynput import keyboard
 
 from examples import display_item_values
 from examples import display_known_schemas
 from examples import display_summary
+from examples import is_paused
+from examples import is_running
+from examples import run_decorator
 from examples.environments.wumpus_world import Wumpus
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
@@ -24,7 +24,6 @@ from schema_mechanism.share import info
 from schema_mechanism.share import trace
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
-# global constants
 from schema_mechanism.strategies.evaluation import ExploratoryEvaluationStrategy
 from schema_mechanism.strategies.evaluation import GoalPursuitEvaluationStrategy
 from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
@@ -32,19 +31,6 @@ from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 
 MAX_EPISODES = 5000
 MAX_STEPS = 500
-
-pause = False
-running = True
-
-
-def on_press(key):
-    global pause, running
-
-    if key == keyboard.Key.space:
-        pause = not pause
-    if key == keyboard.Key.esc:
-        print('setting running to False', flush=True)
-        running = False
 
 
 def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
@@ -85,6 +71,8 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     sm.params.set('reliability_threshold', 0.9)
 
     # sm.params.get('features').remove(SupportedFeature.COMPOSITE_ACTIONS)
+
+    display_params()
 
     return sm
 
@@ -135,29 +123,25 @@ def create_world() -> WumpusWorldMDP:
     return env
 
 
+@run_decorator
 def run() -> None:
     args = parse_args()
+
+    max_steps = args.steps
+    max_episodes = args.episodes
 
     env = create_world()
     sm = create_schema_mechanism(env)
 
-    display_params()
-
-    listener = keyboard.Listener(on_press=on_press)
-    listener.start()
-
-    start_time = time()
-
     steps_in_episode = []
-
-    for episode in range(args.episodes):
+    for episode in range(1, max_episodes + 1):
 
         # initialize the world
         selection_state, is_terminal = env.reset()
 
         step: int = 0
-        for step in range(args.steps):
-            if is_terminal or not running:
+        for step in range(1, max_steps + 1):
+            if is_terminal or not is_running():
                 break
 
             progress_id = f'{episode}:{step}'
@@ -182,19 +166,20 @@ def run() -> None:
 
             schema = selection_details.selected
             action = schema.action
+            effective_value = selection_details.effective_value
 
-            debug(f'selected schema [{progress_id}]: {schema} [eff. value: {selection_details.effective_value}]')
+            debug(f'selected schema [{progress_id}]: {schema} [eff. value: {effective_value}]')
 
             result_state, is_terminal = env.step(action)
 
             sm.learn(selection_details, result_state=result_state)
 
-            if pause:
+            if is_paused():
                 display_item_values()
                 display_known_schemas(sm, composite_only=True)
 
                 try:
-                    while pause:
+                    while is_paused():
                         sleep(0.1)
                 except KeyboardInterrupt:
                     pass
@@ -202,36 +187,34 @@ def run() -> None:
             selection_state = result_state
 
         steps_in_episode.append(step)
-        display_performance_summary(args, steps_in_episode)
+        display_performance_summary(max_steps, steps_in_episode)
 
         # GlobalStats().delegated_value_helper.eligibility_trace.clear()
 
-    display_run_summary(sm, start_time)
+    display_summary(sm)
 
     # TODO: Add code to save a serialized instance of this schema mechanism to disk
 
 
-def display_run_summary(sm: SchemaMechanism, start_time: float):
-    display_summary(sm)
-
-    info(f'terminating execution after {time() - start_time} seconds')
-
-
-def display_performance_summary(args, steps_in_episode: Iterable[int]) -> None:
+def display_performance_summary(max_steps: int, steps_in_episode: Iterable[int]) -> None:
     steps_in_episode = list(steps_in_episode)
 
     steps_in_last_episode = steps_in_episode[-1]
     n_episodes = len(steps_in_episode)
-    n_episodes_agent_escaped = sum(1 for steps in steps_in_episode if steps < args.steps)
+    n_episodes_agent_escaped = sum(1 for steps in steps_in_episode if steps < max_steps)
     avg_steps_per_episode = mean(steps_in_episode)
     min_steps_per_episode = min(steps_in_episode)
+    max_steps_per_episode = max(steps_in_episode)
+    total_steps = sum(steps_in_episode)
 
-    info('**** EPISODE SUMMARY ****')
-    info(f'\t# episodes: {n_episodes}')
-    info(f'\t# steps in last episode: {steps_in_last_episode}')
-    info(f'\t# episodes in which agent escaped: {n_episodes_agent_escaped}')
+    info(f'**** EPISODE {n_episodes} SUMMARY ****')
+    info(f'\tepisodes: {n_episodes}')
+    info(f'\tepisodes in which agent escaped: {n_episodes_agent_escaped}')
+    info(f'\tcumulative steps: {total_steps}')
+    info(f'\tsteps in last episode: {steps_in_last_episode}')
     info(f'\taverage steps per episode: {avg_steps_per_episode}')
-    info(f'\tmin steps per episode: {min_steps_per_episode}')
+    info(f'\tminimum steps per episode: {min_steps_per_episode}')
+    info(f'\tmaximum steps per episode: {max_steps_per_episode}')
 
 
 if __name__ == "__main__":

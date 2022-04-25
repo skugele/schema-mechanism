@@ -25,13 +25,16 @@ from schema_mechanism.validate import Validator
 
 
 class Verbosity(IntEnum):
-    TRACE = auto()
-    DEBUG = auto()
-    INFO = auto()
-    WARN = auto()
-    ERROR = auto()
-    FATAL = auto()
-    NONE = auto()
+    TRACE = 0
+    DEBUG = 1
+    INFO = 2
+    WARN = 3
+    ERROR = 4
+    FATAL = 5
+    NONE = 6
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class SupportedFeature(Enum):
@@ -287,6 +290,10 @@ def error(message):
 
 def fatal(message):
     display_message(message=message, level=Verbosity.FATAL)
+
+
+def log_level() -> Verbosity:
+    return GlobalParams().get('verbosity')
 
 
 _rng = None

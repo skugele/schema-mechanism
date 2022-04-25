@@ -1,4 +1,8 @@
 import random
+from time import time
+from typing import Callable
+
+from pynput import keyboard
 
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ReadOnlyItemPool
@@ -7,6 +11,7 @@ from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import Verbosity
 from schema_mechanism.share import info
+from schema_mechanism.share import log_level
 
 RANDOM_SEED = 8675309
 
@@ -82,3 +87,76 @@ def display_summary(sm: SchemaMechanism) -> None:
     display_item_values()
     display_known_schemas(sm)
     display_schema_memory(sm)
+
+
+def decrease_log_level() -> None:
+    try:
+        verbosity = Verbosity(log_level() - 1)
+        GlobalParams().set('verbosity', verbosity)
+    except ValueError as e:
+        pass
+
+
+def increase_log_level() -> None:
+    try:
+        verbosity = Verbosity(log_level() + 1)
+        GlobalParams().set('verbosity', verbosity)
+    except ValueError as e:
+        pass
+
+
+_paused = False
+_running = True
+
+
+def is_paused() -> bool:
+    return _paused
+
+
+def toggle_paused() -> None:
+    global _paused
+    _paused = not _paused
+
+
+def request_stop() -> None:
+    global _running
+    _running = False
+
+
+def is_running() -> bool:
+    return _running
+
+
+ESC_KEY = keyboard.Key.esc
+MINUS_KEY = keyboard.KeyCode(char='-')
+UNDERSCORE_KEY = keyboard.KeyCode(char='_')
+PLUS_KEY = keyboard.KeyCode(char='+')
+EQUAL_KEY = keyboard.KeyCode(char='=')
+SPACE_KEY = keyboard.Key.space
+
+
+def on_press(key):
+    global _paused, _running
+
+    if key == SPACE_KEY:
+        toggle_paused()
+    if key == ESC_KEY:
+        request_stop()
+    if key in (MINUS_KEY, UNDERSCORE_KEY):
+        decrease_log_level()
+    if key in (PLUS_KEY, EQUAL_KEY):
+        increase_log_level()
+
+
+def run_decorator(run: Callable):
+    def _run_wrapper(*args, **kwargs):
+        listener = keyboard.Listener(on_press=on_press)
+        listener.start()
+
+        start = time()
+        run(*args, **kwargs)
+        end = time()
+
+        info(f'elapsed time: {end - start}s')
+
+    return _run_wrapper

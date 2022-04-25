@@ -1,12 +1,11 @@
 import argparse
 from collections.abc import Sequence
 from time import sleep
-from time import time
 from typing import Optional
 
-from pynput import keyboard
-
 from examples import display_summary
+from examples import is_paused
+from examples import run_decorator
 from schema_mechanism.core import Action
 from schema_mechanism.core import Schema
 from schema_mechanism.core import State
@@ -29,19 +28,6 @@ from schema_mechanism.util import Observable
 # global constants
 N_MACHINES = 10
 N_STEPS = 5000
-
-pause = False
-running = True
-
-
-def on_press(key):
-    global pause, running
-
-    if key == keyboard.Key.space:
-        pause = not pause
-    if key == keyboard.Key.esc:
-        print('setting running to False', flush=True)
-        running = False
 
 
 class Machine:
@@ -259,7 +245,7 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     sm.params.set('delegated_value_helper.decay_rate', 0.0)
     sm.params.set('delegated_value_helper.discount_factor', 0.5)
     sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.999)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.1)
+    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.999)
     sm.params.set('habituation_exploratory_strategy.decay.rate', 0.1)
     sm.params.set('habituation_exploratory_strategy.multiplier', 0.0)
     sm.params.set('learning_rate', 0.01)
@@ -281,34 +267,42 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
     sm.params.set('ext_result.positive_correlation_threshold', 0.95)
 
+    display_params()
+
     return sm
 
 
+# TODO: create a general purpose run with args:
+#       (1) environment
+#       (2) schema mechanism
+#       (3) pause callback
+#       (4) start of episode callback
+#       (5) end of episode callback
+#       (6) start of step callback
+#       (7) end of step callback
+
+@run_decorator
 def run():
     args = parse_args()
-
-    display_params()
-
-    listener = keyboard.Listener(on_press=on_press)
-    listener.start()
 
     machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.machines)]
     env = BanditEnvironment(machines)
 
     sm = create_schema_mechanism(env)
 
-    start_time = time()
-
     for n in range(args.steps):
         info(f'winnings: {env.winnings}')
         info(f'state[{n}]: {env.current_state}')
-
-        selection_details = sm.select(env.current_state)
 
         current_composite_schema = sm.schema_selection.pending_schema
         if current_composite_schema:
             info(f'active composite action schema: {current_composite_schema} ')
 
+        selection_details = sm.select(env.current_state)
+
+        schema = selection_details.selected
+        action = schema.action
+        effective_value = selection_details.effective_value
         terminated_composite_schemas = selection_details.terminated_pending
 
         if terminated_composite_schemas:
@@ -320,26 +314,21 @@ def run():
                 info(f'duration [{i}]: {pending_details.duration}')
             i += 1
 
-        if pause:
+        if is_paused():
             display_machine_info(machines)
             display_summary(sm)
 
             try:
-                while pause:
+                while is_paused():
                     sleep(0.1)
             except KeyboardInterrupt:
                 pass
 
-        schema = selection_details.selected
-        info(f'selected schema[{n}]: {schema}')
+        info(f'selected schema[{n}]: {schema} [eff. value: {effective_value}]')
 
-        state = env.step(schema.action)
+        state = env.step(action)
 
         sm.learn(selection_details, result_state=state)
-
-    end_time = time()
-
-    info(f'elapsed time: {end_time - start_time}s')
 
     display_machine_info(machines)
     display_summary(sm)
