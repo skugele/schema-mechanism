@@ -9,7 +9,6 @@ from examples import display_summary
 from examples import is_paused
 from examples import is_running
 from examples import run_decorator
-from examples.environments.wumpus_world import Wumpus
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
 from schema_mechanism.core import SchemaPool
@@ -18,14 +17,14 @@ from schema_mechanism.func_api import sym_item
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
-from schema_mechanism.share import debug
 from schema_mechanism.share import display_params
 from schema_mechanism.share import info
-from schema_mechanism.share import trace
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
-from schema_mechanism.strategies.evaluation import ExploratoryEvaluationStrategy
-from schema_mechanism.strategies.evaluation import GoalPursuitEvaluationStrategy
+from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.evaluation import DelegatedValueEvaluationStrategy
+from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
+from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 
@@ -35,17 +34,19 @@ MAX_STEPS = 500
 
 def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     primitive_items = [
-        sym_item('EVENT[AGENT ESCAPED]', primitive_value=100.0),
+        sym_item('EVENT[AGENT ESCAPED]', primitive_value=1.0),
     ]
     bare_schemas = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in env.actions]
     schema_memory = SchemaMemory(bare_schemas)
     schema_selection = SchemaSelection(
-        select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
+        select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.0)),
         value_strategies=[
-            GoalPursuitEvaluationStrategy(),
-            ExploratoryEvaluationStrategy(),
-        ],
-        weights=[0.5, 0.5]
+            DelegatedValueEvaluationStrategy(),
+            ReliabilityEvaluationStrategy(max_penalty=1e-3),
+            EpsilonGreedyEvaluationStrategy(epsilon=0.9999,
+                                            epsilon_min=0.05,
+                                            decay_strategy=GeometricDecayStrategy(rate=0.9999))
+        ]
     )
 
     sm: SchemaMechanism = SchemaMechanism(
@@ -55,19 +56,14 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
 
     sm.params.set('backward_chains.max_len', 5)
     sm.params.set('backward_chains.update_frequency', 0.01)
-    sm.params.set('composite_actions.learn.min_baseline_advantage', 10.0)
-    sm.params.set('delegated_value_helper.decay_rate', 0.3)
-    sm.params.set('delegated_value_helper.discount_factor', 0.8)
+    sm.params.set('composite_actions.learn.min_baseline_advantage', 0.1)
+    sm.params.set('delegated_value_helper.decay_rate', 0.1)
+    sm.params.set('delegated_value_helper.discount_factor', 0.5)
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
     sm.params.set('ext_context.positive_correlation_threshold', 0.95)
     sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
     sm.params.set('ext_result.positive_correlation_threshold', 0.95)
-    sm.params.set('goal_pursuit_strategy.reliability.max_penalty', 5.0)
-    sm.params.set('habituation_exploratory_strategy.decay.rate', 0.01)
-    sm.params.set('habituation_exploratory_strategy.multiplier', 1.0)
     sm.params.set('learning_rate', 0.01)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.99)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.1)
     sm.params.set('reliability_threshold', 0.9)
 
     # sm.params.get('features').remove(SupportedFeature.COMPOSITE_ACTIONS)
@@ -93,7 +89,7 @@ def parse_args():
 
 def create_world() -> WumpusWorldMDP:
     agent_spec = WumpusWorldAgent(position=(1, 1), direction='N', n_arrows=0)
-    wumpus_spec = Wumpus(position=(3, 1), health=2)
+    # wumpus_spec = Wumpus(position=(3, 1), health=2)
 
     world = """
     wwwwww
@@ -146,29 +142,29 @@ def run() -> None:
 
             progress_id = f'{episode}:{step}'
 
-            trace(f'\n{env.render()}\n')
+            info(f'\n{env.render()}\n')
 
-            debug(f'state [{progress_id}]: {selection_state}')
+            info(f'state [{progress_id}]: {selection_state}')
             selection_details = sm.select(selection_state)
 
             current_composite_schema = sm.schema_selection.pending_schema
             if current_composite_schema:
-                debug(f'active composite action schema [{progress_id}]: {current_composite_schema} ')
+                info(f'active composite action schema [{progress_id}]: {current_composite_schema} ')
 
             terminated_composite_schemas = selection_details.terminated_pending
             if terminated_composite_schemas:
                 info(f'terminated schemas:')
                 for i, pending_details in enumerate(terminated_composite_schemas):
-                    debug(f'schema [{i}]: {pending_details.schema}')
-                    debug(f'selection state [{i}]: {pending_details.selection_state}')
-                    debug(f'status [{i}]: {pending_details.status}')
-                    debug(f'duration [{i}]: {pending_details.duration}')
+                    info(f'schema [{i}]: {pending_details.schema}')
+                    info(f'selection state [{i}]: {pending_details.selection_state}')
+                    info(f'status [{i}]: {pending_details.status}')
+                    info(f'duration [{i}]: {pending_details.duration}')
 
             schema = selection_details.selected
             action = schema.action
             effective_value = selection_details.effective_value
 
-            debug(f'selected schema [{progress_id}]: {schema} [eff. value: {effective_value}]')
+            info(f'selected schema [{progress_id}]: {schema} [eff. value: {effective_value}]')
 
             result_state, is_terminal = env.step(action)
 
@@ -176,7 +172,7 @@ def run() -> None:
 
             if is_paused():
                 display_item_values()
-                display_known_schemas(sm, composite_only=True)
+                display_known_schemas(sm)
 
                 try:
                     while is_paused():

@@ -7,6 +7,7 @@ from examples import display_summary
 from examples import is_paused
 from examples import run_decorator
 from schema_mechanism.core import Action
+from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Schema
 from schema_mechanism.core import State
 from schema_mechanism.func_api import sym_item
@@ -16,17 +17,21 @@ from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
+from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import display_params
 from schema_mechanism.share import info
 from schema_mechanism.share import rng
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
-from schema_mechanism.strategies.evaluation import ExploratoryEvaluationStrategy
-from schema_mechanism.strategies.evaluation import GoalPursuitEvaluationStrategy
+from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
+from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
+from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.util import Observable
 
 # global constants
-N_MACHINES = 10
+
+N_MACHINES = 2
 N_STEPS = 5000
 
 
@@ -220,38 +225,39 @@ def parse_args():
 
 def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     primitive_items = [
-        sym_item('W', primitive_value=100.0),
-        sym_item('L', primitive_value=-100.0),
-        sym_item('P', primitive_value=-50.0),
+        sym_item('W', primitive_value=1.0),
+        sym_item('L', primitive_value=-1.0),
+        sym_item('P', primitive_value=-0.5),
     ]
     bare_schemas = [Schema(action=a) for a in env.actions]
     schema_memory = SchemaMemory(bare_schemas)
     schema_selection = SchemaSelection(
-        select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
+        select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.0)),
         value_strategies=[
-            GoalPursuitEvaluationStrategy(),
-            ExploratoryEvaluationStrategy(),
+            DefaultGoalPursuitEvaluationStrategy(),
+            ReliabilityEvaluationStrategy(max_penalty=0.005),
+            EpsilonGreedyEvaluationStrategy(epsilon=0.999,
+                                            epsilon_min=0.05,
+                                            decay_strategy=GeometricDecayStrategy(rate=0.999))
         ],
-        weights=[0.1, 0.9]
     )
 
     sm: SchemaMechanism = SchemaMechanism(
         items=primitive_items,
         schema_memory=schema_memory,
-        schema_selection=schema_selection)
+        schema_selection=schema_selection,
+        global_params=GlobalParams(),
+        global_stats=GlobalStats()
+    )
 
     sm.params.set('backward_chains.update_frequency', 0.01)
     sm.params.set('backward_chains.max_len', 3)
     sm.params.set('delegated_value_helper.decay_rate', 0.0)
     sm.params.set('delegated_value_helper.discount_factor', 0.5)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.initial', 0.999)
-    sm.params.set('random_exploratory_strategy.epsilon.decay.rate.min', 0.999)
-    sm.params.set('habituation_exploratory_strategy.decay.rate', 0.1)
-    sm.params.set('habituation_exploratory_strategy.multiplier', 0.0)
+
     sm.params.set('learning_rate', 0.01)
-    sm.params.set('goal_pursuit_strategy.reliability.max_penalty', 10.0)
-    sm.params.set('reliability_threshold', 0.9)
-    sm.params.set('composite_actions.learn.min_baseline_advantage', 15.0)
+    sm.params.set('reliability_threshold', 0.6)
+    sm.params.set('composite_actions.learn.min_baseline_advantage', 1.0)
 
     # item correlation test used for determining relevance of extended context items
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)

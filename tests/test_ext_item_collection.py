@@ -11,13 +11,13 @@ class TestExtendedItemCollection(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self.eic = ExtendedItemCollection(suppressed_items=sym_items('1,2,3'))
+        self.eic = ExtendedItemCollection(suppressed_items=sym_items('1;2;3'))
 
         self.obs = MockObserver()
         self.eic.register(self.obs)
 
     def test_suppress_list(self):
-        self.assertSetEqual(self.eic.suppressed_items, set(sym_items('1,2,3')))
+        self.assertSetEqual(self.eic.suppressed_items, set(sym_items('1;2;3')))
 
     # noinspection PyUnresolvedReferences
     def test_relevant_items(self):

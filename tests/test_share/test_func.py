@@ -12,14 +12,19 @@ from schema_mechanism.share import Verbosity
 
 
 def common_test_setup():
+    # clear any objects added to pools in previous test cases
     ItemPool().clear()
     SchemaPool().clear()
 
-    GlobalParams().reset()
-    GlobalStats().reset()
-    CompositeAction.reset()
+    # clear any updated stats values from previous test cases
+    GlobalStats().clear()
 
+    # reset stats to defaults to remove any parameter changes from previous test cases
+    GlobalParams().reset()
     GlobalParams().set('verbosity', Verbosity.WARN)
+
+    # resets the composite action controller
+    CompositeAction.reset()
 
 
 def is_eq_reflexive(x: Any) -> bool:

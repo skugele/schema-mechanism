@@ -44,12 +44,12 @@ def sym_composite_item(str_repr: str, **kwargs) -> CompositeItem:
 
 
 def sym_items(str_repr: str, primitive_values: Collection[float] = None, **kwargs) -> Collection[Item]:
-    state_elements = str_repr.split(',')
-    if primitive_values:
-        if len(state_elements) != len(primitive_values):
+    sources = str_repr.split(';')
+    if primitive_values is not None:
+        if len(sources) != len(primitive_values):
             raise ValueError('Primitive values must either be None or one must be given for each state element')
-        return [sym_item(se, primitive_value=val, **kwargs) for se, val in zip(state_elements, primitive_values)]
-    return [sym_item(token, **kwargs) for token in str_repr.split(',')]
+        return [sym_item(se, primitive_value=val, **kwargs) for se, val in zip(sources, primitive_values)]
+    return [sym_item(source, **kwargs) for source in sources]
 
 
 def sym_item_assert(str_repr: str, **kwargs) -> ItemAssertion:
@@ -73,14 +73,13 @@ def sym_state_assert(str_repr: str, **kwargs) -> StateAssertion:
 def sym_assert(str_repr: str, **kwargs) -> Assertion:
     try:
         obj = parse(str_repr, **kwargs)
-    except lark.exceptions.UnexpectedInput:
-        raise ValueError(f'String representation for assertion is invalid: {str_repr}')
+    except (lark.exceptions.UnexpectedInput, lark.exceptions.UnexpectedCharacters) as e:
+        raise ValueError(f'String representation for assertion is invalid: {e}') from None
 
     # workaround to a parsing ambiguity when single character strings are passed (parser currently returns an Item)
     if isinstance(obj, Item):
         obj = ItemAssertion(item=obj)
 
-    assert isinstance(obj, Assertion)
     return obj
 
 

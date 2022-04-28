@@ -15,7 +15,6 @@ from typing import TextIO
 
 import numpy as np
 
-from schema_mechanism.stats import ItemCorrelationTest
 from schema_mechanism.util import Singleton
 from schema_mechanism.validate import MultiValidator
 from schema_mechanism.validate import NULL_VALIDATOR
@@ -176,18 +175,6 @@ class GlobalParams(metaclass=Singleton):
         # value by AT LEAST this amount
         self._defaults['composite_actions.learn.min_baseline_advantage'] = 1.0
 
-        # used by reliability_values
-        self._defaults['goal_pursuit_strategy.reliability.max_penalty'] = 10.0
-
-        # used by reliability_values
-        self._defaults['habituation_exploratory_strategy.decay.rate'] = 0.95
-        self._defaults['habituation_exploratory_strategy.multiplier'] = 10.0
-
-        # used by epsilon greedy exploratory
-        self._defaults['random_exploratory_strategy.epsilon.initial'] = 1.0
-        self._defaults['random_exploratory_strategy.epsilon.decay.rate.initial'] = 0.999
-        self._defaults['random_exploratory_strategy.epsilon.decay.rate.min'] = 0.01
-
         # default features
         self._defaults['features'] = {
             SupportedFeature.COMPOSITE_ACTIONS,
@@ -206,27 +193,23 @@ class GlobalParams(metaclass=Singleton):
         self._defaults['schema_type'] = None
 
     def _set_validators(self):
+        self._validators['strategy.evaluation.epsilon_greedy.epsilon.initial'] = RangeValidator(0.0, 1.0)
+        self._validators['strategy.evaluation.epsilon_greedy.epsilon.min'] = RangeValidator(0.0, 1.0)
+        self._validators['strategy.evaluation.habituation.multiplier'] = RangeValidator(low=1.0)
+        self._validators['strategy.evaluation.pending_focus.max_value'] = RangeValidator(low=0.0)
+        self._validators['strategy.evaluation.reliability.max_penalty'] = RangeValidator(low=0.0)
         self._validators['backward_chains.max_len'] = MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
         self._validators['backward_chains.update_frequency'] = RangeValidator(0.0, 1.0)
         self._validators['composite_actions.learn.min_baseline_advantage'] = TypeValidator([float])
         self._validators['delegated_value_helper.decay_rate'] = RangeValidator(0.0, 1.0)
         self._validators['delegated_value_helper.discount_factor'] = RangeValidator(0.0, 1.0)
-        self._validators['ext_context.correlation_test'] = TypeValidator([ItemCorrelationTest])
         self._validators['ext_context.negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['ext_context.positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
-        self._validators['ext_result.correlation_test'] = TypeValidator([ItemCorrelationTest])
         self._validators['ext_result.negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['ext_result.positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['features'] = SupportedFeatureValidator()
-        self._validators['goal_pursuit_strategy.reliability.max_penalty'] = RangeValidator(0.0, exclude=[0.0])
-        self._validators['habituation_exploratory_strategy.decay.rate'] = RangeValidator(0.0, 1.0)
-        self._validators['habituation_exploratory_strategy.multiplier'] = RangeValidator(low=0.0)
         self._validators['learning_rate'] = RangeValidator(0.0, 1.0)
         self._validators['output_format'] = TypeValidator([str])
-        self._validators['random_exploratory_strategy.epsilon.decay.rate.initial'] = RangeValidator(0.0, 1.0,
-                                                                                                    exclude=[0.0, 1.0])
-        self._validators['random_exploratory_strategy.epsilon.decay.rate.min'] = RangeValidator(low=0.0)
-        self._validators['random_exploratory_strategy.epsilon.initial'] = RangeValidator(0.0, 1.0)
         self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['rng_seed'] = TypeValidator([int])
         self._validators['verbosity'] = TypeValidator([Verbosity])

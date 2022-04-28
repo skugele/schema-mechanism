@@ -250,6 +250,11 @@ class AssociativeArrayList(Generic[T]):
 
 
 class Trace(ABC, AssociativeArrayList[T]):
+    """
+
+        See Sutton and Barto, 2018, Chapter 12.)
+    """
+
     def __init__(self, decay_rate: float = 0.5, **kwargs):
         super().__init__(**kwargs)
 
@@ -257,10 +262,7 @@ class Trace(ABC, AssociativeArrayList[T]):
 
     @property
     def decay_rate(self) -> float:
-        """ The trace decay rate, lambda, (0.0 <= lambda <= 1.0).
-
-        (See Sutton and Barto 2018, Chapter 12.)
-        """
+        """ The trace decay rate, (0.0 <= decay rate <= 1.0). """
         return self._decay_rate
 
     @decay_rate.setter
@@ -271,8 +273,11 @@ class Trace(ABC, AssociativeArrayList[T]):
         self._decay_rate = value
 
     @abstractmethod
-    def update(self, active_set: Optional[Collection[T]] = None):
+    def update(self, active_set: Optional[Collection[T]] = None) -> None:
         pass
+
+    def reset(self) -> None:
+        self.clear()
 
 
 class AccumulatingTrace(Trace):

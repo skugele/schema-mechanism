@@ -361,8 +361,8 @@ class SchemaSelection:
     """
 
     def __init__(self,
-                 select_strategy: Optional[SelectionStrategy] = None,
-                 value_strategies: Optional[Collection[EvaluationStrategy]] = None,
+                 select_strategy: SelectionStrategy = None,
+                 value_strategies: Collection[EvaluationStrategy] = None,
                  weights: Optional[Collection[float]] = None) -> None:
         """ Initializes SchemaSelection based on a set of strategies that define its operation.
 
@@ -575,15 +575,21 @@ class SchemaSelection:
 
 
 class SchemaMechanism:
-    def __init__(self, items: Iterable[Item], schema_memory: SchemaMemory, schema_selection: SchemaSelection):
+    def __init__(self,
+                 items: Iterable[Item],
+                 schema_memory: SchemaMemory,
+                 schema_selection: SchemaSelection,
+                 global_params: GlobalParams = None,
+                 global_stats: GlobalStats = None):
         super().__init__()
 
         self._schema_memory: SchemaMemory = schema_memory
         self._schema_selection: SchemaSelection = schema_selection
-        self._params: GlobalParams = GlobalParams()
-        self._stats: GlobalStats = GlobalStats()
+        self._params: GlobalParams = global_params or GlobalParams()
+        self._stats: GlobalStats = global_stats or GlobalStats()
 
         # initialize traces
+        # TODO: Move this initialization outside of SchemaMechanism
         built_in_actions = {schema.action for schema in self.schema_memory}
         self._stats.action_trace.add(built_in_actions)
 

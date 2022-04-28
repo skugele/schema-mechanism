@@ -18,6 +18,7 @@ from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
+from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
 from schema_mechanism.func_api import sym_schema
@@ -29,6 +30,7 @@ from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.stats import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
+from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
 from test_share.test_func import file_was_written
 from test_share.test_func import satisfies_equality_checks
@@ -94,6 +96,15 @@ class TestSchema(TestCase):
             self.fail('Schema\'s action is not immutable as expected')
         except AttributeError:
             pass
+
+        # test: creation time should be set and bounded by the times before and after schema creation
+        before = time()
+        s = Schema(action=Action())
+        after = time()
+
+        self.assertIsNotNone(s.creation_time)
+        self.assertGreaterEqual(s.creation_time, before)
+        self.assertLessEqual(s.creation_time, after)
 
     def test_is_context_satisfied(self):
         c = sym_state_assert('1,~2,3')
@@ -642,3 +653,27 @@ class TestSchema(TestCase):
 
         schema = Schema(action=CompositeAction(sym_state_assert('1,2,~3')))
         print(schema)
+
+
+class TestSchemaFunctions(TestCase):
+    def setUp(self):
+        common_test_setup()
+
+    # noinspection PyPropertyAccess
+    def test_is_reliable(self):
+        reliability_threshold = 0.5
+        GlobalParams().set('reliability_threshold', reliability_threshold)
+
+        schema = sym_schema('1,2/A1/3,4', schema_type=MockSchema)
+
+        # test: should return False for schemas with reliabilities < threshold
+        for reliability in np.linspace(0.0, reliability_threshold, endpoint=False):
+            schema.reliability = reliability
+            self.assertEqual(reliability, schema.reliability)
+            self.assertFalse(is_reliable(schema))
+
+        # test: should return False for schemas with reliabilities < threshold
+        for reliability in np.linspace(reliability_threshold, 1.0):
+            schema.reliability = reliability
+            self.assertEqual(reliability, schema.reliability)
+            self.assertTrue(is_reliable(schema))

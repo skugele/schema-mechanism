@@ -62,6 +62,7 @@ def display_item_values() -> None:
 def display_schema_info(schema: Schema) -> None:
     try:
         info(f'schema: {schema}')
+        info(f'schema stats: {schema.stats}')
         if schema.extended_context:
             info('EXTENDED_CONTEXT')
             info(f'relevant items: {schema.extended_context.relevant_items}')
@@ -93,7 +94,7 @@ def decrease_log_level() -> None:
     try:
         verbosity = Verbosity(log_level() - 1)
         GlobalParams().set('verbosity', verbosity)
-    except ValueError as e:
+    except ValueError:
         pass
 
 
@@ -101,7 +102,7 @@ def increase_log_level() -> None:
     try:
         verbosity = Verbosity(log_level() + 1)
         GlobalParams().set('verbosity', verbosity)
-    except ValueError as e:
+    except ValueError:
         pass
 
 

@@ -4,6 +4,7 @@ import test_share
 from schema_mechanism.core import Chain
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import SchemaTree
+from schema_mechanism.core import is_reliable
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import SchemaMemory
@@ -321,6 +322,40 @@ class TestBackwardChaining(unittest.TestCase):
         ]
 
         self.assertSetEqual(set(expected_chains), set(chains))
+
+    # noinspection PyPropertyAccess
+    def test_chains_with_unreliable_schemas(self):
+        # sanity check: initially all schemas should have max reliability
+        complete_chain = Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d, self.s3_d_e])
+        for schema in complete_chain:
+            self.assertTrue(is_reliable(schema))
+
+        # sanity check: given all schemas have max reliability, the chain from 'E' should include all schemas
+        chains = self.sm.backward_chains(goal_state=sym_state_assert('E,'))
+        self.assertListEqual([complete_chain], list(chains))
+
+        # iterate through chain temporarily setting each schema's reliability to 0.0 to break the chain at various links
+        for i, schema in enumerate(complete_chain):
+            schema.reliability = 0.0
+            self.assertFalse(is_reliable(schema))
+
+            chains = self.sm.backward_chains(goal_state=sym_state_assert('E,'))
+            if schema != complete_chain[-1]:
+                # test: a single chains should be returned
+                self.assertEqual(1, len(chains))
+
+                # test: the length of the chain should be reduced by one
+                expected_number_of_links_lost = i + 1
+                self.assertEqual(len(complete_chain) - expected_number_of_links_lost, len(chains[0]))
+
+            # final link in chain
+            else:
+                # test: no chains should be returned if the only link to goal state is unreliable
+                self.assertEqual(0, len(chains))
+
+            # restore previous reliability for link
+            schema.reliability = 1.0
+            self.assertTrue(is_reliable(schema))
 
 
 class TestChain(unittest.TestCase):

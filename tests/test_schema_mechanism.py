@@ -13,8 +13,8 @@ from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
-from schema_mechanism.strategies.evaluation import ExploratoryEvaluationStrategy
-from schema_mechanism.strategies.evaluation import GoalPursuitEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
 from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from test_share.test_func import common_test_setup
@@ -36,15 +36,17 @@ class TestSchemaMechanism(TestCase):
         self.schema_selection = SchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
             value_strategies=[
-                GoalPursuitEvaluationStrategy(),
-                ExploratoryEvaluationStrategy(),
+                DefaultGoalPursuitEvaluationStrategy(),
+                DefaultExploratoryEvaluationStrategy(),
             ],
         )
 
         self.sm: SchemaMechanism = SchemaMechanism(
             items=self.primitive_items,
             schema_memory=self.schema_memory,
-            schema_selection=self.schema_selection)
+            schema_selection=self.schema_selection,
+            global_params=GlobalParams(),
+            global_stats=GlobalStats())
 
     def test_init(self):
         # test: attributes should have been set properly in initializer

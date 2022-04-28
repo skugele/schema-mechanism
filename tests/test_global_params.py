@@ -3,8 +3,6 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from schema_mechanism.core import Item
-from schema_mechanism.core import Schema
 from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import is_feature_enabled
 from schema_mechanism.persistence import deserialize
@@ -12,9 +10,6 @@ from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import Verbosity
 from schema_mechanism.share import display_message
-from schema_mechanism.stats import BarnardExactCorrelationTest
-from schema_mechanism.stats import DrescherCorrelationTest
-from schema_mechanism.stats import FisherExactCorrelationTest
 from test_share.test_func import common_test_setup
 from test_share.test_func import file_was_written
 
@@ -87,27 +82,6 @@ class TestGlobalParams(unittest.TestCase):
             except ValueError:
                 pass
 
-    def test_max_reliability_penalty(self):
-        key = 'goal_pursuit_strategy.reliability.max_penalty'
-
-        # test: value should be the default before updates
-        self.assertEqual(self.gp.defaults[key], self.gp.get(key))
-
-        # test: float values greater than 0.0 should be accepted and returned
-        self.gp.set(key, 0.001)
-        self.assertEqual(0.001, self.gp.get(key))
-
-        self.gp.set(key, 100)
-        self.assertEqual(100, self.gp.get(key))
-
-        # test: values less than or equal to 0.0 should be rejected
-        for illegal_value in [0.0, -0.0001, -100]:
-            try:
-                self.gp.set(key, illegal_value)
-                self.fail('Did not raise expected ValueError on illegal value')
-            except ValueError:
-                pass
-
     def test_output_format(self):
         key = 'output_format'
 
@@ -159,32 +133,6 @@ class TestGlobalParams(unittest.TestCase):
 
             # test: values NOT between 0.0 and 1.0 exclusive should raise a ValueError
             for illegal_value in [-0.001, 1.001]:
-                try:
-                    self.gp.set(key, illegal_value)
-                    self.fail('Did not raise expected ValueError on illegal value')
-                except ValueError:
-                    pass
-
-    def test_correlation_tests(self):
-        # test: correlation tests
-        #########################
-        keys = [
-            'ext_context.correlation_test',
-            'ext_result.correlation_test',
-        ]
-
-        for key in keys:
-
-            # test: subclasses of ItemCorrelationTest should be allowed
-            for legal_value in [DrescherCorrelationTest, FisherExactCorrelationTest, BarnardExactCorrelationTest]:
-                try:
-                    self.gp.set(key, legal_value)
-                    self.assertEqual(legal_value, self.gp.get(key))
-                except ValueError as e:
-                    self.fail(f'Received unexpected ValueError: {e}')
-
-            # test: values that are NOT subclasses of ItemCorrelationTest should raise a ValueError
-            for illegal_value in [Schema, Item, 1.0, 'bad value']:
                 try:
                     self.gp.set(key, illegal_value)
                     self.fail('Did not raise expected ValueError on illegal value')

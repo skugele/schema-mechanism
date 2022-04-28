@@ -41,7 +41,7 @@ class TestState(TestCase):
 
         self.s_empty = tuple()
 
-        GlobalStats(baseline_value=-1.0)
+        GlobalStats(initial_baseline_value=-1.0)
 
     def test_init(self):
         self.assertEqual(0, len(self.s_empty))
@@ -138,7 +138,7 @@ class TestStateFunctions(TestCase):
 
         # test: non-composite items that are On in both previous and current state should be returned
         self.assertSetEqual(
-            set(sym_items('4,5')),
+            set(sym_items('4;5')),
             set(non_composite_items(
                 held_state(
                     s_prev=sym_state('3,4,5'),
@@ -146,7 +146,7 @@ class TestStateFunctions(TestCase):
 
         # test: non-composite items that are On in both previous and current state should be returned
         self.assertSetEqual(
-            set(sym_items('4,5')),
+            set(sym_items('4;5')),
             set(non_composite_items(
                 held_state(
                     s_prev=sym_state('4,5,6'),
@@ -200,18 +200,18 @@ class TestStateFunctions(TestCase):
 
         # test: all items in previous state should be returned if CURRENT state is empty or none
         self.assertSetEqual(
-            {*sym_items('1,2,3,4,5'), self.ci1, self.ci2},
+            {*sym_items('1;2;3;4;5'), self.ci1, self.ci2},
             lost_state(s_prev=self.s_1, s_curr=self.s_empty)
         )
 
         self.assertSetEqual(
-            {*sym_items('1,2,3,4,5'), self.ci1, self.ci2},
+            {*sym_items('1;2;3;4;5'), self.ci1, self.ci2},
             lost_state(s_prev=self.s_1, s_curr=self.s_none)
         )
 
     def test_lost_state_with_disjoint_current_and_previous_states(self):
         # test: all items On in previous state should be returned if previous and current states share no elements
-        expected = {*sym_items('4,5,6'), self.ci2, self.ci4}
+        expected = {*sym_items('4;5;6'), self.ci2, self.ci4}
         actual = set(lost_state(s_prev=sym_state('4,5,6'), s_curr=sym_state('1,2,3')))
 
         self.assertSetEqual(expected, actual)
@@ -226,7 +226,7 @@ class TestStateFunctions(TestCase):
                     s_curr=sym_state('2,3,4')))))
 
         self.assertSetEqual(
-            set(sym_items('4,5')),
+            set(sym_items('4;5')),
             set(non_composite_items(
                 lost_state(
                     s_prev=sym_state('3,4,5'),
@@ -272,18 +272,18 @@ class TestStateFunctions(TestCase):
 
         # test: all items in CURRENT state should be returned if PREVIOUS state is empty or none
         self.assertSetEqual(
-            {*sym_items('1,2,3,4,5'), self.ci1, self.ci2},
+            {*sym_items('1;2;3;4;5'), self.ci1, self.ci2},
             new_state(s_prev=self.s_empty, s_curr=self.s_1)
         )
 
         self.assertSetEqual(
-            {*sym_items('1,2,3,4,5'), self.ci1, self.ci2},
+            {*sym_items('1;2;3;4;5'), self.ci1, self.ci2},
             new_state(s_prev=self.s_empty, s_curr=self.s_1)
         )
 
     def test_new_state_with_disjoint_current_and_previous_states(self):
         # test: all items On in CURRENT state should be returned if previous and current states share no elements
-        expected = {*sym_items('4,5,6'), self.ci2, self.ci4}
+        expected = {*sym_items('4;5;6'), self.ci2, self.ci4}
         actual = set(new_state(s_prev=sym_state('1,2,3'), s_curr=sym_state('4,5,6')))
 
         self.assertSetEqual(expected, actual)
@@ -298,7 +298,7 @@ class TestStateFunctions(TestCase):
                     s_curr=sym_state('2,3,4')))))
 
         self.assertSetEqual(
-            set(sym_items('1,2')),
+            set(sym_items('1;2')),
             set(non_composite_items(
                 new_state(
                     s_prev=sym_state('3,4,5'),

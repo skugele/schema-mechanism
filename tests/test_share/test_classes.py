@@ -116,6 +116,10 @@ class MockSchema(Schema):
             else self._mock_reliability
         )
 
+    @reliability.setter
+    def reliability(self, value: float) -> None:
+        self._mock_reliability = value
+
     @property
     def avg_duration(self) -> float:
         return (

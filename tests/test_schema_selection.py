@@ -1,4 +1,3 @@
-import unittest
 from collections import defaultdict
 from collections import deque
 from collections.abc import Sequence
@@ -18,9 +17,8 @@ from schema_mechanism.modules import PendingDetails
 from schema_mechanism.modules import PendingStatus
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import GlobalParams
-from schema_mechanism.strategies.decay import GeometricDecayStrategy
-from schema_mechanism.strategies.evaluation import EpsilonGreedyExploratoryStrategy
-from schema_mechanism.strategies.evaluation import GoalPursuitEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
 from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from test_share.test_classes import MockSchema
@@ -92,8 +90,8 @@ class TestSchemaSelection(TestCase):
         self.ss = SchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
             value_strategies=[
-                GoalPursuitEvaluationStrategy(),
-                EpsilonGreedyExploratoryStrategy(0.9)
+                DefaultGoalPursuitEvaluationStrategy(),
+                DefaultExploratoryEvaluationStrategy()
             ],
         )
 
@@ -147,6 +145,11 @@ class TestSchemaSelection(TestCase):
     def test_select_1(self):
         # sanity checks
         ###############
+
+        self.ss = SchemaSelection(
+            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
+            value_strategies=[],
+        )
 
         # Empty or None list of applicable schemas should return a ValueError
         self.assertRaises(ValueError, lambda: self.ss.select(schemas=[], state=self.selection_state))
@@ -613,105 +616,3 @@ class TestSchemaSelection(TestCase):
     #
     #     sd = mock_ss.select(schemas=[s_1_2, c_1_3j, c123_235], state=sym_state('1'))
     #     self.assertEqual(s_1_2, sd.selected)
-
-
-class TestEpsilonGreedy(unittest.TestCase):
-    def setUp(self) -> None:
-        common_test_setup()
-
-        self.eps_always_explore = EpsilonGreedyExploratoryStrategy(epsilon=1.0)
-        self.eps_never_explore = EpsilonGreedyExploratoryStrategy(epsilon=0.0)
-        self.eps_even_chance = EpsilonGreedyExploratoryStrategy(epsilon=0.5)
-
-        self.schema = sym_schema('1,2/A/3,4')
-
-        # schema with a composite action
-        self.ca_schema = sym_schema('1,2/S1,/5,7')
-
-        self.schemas = [self.schema,
-                        self.ca_schema,
-                        sym_schema('1,2/A/3,5'),
-                        sym_schema('1,2/A/3,6')]
-
-    def test_init(self):
-        epsilon = 0.1
-        eps_greedy = EpsilonGreedyExploratoryStrategy(epsilon)
-        self.assertEqual(epsilon, eps_greedy.epsilon)
-
-    def test_epsilon_setter(self):
-        eps_greedy = EpsilonGreedyExploratoryStrategy(0.5)
-
-        eps_greedy.epsilon = 0.0
-        self.assertEqual(0.0, eps_greedy.epsilon)
-
-        eps_greedy.epsilon = 1.0
-        self.assertEqual(1.0, eps_greedy.epsilon)
-
-        try:
-            eps_greedy.epsilon = -1.00001
-            eps_greedy.epsilon = 1.00001
-            self.fail('ValueError expected on illegal assignment')
-        except ValueError:
-            pass
-
-    def test_call(self):
-        # test: should return empty np.array given empty ndarray
-        values = self.eps_never_explore([])
-        self.assertIsInstance(values, np.ndarray)
-        self.assertEqual(0, len(values))
-
-        values = self.eps_always_explore([])
-        self.assertIsInstance(values, np.ndarray)
-        self.assertEqual(0, len(values))
-
-        # test: non-empty schema array should return an np.array with a single np.inf on exploratory choice
-        values = self.eps_always_explore([self.schema])
-        self.assertEqual(1, len(values))
-        self.assertEqual(1, np.count_nonzero(values == np.inf))
-        self.assertIsInstance(values, np.ndarray)
-
-        values = self.eps_always_explore(self.schemas)
-        self.assertIsInstance(values, np.ndarray)
-        self.assertEqual(len(self.schemas), len(values))
-        self.assertEqual(1, np.count_nonzero(values == np.inf))
-
-        # test: non-empty schema array should return an np.array with same length of zeros non-exploratory choice
-        values = self.eps_never_explore([self.schema])
-        self.assertIsInstance(values, np.ndarray)
-        self.assertListEqual(list(np.array([0])), list(values))
-
-        values = self.eps_never_explore(self.schemas)
-        self.assertIsInstance(values, np.ndarray)
-        self.assertListEqual(list(np.zeros_like(self.schemas)), list(values))
-
-    def test_epsilon_decay(self):
-        epsilon = 1.0
-        rate = 0.99
-
-        decay_strategy = GeometricDecayStrategy(rate=rate)
-        eps_greedy = EpsilonGreedyExploratoryStrategy(epsilon=epsilon, decay_strategy=decay_strategy)
-
-        prev_epsilon = epsilon
-        for _ in range(100):
-            _ = eps_greedy(schemas=self.schemas)
-            self.assertEqual(decay_strategy.decay(prev_epsilon), eps_greedy.epsilon)
-            prev_epsilon = eps_greedy.epsilon
-
-    def test_epsilon_decay_to_minimum(self):
-        epsilon = 1.0
-        minimum = 0.5
-
-        decay_strategy = GeometricDecayStrategy(rate=0.99, minimum=minimum)
-        eps_greedy = EpsilonGreedyExploratoryStrategy(epsilon=epsilon, decay_strategy=decay_strategy)
-
-        for _ in range(100):
-            _ = eps_greedy(schemas=self.schemas)
-
-        self.assertEqual(minimum, eps_greedy.epsilon)
-
-    def test_pending_bypass(self):
-        # test: epsilon greedy values SHOULD all be zero when a pending schema is provided
-        expected = np.zeros_like(self.schemas)
-        actual = self.eps_always_explore(self.schemas, pending=self.schema)
-
-        self.assertTrue(np.array_equal(expected, actual))

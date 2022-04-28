@@ -8,11 +8,13 @@ from collections import defaultdict
 from collections import deque
 from collections.abc import Collection
 from collections.abc import Iterator
+from datetime import datetime
 from enum import Enum
 from enum import auto
 from enum import unique
 from functools import singledispatch
 from functools import singledispatchmethod
+from time import time
 from typing import Any
 from typing import Hashable
 from typing import NamedTuple
@@ -168,13 +170,21 @@ class DelegatedValueHelper(ABC):
         """
         pass
 
+    @abstractmethod
+    def reset(self) -> None:
+        """ Resets the delegated value helper to its initial state prior to update.
+
+        :return: None
+        """
+        pass
+
 
 class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
     """ An eligibility-trace-based implementation of the DelegatedValueHelper.
 
     Drescher stated that delegated value "accrues to states that generally tend to facilitate other things of
     value" (p. 63). This occurs without reference to a specific goal. In other words, delegated value is the average,
-    goal-agnostic, utility of an Item being On. This implementation of the DelegatedValueHlper retains the spirit of
+    goal-agnostic, utility of an Item being On. This implementation of the DelegatedValueHelper retains the spirit of
     Drescher's delegated value, but deviates in the specifics how delegated value is learned for performance reasons.
 
     In particular, Drescher's implementation of delegated values is based on forward chaining over learned schemas using
@@ -293,6 +303,10 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
 
         # the delegated value accessible from the current state
         return self.discount_factor * (pv + self.discount_factor * dv)
+
+    def reset(self) -> None:
+        self._eligibility_trace.clear()
+        self._delegated_values.clear()
 
 
 class Item(ABC):
@@ -445,17 +459,21 @@ def reduce_to_most_specific_items(items: Optional[Collection[Item]]) -> Collecti
 
 
 class GlobalStats(metaclass=Singleton):
-    def __init__(self, baseline_value: Optional[float] = None):
-        self._n: int = 0
-
-        self._baseline_value = baseline_value or 0.0
-
-        self._dv_helper = EligibilityTraceDelegatedValueHelper(
+    def __init__(self,
+                 delegated_value_helper: DelegatedValueHelper = None,
+                 action_trace: Trace[Action] = None,
+                 initial_baseline_value: float = 0.0):
+        # TODO: these defaults should be removed... all of this is crap. These objects need to be removed from the
+        # TODO: global stats.
+        self._dv_helper: DelegatedValueHelper = delegated_value_helper or EligibilityTraceDelegatedValueHelper(
             discount_factor=GlobalParams().get('delegated_value_helper.discount_factor'),
-            trace_decay=GlobalParams().get('delegated_value_helper.decay_rate'))
+            trace_decay=GlobalParams().get('delegated_value_helper.decay_rate')
+        )
 
-        self._action_trace: AccumulatingTrace[Action] = AccumulatingTrace(
-            decay_rate=GlobalParams().get('habituation_exploratory_strategy.decay.rate'))
+        self._action_trace: AccumulatingTrace[Action] = action_trace or AccumulatingTrace(decay_rate=0.1)
+        self._baseline_value = initial_baseline_value
+
+        self._n: int = 0
 
     @property
     def n(self) -> int:
@@ -466,7 +484,7 @@ class GlobalStats(metaclass=Singleton):
         self._n = value
 
     @property
-    def delegated_value_helper(self) -> EligibilityTraceDelegatedValueHelper:
+    def delegated_value_helper(self) -> DelegatedValueHelper:
         return self._dv_helper
 
     @property
@@ -498,17 +516,12 @@ class GlobalStats(metaclass=Singleton):
     def update(self):
         pass
 
-    def reset(self):
+    def clear(self):
         self._baseline_value = 0.0
         self._n = 0
 
-        # TODO: this code is redundant with initializer code
-        self._dv_helper = EligibilityTraceDelegatedValueHelper(
-            discount_factor=GlobalParams().get('delegated_value_helper.discount_factor'),
-            trace_decay=GlobalParams().get('delegated_value_helper.decay_rate'))
-
-        self._action_trace: AccumulatingTrace[Action] = AccumulatingTrace(
-            decay_rate=GlobalParams().get('habituation_exploratory_strategy.decay.rate'))
+        self._dv_helper.reset()
+        self._action_trace.reset()
 
 
 class SchemaStats:
@@ -1657,6 +1670,7 @@ def default_for_controller_map(key: StateAssertion) -> Controller:
     return Controller(key)
 
 
+# TODO: externalize controller map
 class CompositeAction(Action):
     """ "A composite action is essentially a subroutine: it is defined to be the action of achieving the designated
      goal state, by whatever means is available. The means are given by chains of schemas that lead to the goal
@@ -1715,6 +1729,9 @@ class CompositeAction(Action):
                 satisfied.append(controller)
         return satisfied
 
+    # TODO: It is a little strange calling a "reset" method on a class called CompositeAction. The reset is really
+    # TODO: related to the controller map. Perhaps I should externalize the controller map in its own class, and call
+    # TODO: reset on it?
     @classmethod
     def reset(cls) -> None:
         return cls._controller_map.clear()
@@ -1781,6 +1798,8 @@ class Schema(Observer, Observable, UniqueIdMixin):
         self._avg_duration: Optional[float] = None
         self._cost: Optional[float] = 1.0
 
+        self._creation_time = time()
+
     def __eq__(self, other) -> bool:
         # SchemaPool should be used for all item creation, so this should be an optimization
         if self is other:
@@ -1807,6 +1826,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
     def __repr__(self) -> str:
         return repr_str(self, {'uid': self.uid,
+                               'creation_time': datetime.fromtimestamp(self.creation_time),
                                'context': self.context,
                                'action': self.action,
                                'result': self.result,
@@ -1898,6 +1918,14 @@ class Schema(Observer, Observable, UniqueIdMixin):
     @cost.setter
     def cost(self, value: float) -> None:
         self._cost = value
+
+    @property
+    def creation_time(self) -> float:
+        """ Returns this schema's creation timestamp (i.e., time in seconds since the epoch).
+
+        :return: a float corresponding to this schema's creation time
+        """
+        return self._creation_time
 
     def is_applicable(self, state: State, **kwargs) -> bool:
         """ Returns whether this schema is "applicable" in the given State.
