@@ -13,6 +13,7 @@ from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
+from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
 from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
@@ -35,10 +36,12 @@ class TestSchemaMechanism(TestCase):
         self.schema_memory = SchemaMemory(self.bare_schemas)
         self.schema_selection = SchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
-            value_strategies=[
-                DefaultGoalPursuitEvaluationStrategy(),
-                DefaultExploratoryEvaluationStrategy(),
-            ],
+            evaluation_strategy=CompositeEvaluationStrategy(
+                strategies=[
+                    DefaultGoalPursuitEvaluationStrategy(),
+                    DefaultExploratoryEvaluationStrategy(),
+                ]
+            )
         )
 
         self.sm: SchemaMechanism = SchemaMechanism(

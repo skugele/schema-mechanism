@@ -1,40 +1,25 @@
 from collections import defaultdict
 from collections import deque
-from collections.abc import Sequence
-from typing import Optional
 from unittest import TestCase
 
 import numpy as np
 
 from schema_mechanism.core import Chain
 from schema_mechanism.core import ItemPool
-from schema_mechanism.core import Schema
-from schema_mechanism.core import calc_delegated_value
-from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import PendingDetails
 from schema_mechanism.modules import PendingStatus
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import GlobalParams
-from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
-from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
+from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
+from schema_mechanism.strategies.evaluation import PrimitiveValueEvaluationStrategy
 from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from test_share.test_classes import MockSchema
 from test_share.test_classes import MockSchemaSelection
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
-
-
-def primitive_value_evaluation_strategy(schemas: Sequence[Schema], _pending: Optional[Schema] = None) -> np.ndarray:
-    values = list([calc_primitive_value(s.result) for s in schemas])
-    return np.array(values)
-
-
-def delegated_value_evaluation_strategy(schemas: Sequence[Schema], _pending: Optional[Schema] = None) -> np.ndarray:
-    values = list([calc_delegated_value(s.result) for s in schemas])
-    return np.array(values)
 
 
 class TestSchemaSelection(TestCase):
@@ -87,14 +72,6 @@ class TestSchemaSelection(TestCase):
 
         self.selection_state = sym_state('1,2')
 
-        self.ss = SchemaSelection(
-            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
-            value_strategies=[
-                DefaultGoalPursuitEvaluationStrategy(),
-                DefaultExploratoryEvaluationStrategy()
-            ],
-        )
-
     def test_init(self):
         # test defaults
         ss = SchemaSelection()
@@ -102,72 +79,46 @@ class TestSchemaSelection(TestCase):
         # test: a default selection strategy should be assigned if not explicitly requested
         self.assertIsNotNone(ss.select_strategy)
 
-        # test: value strategies should be an empty collection
-        self.assertEqual(0, len(ss.value_strategies))
-
-        # test: weights should be an empty numpy array
-        self.assertTrue(np.array_equal(np.array([]), ss.weights))
+        # test: if not explicitly set, value strategies should be set to NoOpEvaluationStrategies
+        self.assertIsInstance(ss.evaluation_strategy, NoOpEvaluationStrategy)
 
         select_strategy = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1))
-        value_strategies = [primitive_value_evaluation_strategy, delegated_value_evaluation_strategy]
-        weights = [0.4, 0.6]
+        evaluation_strategy = PrimitiveValueEvaluationStrategy()
 
         ss = SchemaSelection(
             select_strategy=select_strategy,
-            value_strategies=value_strategies,
-            weights=weights
+            evaluation_strategy=evaluation_strategy
         )
 
         # test: initializer should set select strategy to the requested strategy
         self.assertEqual(select_strategy, ss.select_strategy)
 
-        # test: initializer should set value strategies to the requested strategies
-        self.assertListEqual(value_strategies, list(ss.value_strategies))
+        # test: initializer should set exploratory evaluation strategy to the requested strategy
+        self.assertEqual(evaluation_strategy, ss.evaluation_strategy)
 
-        # test: initializer should set weights to the requested values
-        self.assertListEqual(weights, list(ss.weights))
-
-        # test: should raise a ValueError if initializer given an invalid number of weights
-        self.assertRaises(ValueError, lambda: SchemaSelection(select_strategy, value_strategies, weights=[0.1]))
-
-        # test: should raise a ValueError if the weights do not sum to 1.0
-        self.assertRaises(ValueError, lambda: SchemaSelection(select_strategy, value_strategies, weights=[0.1, 0.2]))
-
-        # test: should raise a ValueError if any of the weights are non-positive
-        self.assertRaises(ValueError, lambda: SchemaSelection(select_strategy, value_strategies, weights=[1.8, -0.8]))
-
-        # test: weights of 0.0 and 1.0 should be allowed
-        try:
-            SchemaSelection(select_strategy, value_strategies, weights=[0.0, 1.0])
-        except ValueError as e:
-            self.fail(f'Unexpected ValueError occurred: {str(e)}')
-
-    def test_select_1(self):
-        # sanity checks
-        ###############
-
-        self.ss = SchemaSelection(
-            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
-            value_strategies=[],
-        )
+    def test_select_no_applicable_schemas(self):
+        ss = SchemaSelection()
 
         # Empty or None list of applicable schemas should return a ValueError
-        self.assertRaises(ValueError, lambda: self.ss.select(schemas=[], state=self.selection_state))
+        self.assertRaises(ValueError, lambda: ss.select(schemas=[], state=self.selection_state))
 
         # noinspection PyTypeChecker
-        self.assertRaises(ValueError, lambda: self.ss.select(schemas=None, state=self.selection_state))
+        self.assertRaises(ValueError, lambda: ss.select(schemas=None, state=self.selection_state))
 
-        # Given a single applicable schema, select should return that schema
+    def test_select_single_applicable_schema(self):
+        ss = SchemaSelection()
+
+        # given a single applicable schema, select should return that schema
         schema = sym_schema('1,2/A1/3,4')
-        sd = self.ss.select(schemas=[schema], state=self.selection_state)
+        sd = ss.select(schemas=[schema], state=self.selection_state)
         self.assertEqual(schema, sd.selected)
 
-    def test_select_2(self):
+    def test_select_primitive_action_schema(self):
         # primitive value-based selections
         ##################################
         ss = SchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
-            value_strategies=[primitive_value_evaluation_strategy]
+            evaluation_strategy=PrimitiveValueEvaluationStrategy()
         )
 
         # selection between uneven schemas, all with non-negated items (s1_c12_r5 should win)
@@ -188,98 +139,11 @@ class TestSchemaSelection(TestCase):
 
         self.assertEqual(len(applicable_schemas), len(selections.keys()))
 
-    def test_calc_effective_values(self):
-        s1 = sym_schema('/A1/1,')  # pv = 0.0
-        s2 = sym_schema('/A2/2,')  # pv = 0.0
-        s3 = sym_schema('/A1/3,')  # pv = 0.95
-        s4 = sym_schema('/A3/4,')  # pv = -1.0
-        s5 = sym_schema('/A1/5,')  # pv = 2.0
-        s6 = sym_schema('/A2/6,')  # pv = -3.0
-
-        self.s1_c12_r34 = sym_schema('1,2/A1/(3,4),', reliability=1.0)  # total pv = -0.05; total dv = 0.0
-        self.s1_c12_r345 = sym_schema('1,2/A1/(3,4,5),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
-        self.s1_c12_r3456 = sym_schema('1,2/A1/(3,4,5,6),', reliability=1.0)  # total pv = -1.05; total dv = 0.0
-        self.s1_c12_r345_not6 = sym_schema('1,2/A1/(3,4,5,~6),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
-
-        schemas = [s1, s2, s3, s4, s5, s6, self.s1_c12_r34, self.s1_c12_r345, self.s1_c12_r3456, self.s1_c12_r345_not6]
-
-        # testing with no evaluation strategies
-        ss = SchemaSelection(
-            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-            value_strategies=[],
-        )
-
-        # test: should returns array of zeros if no value strategies specified
-        self.assertTrue(np.array_equal(np.zeros_like(schemas), ss.calc_effective_values(schemas)))
-
-        # testing single evaluation strategy
-        ss = SchemaSelection(
-            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-            value_strategies=[primitive_value_evaluation_strategy],
-        )
-
-        expected_values = primitive_value_evaluation_strategy(schemas)
-
-        # test: primitive-only value strategy should return primitive values for each schema
-        self.assertTrue(np.array_equal(expected_values, ss.calc_effective_values(schemas, pending=None)))
-
-        # testing multiple evaluation strategies (equal weighting)
-        ss = SchemaSelection(
-            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-            value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
-        )
-
-        pvs = primitive_value_evaluation_strategy(schemas)
-        dvs = delegated_value_evaluation_strategy(schemas)
-        expected_values = (pvs + dvs) / 2.0
-        actual_values = ss.calc_effective_values(schemas, pending=None)
-
-        # test: should return weighted sum of evaluation strategy values
-        self.assertTrue(np.array_equal(expected_values, actual_values))
-
-        # testing multiple evaluation strategies (uneven weighting)
-        ss.weights = np.array([0.95, 0.05])
-
-        expected_values = 0.95 * pvs + 0.05 * dvs
-        actual_values = ss.calc_effective_values(schemas, pending=None)
-
-        # test: should return weighted sum of evaluation strategy values
-        self.assertTrue(np.array_equal(expected_values, actual_values))
-
-    def test_weights(self):
-        ss = SchemaSelection(
-            select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-            value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
-        )
-
-        # test: initializer should set weights to the requested values
-        weights = [0.4, 0.6]
-        ss.weights = weights
-        self.assertListEqual(weights, list(ss.weights))
-
-        # test: should raise a ValueError if initializer given an invalid number of weights
-        with self.assertRaises(ValueError):
-            ss.weights = [1.0]
-
-        # test: should raise a ValueError if the weights do not sum to 1.0
-        with self.assertRaises(ValueError):
-            ss.weights = [0.1, 0.2]
-
-        # test: should raise a ValueError if any of the weights are non-positive
-        with self.assertRaises(ValueError):
-            ss.weights = [1.8, -0.8]
-
-        # test: weights of 0.0 and 1.0 should be allowed
-        try:
-            ss.weights = [0.0, 1.0]
-        except ValueError as e:
-            self.fail(f'Unexpected ValueError occurred: {str(e)}')
-
-    def test_select_with_pending_schema_1a(self):
+    def test_select_composite_action_schema(self):
         # testing selection with composite action schema (scenario: composite action schema wins)
         ss = SchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-            value_strategies=[primitive_value_evaluation_strategy],
+            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
         )
 
         self.assertIs(None, ss.pending_schema)
@@ -301,7 +165,7 @@ class TestSchemaSelection(TestCase):
         ]
 
         expected_values = [0.0, 0.95, -1.0, 2.0, -0.05, 1.95, -1.05, 1.95, 0.0, 2.95]
-        actual_values = primitive_value_evaluation_strategy(applicable)
+        actual_values = ss.evaluation_strategy(applicable)
 
         # sanity check:
         for exp, act in zip(expected_values, actual_values):
@@ -316,11 +180,11 @@ class TestSchemaSelection(TestCase):
         # test: a schema should have been selected from the composite action's component schemas
         self.assertIn(sd.selected, ss.pending_schema.action.controller.components)
 
-    def test_select_with_pending_schema_1b(self):
+    def test_select_composite_action_with_pending_schema(self):
         # testing selection with composite action schema (scenario: composite action schema loses)
         ss = SchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            value_strategies=[primitive_value_evaluation_strategy],
+            evaluation_strategy=PrimitiveValueEvaluationStrategy()
         )
 
         self.assertIs(None, ss.pending_schema)
@@ -342,7 +206,7 @@ class TestSchemaSelection(TestCase):
         ]
 
         expected_values = [0.0, 0.95, -1.0, 2.0, -0.05, 1.95, -1.05, 1.95, 0.0, -2.05]
-        actual_values = primitive_value_evaluation_strategy(applicable)
+        actual_values = ss.evaluation_strategy(applicable)
 
         # sanity check:
         for exp, act in zip(expected_values, actual_values):
@@ -357,13 +221,13 @@ class TestSchemaSelection(TestCase):
         self.assertIs(self.s1_c12_r5, sd.selected)
         self.assertIs(None, ss.pending_schema)
 
-    def test_select_with_pending_schema_2(self):
+    def test_repeated_select_from_pending_schema_components_until_completion(self):
         # testing the selection of a pending schema's components to completion
 
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            value_strategies=[primitive_value_evaluation_strategy],
+            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
             pending_schemas=deque([PendingDetails(schema=self.sca24_c12_r35, selection_state=sym_state('2'))])
         )
 
@@ -393,13 +257,13 @@ class TestSchemaSelection(TestCase):
         # test: pending schema SHOULD be None since selection state was pending schema's controller's goal state
         self.assertEqual(None, mock_ss.pending_schema)
 
-    def test_select_with_pending_schema_3(self):
+    def test_select_with_aborted_pending_schema(self):
         # testing the abortion of a pending schema (selection state leads to no applicable components)
 
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            value_strategies=[primitive_value_evaluation_strategy],
+            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
             pending_schemas=deque([PendingDetails(schema=self.sca24_c12_r35, selection_state=sym_state('2'))])
         )
 
@@ -443,14 +307,14 @@ class TestSchemaSelection(TestCase):
                 # test: selected schema should be a controller component
                 self.assertIn(sd.selected, self.sca24_c12_r35.action.controller.components)
 
-    def test_select_with_pending_schema_4(self):
+    def test_select_with_interrupted_pending_schema_by_alternate_primitive_action_schema(self):
         # testing the interruption of a pending schema (alternative schema with much higher value)
         pending = self.sca24_c12_r35
 
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            value_strategies=[primitive_value_evaluation_strategy],
+            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
             pending_schemas=deque([PendingDetails(schema=pending, selection_state=sym_state('2'))])
         )
 
@@ -473,14 +337,14 @@ class TestSchemaSelection(TestCase):
         self.assertEqual(pending, sd.terminated_pending[-1].schema)
         self.assertEqual(PendingStatus.INTERRUPTED, sd.terminated_pending[-1].status)
 
-    def test_select_with_pending_schema_5(self):
+    def test_select_with_interrupted_pending_schema_by_alternate_composite_action_schema(self):
         # testing the interruption of a pending schema for another composite action (alternative has higher value)
         pending = self.sca24_c12_r136
 
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            value_strategies=[primitive_value_evaluation_strategy],
+            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
             pending_schemas=deque([PendingDetails(schema=pending, selection_state=sym_state('2'))])
         )
 
@@ -497,14 +361,14 @@ class TestSchemaSelection(TestCase):
         self.assertEqual(1, len(sd.terminated_pending))
         self.assertEqual(PendingStatus.INTERRUPTED, sd.terminated_pending[0].status)
 
-    def test_select_with_pending_schema_6(self):
+    def test_select_with_completed_pending_schema(self):
         # testing completed pending schema followed by immediate selection of another composite action schema
         pending = self.sca24_c12_r136
 
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            value_strategies=[primitive_value_evaluation_strategy],
+            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
             pending_schemas=deque([PendingDetails(schema=pending, selection_state=sym_state('2'))])
         )
 

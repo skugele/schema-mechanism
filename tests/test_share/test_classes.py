@@ -141,4 +141,4 @@ class MockSchemaSelection(SchemaSelection):
     def __init__(self, pending_schemas: Optional[deque[PendingDetails]] = None, **kwargs):
         super().__init__(**kwargs)
 
-        self._pending_details = pending_schemas
+        self._pending_schemas_stack = pending_schemas

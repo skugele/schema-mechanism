@@ -24,6 +24,7 @@ from schema_mechanism.share import rng
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
@@ -233,13 +234,15 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     schema_memory = SchemaMemory(bare_schemas)
     schema_selection = SchemaSelection(
         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.0)),
-        value_strategies=[
-            DefaultGoalPursuitEvaluationStrategy(),
-            ReliabilityEvaluationStrategy(max_penalty=0.005),
-            EpsilonGreedyEvaluationStrategy(epsilon=0.999,
-                                            epsilon_min=0.05,
-                                            decay_strategy=GeometricDecayStrategy(rate=0.999))
-        ],
+        evaluation_strategy=CompositeEvaluationStrategy(
+            strategies=[
+                DefaultGoalPursuitEvaluationStrategy(),
+                ReliabilityEvaluationStrategy(max_penalty=0.005),
+                EpsilonGreedyEvaluationStrategy(epsilon=0.999,
+                                                epsilon_min=0.05,
+                                                decay_strategy=GeometricDecayStrategy(rate=0.999))
+            ]
+        )
     )
 
     sm: SchemaMechanism = SchemaMechanism(

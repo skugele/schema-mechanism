@@ -814,6 +814,93 @@ class TestCompositeEvaluationStrategy(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
+    # def test_weights(self):
+    #     ss = SchemaSelection(
+    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+    #         value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
+    #     )
+    #
+    #     # test: initializer should set weights to the requested values
+    #     weights = [0.4, 0.6]
+    #     ss.weights = weights
+    #     self.assertListEqual(weights, list(ss.weights))
+    #
+    #     # test: should raise a ValueError if initializer given an invalid number of weights
+    #     with self.assertRaises(ValueError):
+    #         ss.weights = [1.0]
+    #
+    #     # test: should raise a ValueError if the weights do not sum to 1.0
+    #     with self.assertRaises(ValueError):
+    #         ss.weights = [0.1, 0.2]
+    #
+    #     # test: should raise a ValueError if any of the weights are non-positive
+    #     with self.assertRaises(ValueError):
+    #         ss.weights = [1.8, -0.8]
+    #
+    #     # test: weights of 0.0 and 1.0 should be allowed
+    #     try:
+    #         ss.weights = [0.0, 1.0]
+    #     except ValueError as e:
+    #         self.fail(f'Unexpected ValueError occurred: {str(e)}')
+
+    # def test_call(self):
+    #     s1 = sym_schema('/A1/1,')  # pv = 0.0
+    #     s2 = sym_schema('/A2/2,')  # pv = 0.0
+    #     s3 = sym_schema('/A1/3,')  # pv = 0.95
+    #     s4 = sym_schema('/A3/4,')  # pv = -1.0
+    #     s5 = sym_schema('/A1/5,')  # pv = 2.0
+    #     s6 = sym_schema('/A2/6,')  # pv = -3.0
+    #
+    #     self.s1_c12_r34 = sym_schema('1,2/A1/(3,4),', reliability=1.0)  # total pv = -0.05; total dv = 0.0
+    #     self.s1_c12_r345 = sym_schema('1,2/A1/(3,4,5),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
+    #     self.s1_c12_r3456 = sym_schema('1,2/A1/(3,4,5,6),', reliability=1.0)  # total pv = -1.05; total dv = 0.0
+    #     self.s1_c12_r345_not6 = sym_schema('1,2/A1/(3,4,5,~6),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
+    #
+    #     schemas = [s1, s2, s3, s4, s5, s6, self.s1_c12_r34, self.s1_c12_r345, self.s1_c12_r3456, self.s1_c12_r345_not6]
+    #
+    #     # testing with no evaluation strategies
+    #     ss = SchemaSelection(
+    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+    #         value_strategies=[],
+    #     )
+    #
+    #     # test: should returns array of zeros if no value strategies specified
+    #     self.assertTrue(np.array_equal(np.zeros_like(schemas), ss.calc_effective_values(schemas)))
+    #
+    #     # testing single evaluation strategy
+    #     ss = SchemaSelection(
+    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+    #         value_strategies=[primitive_value_evaluation_strategy],
+    #     )
+    #
+    #     expected_values = primitive_value_evaluation_strategy(schemas)
+    #
+    #     # test: primitive-only value strategy should return primitive values for each schema
+    #     self.assertTrue(np.array_equal(expected_values, ss.calc_effective_values(schemas, pending=None)))
+    #
+    #     # testing multiple evaluation strategies (equal weighting)
+    #     ss = SchemaSelection(
+    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+    #         value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
+    #     )
+    #
+    #     pvs = primitive_value_evaluation_strategy(schemas)
+    #     dvs = delegated_value_evaluation_strategy(schemas)
+    #     expected_values = (pvs + dvs) / 2.0
+    #     actual_values = ss.calc_effective_values(schemas, pending=None)
+    #
+    #     # test: should return weighted sum of evaluation strategy values
+    #     self.assertTrue(np.array_equal(expected_values, actual_values))
+    #
+    #     # testing multiple evaluation strategies (uneven weighting)
+    #     ss.weights = np.array([0.95, 0.05])
+    #
+    #     expected_values = 0.95 * pvs + 0.05 * dvs
+    #     actual_values = ss.calc_effective_values(schemas, pending=None)
+    #
+    #     # test: should return weighted sum of evaluation strategy values
+    #     self.assertTrue(np.array_equal(expected_values, actual_values))
+
 
 class TestDefaultExploratoryEvaluationStrategy(TestCase):
     def setUp(self) -> None:

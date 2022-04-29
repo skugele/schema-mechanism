@@ -22,6 +22,7 @@ from schema_mechanism.share import info
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
@@ -40,13 +41,15 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     schema_memory = SchemaMemory(bare_schemas)
     schema_selection = SchemaSelection(
         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.0)),
-        value_strategies=[
-            DelegatedValueEvaluationStrategy(),
-            ReliabilityEvaluationStrategy(max_penalty=1e-3),
-            EpsilonGreedyEvaluationStrategy(epsilon=0.9999,
-                                            epsilon_min=0.05,
-                                            decay_strategy=GeometricDecayStrategy(rate=0.9999))
-        ]
+        evaluation_strategy=CompositeEvaluationStrategy(
+            strategies=[
+                DelegatedValueEvaluationStrategy(),
+                ReliabilityEvaluationStrategy(max_penalty=1e-3),
+                EpsilonGreedyEvaluationStrategy(epsilon=0.9999,
+                                                epsilon_min=0.05,
+                                                decay_strategy=GeometricDecayStrategy(rate=0.9999))
+            ]
+        )
     )
 
     sm: SchemaMechanism = SchemaMechanism(

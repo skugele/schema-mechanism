@@ -12,8 +12,6 @@ from enum import auto
 from typing import Any
 from typing import Optional
 
-import numpy as np
-
 from schema_mechanism.core import Assertion
 from schema_mechanism.core import Chain
 from schema_mechanism.core import CompositeAction
@@ -40,11 +38,10 @@ from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import rng
 from schema_mechanism.share import trace
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
-from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
+from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.selection import SelectionStrategy
 from schema_mechanism.util import Observer
-from schema_mechanism.util import equal_weights
 
 
 class SchemaMemory(Observer):
@@ -344,92 +341,43 @@ class SchemaSelection:
     The module has the following high-level characteristics:
 
         1.) Schemas compete for selection at each time step (e.g., for each received environmental state).
-        2.) Only one schema is selected at a time.
-        3.) Schemas are chosen based on their goal-pursuit and exploratory value.
+        2.) Only one schema is selected at a time (based on a selection strategy).
+        3.) Schemas are chosen based on their selection importance (quantified by an evaluation strategy).
         4.) Schemas with composite actions may be selected. If selected, one of their applicable component schemas will
-            be immediately selected, and the composite action schema will be added to the pending schema list. Pending
-            schemas are schemas with composite action that are previously selected, non-terminated, schemas whose
-            action execution is still in progress.
-        5.) Pending schemas may be terminated by reaching their goal state (i.e., action COMPLETED), by an alternate
+            be immediately selected and returned. Note that schema's containing composite actions are never returned
+            from the select method, only their components schemas with non-composite actions.
+        5.) Selected composite action schema whose execution has not yet terminated will be designed as "pending
+            schemas" and added to the class's pending schema queue.
+        6.) Pending schemas may be terminated by reaching their goal state (i.e., action COMPLETED), by an alternate
             schema being selected (i.e., action INTERRUPTED), or by having no applicable component schemas (i.e.,
-            action ABORTED).
+            action ABORTED). Once terminated, they will be removed from the class's pending schema queue.
 
     See Drescher, 1991, section 3.4 for additional details.
-
-    Attributes:
 
     """
 
     def __init__(self,
                  select_strategy: SelectionStrategy = None,
-                 value_strategies: Collection[EvaluationStrategy] = None,
-                 weights: Optional[Collection[float]] = None) -> None:
+                 evaluation_strategy: EvaluationStrategy = None) -> None:
         """ Initializes SchemaSelection based on a set of strategies that define its operation.
 
-        :param select_strategy: a strategy for selecting a single, applicable schema.
-        :param value_strategies: a collection of strategies for evaluating schemas.
-        :param weights: an optional collection of weights, one for each value strategy (weights must sum to 1.0).
+        :param select_strategy: a strategy for selecting a single schema from a set of applicable schemas
+        :param evaluation_strategy: a strategy for calculating the selection importance of applicable schemas
         """
-        self.select_strategy: SelectionStrategy = (
-                select_strategy or RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0))
-        )
-        self.value_strategies: Collection[EvaluationStrategy] = value_strategies or []
-
-        # TODO: Update goal/explore weights. Perhaps this should be a strategy that is passed into the class?
-        # "The schema mechanism maintains a cyclic balance between emphasizing goal-directed value and exploration
-        #  value. The emphasis is achieved by changing the weights of the relative contributions of these components
-        #  to the importance asserted by each schema. Goal-directed value is emphasized most of the time, but a
-        #  significant part of the time, goal-directed value is diluted so that only very important goals take
-        #  precedence over exploration criteria." (See Drescher, 1991, p. 66)
-
-        # “To strike a balance between goal-pursuit and exploration criteria, the [schema] mechanism alternates
-        #  between emphasizing goal-pursuit criterion for a time, then emphasizing exploration criterion; currently,
-        #  the exploration criterion is emphasized most often (about 90% of the time).” (See Drescher, 1991, p. 61)
-        self.weights = weights or equal_weights(len(self._value_strategies))
+        self.select_strategy: SelectionStrategy = select_strategy or RandomizeBestSelectionStrategy()
+        self.evaluation_strategy: EvaluationStrategy = evaluation_strategy or NoOpEvaluationStrategy()
 
         # a stack of previously selected, non-terminated schemas with composite actions used for nested invocations
         # of controller components with composite actions
-        self._pending_details: deque[PendingDetails] = deque()
+        self._pending_schemas_stack: deque[PendingDetails] = deque()
 
-    @property
-    def select_strategy(self) -> SelectionStrategy:
-        return self._select_strategy
-
-    @select_strategy.setter
-    def select_strategy(self, value: SelectionStrategy) -> None:
-        self._select_strategy = value
-
-    @property
-    def value_strategies(self) -> Collection[EvaluationStrategy]:
-        return self._value_strategies
-
-    @value_strategies.setter
-    def value_strategies(self, values: Collection[EvaluationStrategy]) -> None:
-        self._value_strategies = values
-
-    @property
-    def weights(self) -> np.ndarray:
-        return self._weights
-
-    @weights.setter
-    def weights(self, value: np.ndarray) -> None:
-        if len(self._value_strategies) != len(value):
-            raise ValueError('Invalid weights. Must have a weight for each evaluation strategy.')
-        if len(value) > 0 and not np.isclose(1.0, sum(value)):
-            raise ValueError('Evaluation strategy weights must sum to 1.0.')
-        if any({w < 0.0 or w > 1.0 for w in value}):
-            raise ValueError('Evaluation strategy weights must be between 0.0 and 1.0 (inclusive).')
-
-        self._weights = value
-
-    # TODO: This method is way too complicated and needs to be refactored into multiple methods.
     def select(self, schemas: Sequence[Schema], state: State) -> SelectionDetails:
         """ Selects a schema for explicit activation from the supplied list of applicable schemas.
 
         Note: If a schema with a composite action was PREVIOUSLY selected, it will also compete for selection if any
         of its component schemas are applicable (even if its context is not currently satisfied).
 
-        (See Drescher 1991, Section 3.4 for details on the selection algorithm.)
+        See Drescher 1991, Section 3.4 for details on the selection algorithm.
 
         :param schemas: a list of applicable schemas that are candidates for selection
         :param state: the selection state
@@ -439,61 +387,76 @@ class SchemaSelection:
         if not schemas:
             raise ValueError('Collection of applicable schemas must contain at least one schema')
 
-        # updates the status of previously selected pending schemas in preparation for selection
-        terminated_pending = self._update_pending(state)
+        # checks status of any pending (composite action) schemas that were previously selected
+        terminated_pending_list: list[PendingDetails] = (
+            []
+            if not self.pending_schema
+            else self._update_pending_schemas(state)
+        )
 
-        # applicable schemas and their selection values
-        candidates = schemas
-        candidates_values = self.calc_effective_values(candidates, self.pending_schema)
+        # evaluate and select exactly one schema
+        # (note: applicable schemas may contain components of previously selected pending schemas)
+        schemas_values = self.evaluation_strategy(schemas, self.pending_schema)
+        selected_schema, selected_value = self.select_strategy(schemas, schemas_values)
 
-        debug(f'candidates [n: {len(candidates)}]')
-        for c, v in zip(candidates, candidates_values):
-            debug(f'\t{str(c)} -> {v:.2f}')
+        # TODO: I'd like to externalize this pending interrupted check, but it will require some work.
+        # check if selected schema interrupts a pending schema's execution
+        if self.is_pending_interrupted_by_selected_schema(selected_schema):
+            interrupted_pending: list[PendingDetails] = self._interrupt_pending(selected_schema)
+            terminated_pending_list.extend(interrupted_pending)
 
-        # select a schema for execution. candidates will include components from any pending composite actions.
-        selected_schema, value = self._select_strategy(candidates, candidates_values)
-        debug(f'selected schema: {selected_schema} [eff. value: {value}]')
-
-        # interruption of a pending schema (see Drescher, 1991, p. 61)
-        if self.pending_schema and (selected_schema not in self.pending_schema.action.controller.components):
-            trace(f'pending schema {self.pending_schema} interrupted: alternate schema chosen {selected_schema}')
-
-            # add all interrupted schemas to the completed list
-            terminated_pending.extend(self._interrupt_pending(selected_schema))
-
-        # "the [explicit] activation of a schema that has a composite action entails the immediate [explicit] activation
-        #  of some component schema..." (See Drescher 1991, p. 60)
-        while selected_schema.action.is_composite():
-            trace(f'adding pending schema {selected_schema}')
-
-            # adds schema to list of pending composite action schemas
-            self._pending_details.appendleft(
-                PendingDetails(schema=selected_schema, selection_state=state))
-
-            # TODO: This is ugly. Need to update the action trace for the pending composite action. Not sure where
-            # TODO: to do this if not here....
-            GlobalStats().action_trace.update([selected_schema.action])
-
-            applicable_components = [s for s in selected_schema.action.controller.components if s.is_applicable(state)]
-
-            # recursive call to select. (selecting from composite action's applicable components)
-            trace(f'selecting component of {selected_schema} [recursive call to select]')
-            sd = self.select(applicable_components, state)
-
-            selected_schema = sd.selected
-            value = sd.effective_value
+        # if the selected schema has a composite action, then immediate select one of its components
+        if selected_schema.action.is_composite():
+            selected_schema, selected_value = self.select_component_schema(selected_schema, selected_value, state)
 
         return SelectionDetails(applicable=schemas,
                                 selected=selected_schema,
-                                terminated_pending=terminated_pending,
+                                terminated_pending=terminated_pending_list,
                                 selection_state=state,
-                                effective_value=value)
+                                effective_value=selected_value)
 
-    def calc_effective_values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
-        if not self._value_strategies:
-            return np.zeros_like(schemas)
+    def is_pending_interrupted_by_selected_schema(self, selected_schema: Schema) -> bool:
+        """ Checks if the selected schema interrupts the current pending schema's execution.
 
-        return np.sum([w * v(schemas, pending) for w, v in zip(self._weights, self._value_strategies)], axis=0)
+        A pending schema is interrupted if a selected schema is not among the pending schema's action's components.
+        (See Drescher, 1991, p. 61.)
+
+        :param selected_schema: the selected schema
+
+        :return: True if pending schema is interrupted; False otherwise.
+        """
+        return self.pending_schema and (selected_schema not in self.pending_schema.action.controller.components)
+
+    def select_component_schema(self,
+                                selected_schema: Schema,
+                                selected_value: float,
+                                selection_state: State) -> tuple[Schema, float]:
+        """ Selects a component schema with a non-composite action from a selected, composite action schema.
+
+        "the [explicit] activation of a schema that has a composite action entails the immediate [explicit] activation
+         of some component schema" (See Drescher 1991, p. 60)
+
+        :param selected_schema: a selected (composite action) schema
+        :param selected_value: the current value of the selected (composite action) schema
+        :param selection_state: the selected schema's selection state
+
+        :return: a tuple containing the selected component schema and its value
+        """
+        schema: Schema = selected_schema
+        value: float = selected_value
+
+        # recursively select from composite action schema components until a schema with a primitive action is found.
+        while schema and schema.action.is_composite():
+            # TODO: I'd like to externalize this update to the pending schemas queue, but it will take some work.
+            # adds this composite action schema to the list of pending composite action schemas
+            self._pending_schemas_stack.appendleft(PendingDetails(schema=schema, selection_state=selection_state))
+
+            applicable_components = [s for s in schema.action.controller.components if s.is_applicable(selection_state)]
+
+            components_values = self.evaluation_strategy(applicable_components, self.pending_schema)
+            schema, value = self.select_strategy(applicable_components, components_values)
+
+        return schema, value
 
     @property
     def pending_schema(self) -> Optional[Schema]:
@@ -501,15 +464,21 @@ class SchemaSelection:
 
         :return: the current pending Schema or None if one does not exist.
         """
-        return self._pending_details[0].schema if self._pending_details else None
+        return self._pending_schemas_stack[0].schema if self._pending_schemas_stack else None
 
-    def _update_pending(self, state: State) -> list[PendingDetails]:
+    def _update_pending_schemas(self, selection_state: State) -> list[PendingDetails]:
+        """ Updates the status of previously selected pending schemas and returns a list of terminated pending schemas.
+
+        :param selection_state: the selection state
+
+        :return: a list of PendingDetails for any terminated pending schemas
+        """
         terminated_list: list[PendingDetails] = list()
 
         next_pending: Optional[Schema] = None
-        while self._pending_details and not next_pending:
+        while self._pending_schemas_stack and not next_pending:
 
-            details = self._pending_details[0]
+            details = self._pending_schemas_stack[0]
             action = details.schema.action
             goal_state = action.goal_state
 
@@ -519,13 +488,14 @@ class SchemaSelection:
             # sanity check
             assert action.is_composite()
 
-            if not action.is_enabled(state=state):
-                trace(f'pending schema {details.schema} aborted: no applicable components for state "{state}"')
+            if not action.is_enabled(state=selection_state):
+                trace(
+                    f'pending schema {details.schema} aborted: no applicable components for state "{selection_state}"')
                 details.status = PendingStatus.ABORTED
                 terminated_list.append(details)
 
                 # remove from pending stack (no longer active)
-                self._pending_details.popleft()
+                self._pending_schemas_stack.popleft()
 
             elif details.duration > max_duration:
                 trace(f'pending schema {details.schema} interrupted: max duration {max_duration} exceeded"')
@@ -533,40 +503,39 @@ class SchemaSelection:
                 terminated_list.append(details)
 
                 # remove from pending stack (no longer active)
-                self._pending_details.popleft()
+                self._pending_schemas_stack.popleft()
 
-            elif goal_state.is_satisfied(state=state):
+            elif goal_state.is_satisfied(state=selection_state):
                 trace(f'pending schema {details.schema} completed: goal state {goal_state} reached')
                 details.status = PendingStatus.COMPLETED
                 terminated_list.append(details)
 
                 # remove from pending stack (no longer active)
-                self._pending_details.popleft()
+                self._pending_schemas_stack.popleft()
 
             else:
                 next_pending = details.schema
 
         # update counts for all active pending schemas
-        for details in self._pending_details:
+        for details in self._pending_schemas_stack:
             details.duration += 1
 
         return terminated_list
 
-    def _interrupt_pending(self, alternate_schema: Schema) -> list[PendingDetails]:
+    def _interrupt_pending(self, selected_schema: Schema) -> list[PendingDetails]:
         interrupted_list: list[PendingDetails] = []
 
-        while self._pending_details:
-            details = self._pending_details[0]
+        while self._pending_schemas_stack:
+            details = self._pending_schemas_stack[0]
             components = details.schema.action.controller.components
 
-            # if the chosen (interrupting) schema is a component of a pending schema, continue execution of that
-            # pending schema
-            if alternate_schema in components:
+            # if selected schema is a component of a pending schema, continue execution of that pending schema
+            if selected_schema in components:
                 break
 
             # otherwise, remove pending schema from the stack and add it to the interrupted list
             else:
-                self._pending_details.popleft()
+                self._pending_schemas_stack.popleft()
 
                 interrupted_list.append(details)
                 details.status = PendingStatus.INTERRUPTED
@@ -635,7 +604,14 @@ class SchemaMechanism:
         selected_schema = selection_details.selected
         selection_state = selection_details.selection_state
 
+        # FIXME: all of these action trace updates could be moved into the action trace update method!
         self._stats.action_trace.update([selected_schema.action])
+
+        # updates action trace to include the composite actions of previously selected, terminated pending schemas
+        for pending_details in selection_details.terminated_pending:
+            pending_schema = pending_details.schema
+            self._stats.action_trace.update([pending_schema.action])
+
         self._stats.delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
 
         # updates unconditional state value average
