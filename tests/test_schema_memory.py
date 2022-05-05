@@ -13,8 +13,8 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.func_api import actions
 from schema_mechanism.func_api import primitive_schemas
-from schema_mechanism.func_api import sym_asserts
-from schema_mechanism.func_api import sym_item_assert
+from schema_mechanism.func_api import sym_item
+from schema_mechanism.func_api import sym_items
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
@@ -84,7 +84,7 @@ class TestSchemaMemory(TestCase):
         s1_1_2_1_1 = sym_schema('1,3,5,7/A1/')
         self.tree.add_context_spin_offs(s1_1_2_1, (s1_1_2_1_1,))
 
-        s1_1_2_3_1 = sym_schema('1,3,7,~9/A1/')
+        s1_1_2_3_1 = sym_schema('1,3,7,9/A1/')
         self.tree.add_context_spin_offs(s1_1_2_3, (s1_1_2_3_1,))
 
         s1_r101 = sym_schema('/A1/101,')
@@ -114,6 +114,8 @@ class TestSchemaMemory(TestCase):
             self.s101, self.s101_r100, self.s101_1_r100, self.s102
         }
 
+        self.all_schemas = {*self.schemas, *self.composite_schemas}
+
         # initialize composite schema controllers
         self.s101.action.controller.update([Chain([s1_1_r101])])
         self.s102.action.controller.update([])
@@ -121,21 +123,21 @@ class TestSchemaMemory(TestCase):
         # Tree contents:
         #
         # root
+        # |-- 100
         # |-- 1
-        # |   |-- 1,4
-        # |   |-- 1,2
+        # |   |-- 1,3
+        # |   |   |-- 1,3,7
+        # |   |   |   +-- 1,3,7,9
+        # |   |   |-- 1,3,6
+        # |   |   +-- 1,3,5
+        # |   |       +-- 1,3,5,7
         # |   |-- 1,5
-        # |   +-- 1,3
-        # |       |-- 1,3,7
-        # |       |   +-- 1,3,7,~9
-        # |       |-- 1,3,5
-        # |       |   +-- 1,3,5,7
-        # |       +-- 1,3,6
+        # |   |-- 1,4
+        # |   +-- 1,2
         # |-- 3
         # |-- 2
         # |-- 4
-        # |-- 100
-        # +-- 102
+        # +-- 101
         self.sm = SchemaMemory.from_tree(self.tree)
 
     def test_init(self):
@@ -161,12 +163,12 @@ class TestSchemaMemory(TestCase):
         primitives = primitive_schemas(actions(5))
         tree = SchemaTree(primitives)
 
-        s1_1 = create_context_spin_off(primitives[0], sym_item_assert('1'))
-        s1_2 = create_context_spin_off(primitives[0], sym_item_assert('2'))
+        s1_1 = create_context_spin_off(primitives[0], sym_item('1'))
+        s1_2 = create_context_spin_off(primitives[0], sym_item('2'))
         tree.add_context_spin_offs(primitives[0], (s1_1, s1_2))
 
-        s1_r1 = create_result_spin_off(primitives[0], sym_item_assert('3'))
-        s1_r2 = create_result_spin_off(primitives[0], sym_item_assert('4'))
+        s1_r1 = create_result_spin_off(primitives[0], sym_item('3'))
+        s1_r2 = create_result_spin_off(primitives[0], sym_item('4'))
         tree.add_result_spin_offs(primitives[0], (s1_r1, s1_r2))
 
         sm = SchemaMemory.from_tree(tree)
@@ -183,54 +185,72 @@ class TestSchemaMemory(TestCase):
         s_not_found = sym_schema('1,2,3,4,5/A7/')
         self.assertNotIn(s_not_found, self.sm)
 
-    def test_schemas(self):
-        pass
+    def test_iter(self):
+        iter_result = [schema for schema in self.sm]
+
+        self.assertEqual(len(self.all_schemas), len(iter_result))
+        self.assertSetEqual(set(self.all_schemas), set(schema for schema in self.sm))
 
     def test_all_applicable(self):
         # case 1: only bare schemas without composite actions
         state = sym_state('')
 
+        # Info on matching:
+        #
         # /A1/ [applicable - matches all states]
         # /A1/101, [applicable - matches all states]
         # /A2/ [applicable - matches all states]
-        # /101,/ [would be applicable, but no applicable controller components]
-        # /101,/100, [would be applicable, but no applicable controller components]
-        # /102,/ [would be applicable, but no controller components]
-        nodes = self.sm.all_applicable(state)
-        self.assertEqual(3, len(nodes))
+        # /101,/ [would be applicable, BUT no applicable controller components]
+        # /101,/100, [would be applicable, BUT no applicable controller components]
+        # /102,/ [would be applicable, BUT no controller components]
+        schemas = self.sm.all_applicable(state)
+        self.assertEqual(3, len(schemas))
 
-        for node in nodes:
-            self.assertTrue(node.context.is_satisfied(state))
+        for schema in schemas:
+            self.assertTrue(schema.context.is_satisfied(state))
 
-            if node.action.is_composite():
-                self.assertTrue(node.action.is_enabled(state=state))
+            if schema.action.is_composite():
+                self.assertTrue(schema.action.is_enabled(state=state))
 
-        # case 2
+        # case 2: single non-null context match plus null context matches
         state = sym_state('3')
 
+        # Info on matching:
+        #
         # /A1/ [applicable - matches all states]
         # /A1/101, [applicable - matches all states]
         # /A2/ [applicable - matches all states]
         # 3,/A1/ [applicable - matches state == 3]
-        nodes = self.sm.all_applicable(state)
-        self.assertEqual(4, len(nodes))
+        schemas = self.sm.all_applicable(state)
+        self.assertEqual(4, len(schemas))
 
-        for node in nodes:
-            self.assertTrue(node.context.is_satisfied(state))
+        for schema in schemas:
+            self.assertTrue(schema.context.is_satisfied(state))
 
-            if node.action.is_composite():
-                self.assertTrue(node.action.is_enabled(state=state))
+            if schema.action.is_composite():
+                self.assertTrue(schema.action.is_enabled(state=state))
 
-        # case 3: includes nodes with context assertion that are negated
-        state = sym_state('1,3,5,7')
-        nodes = self.sm.all_applicable(state)
-        self.assertEqual(16, len(nodes))
+        # case 3: entire tree matched with the exception of single composite action schema that has a controller with
+        #       : no applicable components
+        state = sym_state('1,2,3,4,5,6,7,8,9,10,100,101')
+        schemas = self.sm.all_applicable(state)
 
-        for node in nodes:
-            self.assertTrue(node.context.is_satisfied(state))
+        # all schemas minus the not applicable composite action schema (/102,/)
+        expected_schemas = self.all_schemas.difference({self.s102})
+        self.assertSetEqual(expected_schemas, set(schemas))
 
-            if node.action.is_composite():
-                self.assertTrue(node.action.is_enabled(state=state))
+        # schemas returned by all_applicable should have the following properties:
+        #   (1) their contexts should be satisfied
+        #   (2) no overriding conditions should be in effect
+        #   (3) if the schema has a composite action, its action should be enabled (i.e., its controller has an
+        #       applicable schema)
+        for schema in schemas:
+            # test: applicable schema's context should be satisfied
+            self.assertTrue(schema.context.is_satisfied(state))
+
+            # test: applicable schema's context should be satisfied
+            if schema.action.is_composite():
+                self.assertTrue(schema.action.is_enabled(state=state))
 
     def test_update_all(self):
 
@@ -288,13 +308,13 @@ class TestSchemaMemory(TestCase):
         # create a context spin-off
         n_schemas = len(self.sm)
 
-        self.assertNotIn(sym_schema('1,3,7,~9,11/A1/'), self.sm)
+        self.assertNotIn(sym_schema('1,3,7,9,11/A1/'), self.sm)
         self.sm.receive(
-            source=sym_schema('1,3,7,~9/A1/'),
+            source=sym_schema('1,3,7,9/A1/'),
             spin_off_type=Schema.SpinOffType.CONTEXT,
-            relevant_items=[sym_item_assert('11')]
+            relevant_items=[sym_item('11')]
         )
-        self.assertIn(sym_schema('1,3,7,~9,11/A1/'), self.sm)
+        self.assertIn(sym_schema('1,3,7,9,11/A1/'), self.sm)
         self.assertEqual(n_schemas + 1, len(self.sm))
 
     def test_receive_2(self):
@@ -309,7 +329,7 @@ class TestSchemaMemory(TestCase):
         self.sm.receive(
             source=sym_schema('/A1/'),
             spin_off_type=Schema.SpinOffType.RESULT,
-            relevant_items=[sym_item_assert('1000')]
+            relevant_items=[sym_item('1000')]
         )
 
         self.assertIn(sym_schema('/A1/1000,'), self.sm)
@@ -321,15 +341,15 @@ class TestSchemaMemory(TestCase):
         # create multiple context spin-offs
         n_schemas = len(self.sm)
 
-        self.assertNotIn(sym_schema('1,3,7,~9,11/A1/'), self.sm)
-        self.assertNotIn(sym_schema('1,3,7,~9,13/A1/'), self.sm)
+        self.assertNotIn(sym_schema('1,3,7,9,11/A1/'), self.sm)
+        self.assertNotIn(sym_schema('1,3,7,9,13/A1/'), self.sm)
         self.sm.receive(
-            source=sym_schema('1,3,7,~9/A1/'),
+            source=sym_schema('1,3,7,9/A1/'),
             spin_off_type=Schema.SpinOffType.CONTEXT,
-            relevant_items=sym_asserts('11,13')
+            relevant_items=sym_items('11;13')
         )
-        self.assertIn(sym_schema('1,3,7,~9,11/A1/'), self.sm)
-        self.assertIn(sym_schema('1,3,7,~9,13/A1/'), self.sm)
+        self.assertIn(sym_schema('1,3,7,9,11/A1/'), self.sm)
+        self.assertIn(sym_schema('1,3,7,9,13/A1/'), self.sm)
         self.assertEqual(n_schemas + 2, len(self.sm))
 
     def test_receive_4(self):
@@ -346,7 +366,7 @@ class TestSchemaMemory(TestCase):
         self.sm.receive(
             source=sym_schema('/A1/'),
             spin_off_type=Schema.SpinOffType.RESULT,
-            relevant_items=sym_asserts('1000,1001')
+            relevant_items=sym_items('1000;1001')
         )
 
         self.assertIn(sym_schema('/A1/1000,'), self.sm)
@@ -368,7 +388,7 @@ class TestSchemaMemory(TestCase):
         self.sm.receive(
             source=sym_schema('3,/A1/'),
             spin_off_type=Schema.SpinOffType.CONTEXT,
-            relevant_items=sym_asserts('1,6')
+            relevant_items=sym_items('1;6')
         )
         self.assertIn(sym_schema('1,3/A1/'), self.sm)
         self.assertIn(sym_schema('3,6/A1/'), self.sm)
@@ -391,7 +411,7 @@ class TestSchemaMemory(TestCase):
         self.sm.receive(
             source=sym_schema('/A1/'),
             spin_off_type=Schema.SpinOffType.RESULT,
-            relevant_items=sym_asserts('101,1001')
+            relevant_items=sym_items('101;1001')
         )
 
         # test: new result spin-off should have been added
@@ -416,9 +436,8 @@ class TestSchemaMemory(TestCase):
         tree.add_result_spin_offs(s1, [s1_a, s1_b, s1_c])
 
         s2_e = sym_schema('/A2/E,')
-        s2_not_f = sym_schema('/A2/~F,')
 
-        tree.add_result_spin_offs(s2, [s2_e, s2_not_f])
+        tree.add_result_spin_offs(s2, [s2_e])
 
         s1_c_a = sym_schema('C,/A1/A,')
         s1_cd_a = sym_schema('C,D/A1/A,')

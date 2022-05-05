@@ -5,15 +5,18 @@ from typing import Iterable
 
 from examples import display_item_values
 from examples import display_known_schemas
+from examples import display_schema_info
 from examples import display_summary
 from examples import is_paused
 from examples import is_running
 from examples import run_decorator
+from examples.environments.wumpus_world import MOVE_FORWARD
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.func_api import sym_item
+from schema_mechanism.func_api import sym_schema
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
@@ -26,7 +29,6 @@ from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
-from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 
 MAX_EPISODES = 5000
@@ -40,15 +42,18 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     bare_schemas = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in env.actions]
     schema_memory = SchemaMemory(bare_schemas)
     schema_selection = SchemaSelection(
-        select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.0)),
+        select_strategy=RandomizeBestSelectionStrategy(),
         evaluation_strategy=CompositeEvaluationStrategy(
             strategies=[
                 DelegatedValueEvaluationStrategy(),
-                ReliabilityEvaluationStrategy(max_penalty=1e-3),
-                EpsilonGreedyEvaluationStrategy(epsilon=0.9999,
+                # HabituationEvaluationStrategy(
+                #     trace=GlobalStats().action_trace,
+                #     multiplier=1.0),
+                ReliabilityEvaluationStrategy(max_penalty=0.1),
+                EpsilonGreedyEvaluationStrategy(epsilon=0.999,
                                                 epsilon_min=0.05,
-                                                decay_strategy=GeometricDecayStrategy(rate=0.9999))
-            ]
+                                                decay_strategy=GeometricDecayStrategy(rate=0.999))
+            ],
         )
     )
 
@@ -59,7 +64,7 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
 
     sm.params.set('backward_chains.max_len', 5)
     sm.params.set('backward_chains.update_frequency', 0.01)
-    sm.params.set('composite_actions.learn.min_baseline_advantage', 0.1)
+    sm.params.set('composite_actions.learn.min_baseline_advantage', 0.001)
     sm.params.set('delegated_value_helper.decay_rate', 0.1)
     sm.params.set('delegated_value_helper.discount_factor', 0.5)
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
@@ -67,7 +72,7 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
     sm.params.set('ext_result.positive_correlation_threshold', 0.95)
     sm.params.set('learning_rate', 0.01)
-    sm.params.set('reliability_threshold', 0.9)
+    sm.params.set('reliability_threshold', 0.8)
 
     # sm.params.get('features').remove(SupportedFeature.COMPOSITE_ACTIONS)
 
@@ -176,6 +181,9 @@ def run() -> None:
             if is_paused():
                 display_item_values()
                 display_known_schemas(sm)
+                display_schema_info(sym_schema(f'/{MOVE_FORWARD}/'))
+                if episode > 1:
+                    display_performance_summary(max_steps, steps_in_episode)
 
                 try:
                     while is_paused():

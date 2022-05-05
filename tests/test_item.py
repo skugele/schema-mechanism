@@ -11,10 +11,8 @@ import test_share
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SymbolicItem
-from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
-from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
 from test_share.test_func import common_test_setup
@@ -109,66 +107,52 @@ class TestCompositeItem(unittest.TestCase):
         self.pool = ItemPool()
 
         # fill ItemPool
-        _ = self.pool.get('1', primitive_value=-1.0)
-        _ = self.pool.get('2', primitive_value=0.0)
-        _ = self.pool.get('3', primitive_value=3.0)
-        _ = self.pool.get('4', primitive_value=-3.0)
+        self.item_1 = self.pool.get('1', primitive_value=-1.0)
+        self.item_2 = self.pool.get('2', primitive_value=0.0)
+        self.item_3 = self.pool.get('3', primitive_value=3.0)
+        self.item_4 = self.pool.get('4', primitive_value=-3.0)
 
-        self.sa = sym_state_assert('1,2,~3,4')
-        self.item = CompositeItem(source=self.sa)
+        self.source = frozenset(['1', '2', '3', '4'])
+        self.item = CompositeItem(source=self.source)
 
     def test_init(self):
         # test: the source should be set properly
-        self.assertEqual(self.sa, self.item.source)
+        self.assertEqual(self.source, self.item.source)
 
-        # test: default primitive value should be 0.0
-        item = CompositeItem(source=sym_state_assert('UNK1, UNK2'))
+        # test: primitive value should unknown state elements should be 0.0
+        item = CompositeItem(source=['UNK1', 'UNK2'])
         self.assertEqual(0.0, item.primitive_value)
+
+        # test: by default, the primitive value should be the sum of item primitive values corresponding to known
+        #     : state elements
+        item = CompositeItem(source=['1', '2'])
+        self.assertEqual(sum(item.primitive_value for item in [self.item_1, self.item_2]), item.primitive_value)
 
         # test: when a primitive value is supplied to initializer, it should be properly set and override the
         #     : primitive value of the underlying state assertion
         primitive_value = -100.0
-        item = CompositeItem(source=self.sa, primitive_value=primitive_value)
+        item = CompositeItem(source=self.source, primitive_value=primitive_value)
         self.assertEqual(primitive_value, item.primitive_value)
 
     def test_state_elements(self):
-        # test: all state elements from positive assertions should be returned
+        # test: all state elements should be returned
         self.assertSetEqual({'1', '2'}, sym_item('(1,2)').state_elements)
         self.assertSetEqual({'1', '2', '3'}, sym_item('(1,2,3)').state_elements)
-        self.assertSetEqual({'1', '2', '3'}, sym_item('(1,2,3,~4)').state_elements)
-        self.assertSetEqual(set(), sym_item('(~1,~2,~3,~4)').state_elements)
-
-    def test_primitive_value(self):
-        # test: a item's primitive value SHOULD equal the primitive value of its source assertion
-        self.assertEqual(calc_primitive_value(self.sa), self.item.primitive_value)
-
-        # test: if explicitly set, a composite item's primitive value SHOULD remain fixed to that primitive value
-        #       regardless of the primitive state value associated with the underlying state elements
-        expected_value = 5.5
-        self.item.primitive_value = expected_value
-        self.assertEqual(expected_value, self.item.primitive_value)
-
-        for item in self.sa.items:
-            item.primitive_value = 1000.0
-
-        # sanity check: composite item's state should be (much) greater than its primitive value
-        self.assertGreater(calc_primitive_value(self.sa), expected_value)
-        self.assertEqual(expected_value, self.item.primitive_value)
 
     def test_is_on(self):
         # item expected to be ON for these states
-        self.assertTrue(self.item.is_on(sym_state('1,2,4')))
-        self.assertTrue(self.item.is_on(sym_state('1,2,4,5,6')))
+        self.assertTrue(self.item.is_on(sym_state('1,2,3,4')))
+        self.assertTrue(self.item.is_on(sym_state('1,2,3,4,5,6')))
 
         # item expected to be OFF for these states
         self.assertFalse(self.item.is_on(sym_state('')))
-        self.assertFalse(self.item.is_on(sym_state('1,2,3,4')))
+        self.assertFalse(self.item.is_on(sym_state('1,2,3')))
         self.assertFalse(self.item.is_on(sym_state('1,4')))
         self.assertFalse(self.item.is_on(sym_state('2,4')))
 
     def test_equal(self):
         obj = self.item
-        other = CompositeItem(sym_state_assert('~7,8,9'))
+        other = CompositeItem(source=['A', 'B'])
         copy_ = copy(obj)
 
         self.assertEqual(obj, obj)
@@ -182,42 +166,58 @@ class TestCompositeItem(unittest.TestCase):
         self.assertTrue(is_eq_with_null_is_false(obj))
 
     def test_eq(self):
-        self.assertTrue(satisfies_equality_checks(obj=self.item, other=CompositeItem(sym_state_assert('~7,8,9'))))
+        self.assertTrue(satisfies_equality_checks(obj=self.item, other=CompositeItem(source=['A', 'B'])))
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.item))
 
-    def test_equal_with_state_assert(self):
-        self.assertEqual(self.item, self.sa)
-        self.assertTrue(is_eq_symmetric(x=self.item, y=self.sa))
-
     def test_item_from_pool(self):
-        sa1 = sym_state_assert('2,~3,~4')
+        source_1 = frozenset(['2', '3', '4'])
 
         len_before = len(self.pool)
-        item1 = self.pool.get(sa1, item_type=CompositeItem)
+        item_1 = self.pool.get(source_1)
 
-        self.assertIsInstance(item1, CompositeItem)
-        self.assertEqual(sa1, item1.source)
-        self.assertEqual(calc_primitive_value(sa1), item1.primitive_value)
+        # test: item provided by item pool should have correct instance type of CompositeItem
+        self.assertIsInstance(item_1, CompositeItem)
+
+        # test: item provided by item pool should have a source containing all requested state elements
+        self.assertEqual(source_1, item_1.source)
+
+        # test: item provided by item pool should have a primitive value equal to sum of state elements' items' values
+        expected_primitive_value = sum(self.pool.get(se).primitive_value for se in source_1)
+        self.assertEqual(expected_primitive_value, item_1.primitive_value)
+
+        # test: the pool's size should have been increased by one
         self.assertEqual(len_before + 1, len(self.pool))
-        self.assertIn(sa1, self.pool)
+
+        # test: the requested source (set of state elements) should now exist in the pool
+        self.assertIn(source_1, self.pool)
 
         len_before = len(self.pool)
-        item2 = self.pool.get(sa1, item_type=CompositeItem)
+        item_2 = self.pool.get(source_1)
 
-        self.assertIs(item1, item2)
+        # test: identical item should be retrieved from pool when given the same source again
+        self.assertIs(item_1, item_2)
+
+        # test: pool size should not increase when retrieving a previously gotten item
         self.assertEqual(len_before, len(self.pool))
 
-        sa2 = sym_state_assert('2,3,4')
+        source_2 = frozenset(['1', '2', '3'])
 
         len_before = len(self.pool)
-        item3 = self.pool.get(sa2, item_type=CompositeItem)
+        item_3 = self.pool.get(source_2)
 
-        self.assertNotEqual(item2, item3)
-        self.assertEqual(sa2, item3.source)
+        # test: requesting an item from a different source should return a different item
+        self.assertNotEqual(item_2, item_3)
+
+        # test: item provided by item pool should have a source containing all requested state elements
+        self.assertEqual(source_2, item_3.source)
+
+        # test: the pool's size should have been increased by one
         self.assertEqual(len_before + 1, len(self.pool))
-        self.assertIn(sa2, self.pool)
+
+        # test: the requested source (set of state elements) should now exist in the pool
+        self.assertIn(source_2, self.pool)
 
     def test_serialize(self):
         with TemporaryDirectory() as tmp_dir:

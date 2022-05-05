@@ -1,6 +1,9 @@
+import time
 from abc import ABC
 from collections import deque
 from typing import Any
+from typing import Callable
+from typing import Collection
 from typing import Optional
 
 from schema_mechanism.core import Action
@@ -8,6 +11,7 @@ from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import Item
 from schema_mechanism.core import Schema
 from schema_mechanism.core import StateAssertion
+from schema_mechanism.core import StateElement
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.modules import PendingDetails
 from schema_mechanism.modules import SchemaSelection
@@ -74,7 +78,7 @@ class MockSymbolicItem(SymbolicItem):
 
 class MockCompositeItem(CompositeItem):
     def __init__(self,
-                 source: StateAssertion,
+                 source: Collection[StateElement],
                  delegated_value: Optional[float] = None,
                  **kwargs):
         super().__init__(source, **kwargs)
@@ -142,3 +146,19 @@ class MockSchemaSelection(SchemaSelection):
         super().__init__(**kwargs)
 
         self._pending_schemas_stack = pending_schemas
+
+
+class TimedCallWrapper:
+    def __init__(self, callable_: Callable):
+        self.callable_ = callable_
+
+        self.elapsed_time: float = 0.0
+
+    def __call__(self, *args, **kwargs) -> Any:
+        start_time = time.perf_counter()
+        return_values = self.callable_(*args, **kwargs)
+        end_time = time.perf_counter()
+
+        self.elapsed_time += end_time - start_time
+
+        return return_values

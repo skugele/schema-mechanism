@@ -1,3 +1,5 @@
+from abc import ABC
+from abc import abstractmethod
 from collections import Sequence
 from typing import Collection
 from typing import Optional
@@ -10,6 +12,7 @@ from schema_mechanism.core import Action
 from schema_mechanism.core import Schema
 from schema_mechanism.core import calc_delegated_value
 from schema_mechanism.core import calc_primitive_value
+from schema_mechanism.share import debug
 from schema_mechanism.share import rng
 from schema_mechanism.strategies.decay import DecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
@@ -19,8 +22,45 @@ from schema_mechanism.util import equal_weights
 
 
 @runtime_checkable
-class EvaluationStrategy(Protocol):
-    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+class EvaluationPostProcess(Protocol):
+    def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
+        """ A callable invoked by evaluation strategies that performs post-evaluation operations.
+
+        Note: these callables can be used to perform diagnostic messaging, value modifications (e.g., scaling), etc.
+
+        :param schemas: the schemas that were evaluated by the strategy
+        :param values: the values of the evaluated schemas
+
+        :return: the (potentially modified) schema values as a np.ndarray
+        """
+        pass
+
+
+class EvaluationStrategy(ABC):
+
+    def __call__(self,
+                 schemas: Sequence[Schema],
+                 pending: Optional[Schema] = None,
+                 post_process: Sequence[EvaluationPostProcess] = None,
+                 **kwargs) -> np.ndarray:
+        """ Returns the schemas' values and invokes an optional sequence of post-process callables (if requested).
+
+        :param schemas: the schemas to be evaluated
+        :param pending: an optional pending schema
+        :param post_process: an optional collection of callables that will be invoked after schema value determination
+
+        :return: an array containing the values of the schemas (according to this strategy)
+        """
+        values = self.values(schemas=schemas, values=pending, **kwargs)
+
+        if post_process:
+            for operation in post_process:
+                values = operation(schemas=schemas, values=values)
+
+        return values
+
+    @abstractmethod
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         """ Evaluates the given schema based on this strategy's evaluation criteria.
 
         :param schemas: the schemas to be evaluated
@@ -28,19 +68,20 @@ class EvaluationStrategy(Protocol):
 
         :return: an array containing the values of the schemas (according to this strategy)
         """
+        pass
 
 
-class NoOpEvaluationStrategy:
+class NoOpEvaluationStrategy(EvaluationStrategy):
     """ An no-op implementation of the evaluation strategy protocol. Always returns zeros."""
 
-    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         return np.zeros_like(schemas)
 
 
-class PrimitiveValueEvaluationStrategy:
+class PrimitiveValueEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the evaluation strategy protocol based solely on the primitive values of schemas."""
 
-    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         return (
             np.array([])
             if schemas is None or len(schemas) == 0
@@ -48,10 +89,10 @@ class PrimitiveValueEvaluationStrategy:
         )
 
 
-class DelegatedValueEvaluationStrategy:
+class DelegatedValueEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the evaluation strategy protocol based solely on the delegated values of schemas. """
 
-    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         return (
             np.array([])
             if schemas is None or len(schemas) == 0
@@ -59,7 +100,7 @@ class DelegatedValueEvaluationStrategy:
         )
 
 
-class InstrumentalValueEvaluationStrategy:
+class InstrumentalValueEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the evaluation strategy protocol based solely on the instrumental values of schemas.
 
     Drescher on instrumental value:
@@ -74,7 +115,7 @@ class InstrumentalValueEvaluationStrategy:
 
     """
 
-    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         if not schemas and pending:
             raise ValueError('A non-empty sequence of schemas must be provided whenever a pending schema is provided.')
 
@@ -104,7 +145,7 @@ class InstrumentalValueEvaluationStrategy:
         return values
 
 
-class PendingFocusEvaluationStrategy:
+class PendingFocusEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the EvaluationStrategy protocol.
 
      This implementation initially returns higher values for component schemas of the currently selected pending
@@ -143,7 +184,7 @@ class PendingFocusEvaluationStrategy:
     def decay_strategy(self, value: DecayStrategy) -> None:
         self._decay_strategy = value
 
-    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         if schemas is None or len(schemas) == 0:
             return np.array([])
 
@@ -156,7 +197,7 @@ class PendingFocusEvaluationStrategy:
             self._active_pending = pending
             self._n = 0
 
-        # TODO: changes this to use a decay strategy?
+        # TODO: change this to use a decay strategy?
         focus_value = self.max_value - self.focus_exp ** self._n + 1
 
         # TODO: how can I do this more efficiently?
@@ -169,7 +210,7 @@ class PendingFocusEvaluationStrategy:
         return values
 
 
-class ReliabilityEvaluationStrategy:
+class ReliabilityEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the EvaluationStrategy protocol that penalizes unreliable schemas.
 
     The values returned will be in the range [0.0, -MAX_PENALTY].
@@ -193,10 +234,7 @@ class ReliabilityEvaluationStrategy:
             raise ValueError('Max penalty must be > 0.0')
         self._max_penalty = value
 
-    def __call__(self,
-                 schemas: Sequence[Schema],
-                 pending: Optional[Schema] = None,
-                 **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         # nans treated as 0.0 reliability
         reliabilities = np.array([0.0 if s.reliability is np.nan else s.reliability for s in schemas])
         return (
@@ -207,7 +245,7 @@ class ReliabilityEvaluationStrategy:
 
 
 # TODO: externalize the decay strategy and remove min/initial parameters
-class EpsilonGreedyEvaluationStrategy:
+class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the EvaluationStrategy protocol based on an epsilon-greedy mechanism.
 
     The values returned by this strategy will either be 0.0 or np.inf.
@@ -263,7 +301,7 @@ class EpsilonGreedyEvaluationStrategy:
     def decay_strategy(self, value: DecayStrategy) -> None:
         self._decay_strategy = value
 
-    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         if not schemas:
             return np.array([])
 
@@ -291,7 +329,7 @@ class EpsilonGreedyEvaluationStrategy:
         return values
 
 
-class HabituationEvaluationStrategy:
+class HabituationEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the EvaluationStrategy protocol.
 
      This implementation modulates the selection value of actions based on the recency and frequency of their selection.
@@ -328,7 +366,7 @@ class HabituationEvaluationStrategy:
 
         self._multiplier = value
 
-    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         if not schemas:
             return np.array([])
 
@@ -336,19 +374,20 @@ class HabituationEvaluationStrategy:
         trace_values = self.trace.values[self.trace.indexes(actions)]
         median_trace_value = np.median(trace_values)
 
-        values = -self.multiplier * (trace_values - median_trace_value)
-
-        # FIXME: Is this rounding operation really necessary???
-        return np.round(values, 2)
+        return -self.multiplier * (trace_values - median_trace_value)
 
 
-class CompositeEvaluationStrategy:
+class CompositeEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the EvaluationStrategy protocol based on a weighted-sum over other evaluation strategies.
     """
 
-    def __init__(self, strategies: Collection[EvaluationStrategy], weights: Collection[float] = None) -> None:
+    def __init__(self,
+                 strategies: Collection[EvaluationStrategy],
+                 weights: Collection[float] = None,
+                 strategy_alias: str = None) -> None:
         self.strategies = strategies
         self.weights = np.array(weights) if weights else equal_weights(len(self.strategies))
+        self.strategy_alias = strategy_alias or ''
 
     @property
     def strategies(self) -> Collection[EvaluationStrategy]:
@@ -373,12 +412,12 @@ class CompositeEvaluationStrategy:
 
         self._weights = values
 
-    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema], **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         return sum(weight * strategy(schemas=schemas, pending=pending)
                    for weight, strategy in zip(self.weights, self.strategies))
 
 
-class DefaultExploratoryEvaluationStrategy:
+class DefaultExploratoryEvaluationStrategy(EvaluationStrategy):
     """ The default exploratory evaluation strategy
 
         * “The exploration criterion boosts the importance of a schema to promote its activation for the sake of
@@ -411,11 +450,11 @@ class DefaultExploratoryEvaluationStrategy:
             ]
         )
 
-    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema], **kwargs) -> np.ndarray:
-        return self._value_strategy(schemas=schemas, pending=pending)
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+        return self._value_strategy(schemas=schemas, pending=pending, **kwargs)
 
 
-class DefaultGoalPursuitEvaluationStrategy:
+class DefaultGoalPursuitEvaluationStrategy(EvaluationStrategy):
     def __init__(self,
                  max_reliability_penalty: float = 1.0,
                  max_pending_focus: float = 1.0,
@@ -434,5 +473,27 @@ class DefaultGoalPursuitEvaluationStrategy:
             ]
         )
 
-    def __call__(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         return self.value_strategy(schemas=schemas, pending=pending)
+
+
+####################
+# helper functions #
+####################
+def display_values(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
+    for schema, value in zip(schemas, values):
+        debug(f'{schema} [{value}]')
+
+    return values
+
+
+def display_minmax(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
+    max_value = np.max(values)
+    max_value_schema = schemas[np.flatnonzero(values == max_value)[0]]
+    min_value = np.min(values)
+    min_value_schema = schemas[np.flatnonzero(values == min_value)[0]]
+
+    debug(f'MAX: {max_value_schema} [{max_value}]')
+    debug(f'MIN: {min_value_schema} [{min_value}]')
+
+    return values

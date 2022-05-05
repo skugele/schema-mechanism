@@ -107,7 +107,7 @@ class TestSchema(TestCase):
         self.assertLessEqual(s.creation_time, after)
 
     def test_is_context_satisfied(self):
-        c = sym_state_assert('1,~2,3')
+        c = sym_state_assert('1,3')
         schema = Schema(context=c, action=Action(), result=None)
 
         # expected to be satisfied
@@ -117,16 +117,9 @@ class TestSchema(TestCase):
 
         # expected to NOT be satisfied
         ##############################
-        # case 1: present negated item
-        self.assertFalse(schema.context.is_satisfied(state=sym_state('1,2,3')))
-
-        # case 2: missing non-negated item
+        # case 1: missing item
         self.assertFalse(schema.context.is_satisfied(state=sym_state('1')))
         self.assertFalse(schema.context.is_satisfied(state=sym_state('3')))
-
-        # case 3 : both present negated item and missing non-negated item
-        self.assertFalse(schema.context.is_satisfied(state=sym_state('1,2')))
-        self.assertFalse(schema.context.is_satisfied(state=sym_state('2,3')))
 
         # complex action schema
         self.assertTrue(self.schema_ca.context.is_satisfied(state=sym_state('0,1')))
@@ -137,7 +130,7 @@ class TestSchema(TestCase):
         schema = Schema(action=Action())
         self.assertTrue(schema.is_applicable(state=sym_state('1')))
 
-        c = sym_state_assert('1,~2,3')
+        c = sym_state_assert('1,3')
 
         schema = Schema(context=c, action=Action(), result=None)
 
@@ -149,16 +142,9 @@ class TestSchema(TestCase):
         # expected to NOT be applicable
         ###############################
 
-        # case 1: present negated item
-        self.assertFalse(schema.is_applicable(state=sym_state('1,2,3')))
-
-        # case 2: missing non-negated item
+        # case 1: missing item
         self.assertFalse(schema.is_applicable(state=sym_state('1')))
         self.assertFalse(schema.is_applicable(state=sym_state('3')))
-
-        # case 3 : both present negated item and missing non-negated item
-        self.assertFalse(schema.is_applicable(state=sym_state('1,2')))
-        self.assertFalse(schema.is_applicable(state=sym_state('2,3')))
 
         # Tests overriding conditions
         #############################
@@ -199,22 +185,18 @@ class TestSchema(TestCase):
 
         # ---> positive cases
         self.assertTrue(sym_schema('/action/1,2,3').predicts_state(state))
-        self.assertTrue(sym_schema('/action/1,2,3,~4').predicts_state(state))
 
         # ---> negative cases
         self.assertFalse(sym_schema('/action/1,2,4').predicts_state(state))
-        self.assertFalse(sym_schema('/action/1,~2,3').predicts_state(state))
         self.assertFalse(sym_schema('/action/2,3').predicts_state(state))
         self.assertFalse(sym_schema('/action/2,').predicts_state(state))
 
-        # test: non-negated, non-composite items within composite items must also be accounted for
+        # test: non-composite items within composite items must also be accounted for
 
         # ---> positive cases
         self.assertTrue(sym_schema('/action/(1,2,3),').predicts_state(state))
-        self.assertTrue(sym_schema('/action/(1,2,3,~4),').predicts_state(state))
 
         # ---> negative cases
-        self.assertFalse(sym_schema('/action/(1,~2,3),').predicts_state(state))
         self.assertFalse(sym_schema('/action/(1,3),').predicts_state(state))
 
         # test: mixed results (w/ composite and non-composite items) should also be supported
@@ -222,10 +204,8 @@ class TestSchema(TestCase):
 
         # ---> positive cases
         self.assertTrue(sym_schema('/action/(1,2),3').predicts_state(state))
-        self.assertTrue(sym_schema('/action/2,(1,3),~4').predicts_state(state))
 
         # ---> negative cases
-        self.assertFalse(sym_schema('/action/(1,3),~2').predicts_state(state))
         self.assertFalse(sym_schema('/action/(1,2,3),4').predicts_state(state))
 
         # complex action schema

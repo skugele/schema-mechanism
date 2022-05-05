@@ -12,7 +12,6 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import State
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
-from schema_mechanism.modules import AbsoluteDiffMatchStrategy
 from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
@@ -25,15 +24,17 @@ from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
-from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
+from schema_mechanism.strategies.evaluation import PendingFocusEvaluationStrategy
+from schema_mechanism.strategies.evaluation import PrimitiveValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.util import Observable
 
 # global constants
 
-N_MACHINES = 2
-N_STEPS = 5000
+N_MACHINES = 25
+N_STEPS = 20000
 
 
 class Machine:
@@ -233,14 +234,16 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     bare_schemas = [Schema(action=a) for a in env.actions]
     schema_memory = SchemaMemory(bare_schemas)
     schema_selection = SchemaSelection(
-        select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.0)),
+        select_strategy=RandomizeBestSelectionStrategy(),
         evaluation_strategy=CompositeEvaluationStrategy(
             strategies=[
-                DefaultGoalPursuitEvaluationStrategy(),
-                ReliabilityEvaluationStrategy(max_penalty=0.005),
-                EpsilonGreedyEvaluationStrategy(epsilon=0.999,
+                PrimitiveValueEvaluationStrategy(),
+                DelegatedValueEvaluationStrategy(),
+                PendingFocusEvaluationStrategy(),
+                ReliabilityEvaluationStrategy(max_penalty=0.05),
+                EpsilonGreedyEvaluationStrategy(epsilon=0.9999,
                                                 epsilon_min=0.05,
-                                                decay_strategy=GeometricDecayStrategy(rate=0.999))
+                                                decay_strategy=GeometricDecayStrategy(rate=0.9999))
             ]
         )
     )

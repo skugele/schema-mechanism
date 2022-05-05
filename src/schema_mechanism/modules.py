@@ -12,13 +12,11 @@ from enum import auto
 from typing import Any
 from typing import Optional
 
-from schema_mechanism.core import Assertion
 from schema_mechanism.core import Chain
 from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Item
-from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
@@ -248,7 +246,7 @@ class SchemaMemory(Observer):
 
     def _receive_from_schema(self, schema: Schema, **kwargs) -> None:
         spin_off_type: Schema.SpinOffType = kwargs['spin_off_type']
-        relevant_items: Collection[ItemAssertion] = kwargs['relevant_items']
+        relevant_items: Collection[Item] = kwargs['relevant_items']
 
         spin_offs = frozenset([create_spin_off(schema, spin_off_type, ia) for ia in relevant_items])
 
@@ -600,18 +598,18 @@ class SchemaMechanism:
 
     def learn(self, selection_details: SelectionDetails, result_state: State, **kwargs) -> None:
         self.schema_memory.update_all(selection_details=selection_details, result_state=result_state)
+        self.update(result_state, selection_details)
 
+    def update(self, result_state, selection_details):
         selected_schema = selection_details.selected
         selection_state = selection_details.selection_state
+        terminated_pending_details = selection_details.terminated_pending
 
-        # FIXME: all of these action trace updates could be moved into the action trace update method!
-        self._stats.action_trace.update([selected_schema.action])
+        # update action trace for just-now terminated composite actions and the last selected non-composite action
+        actions = [pending_details.schema.action for pending_details in terminated_pending_details]
+        actions.append(selected_schema.action)
 
-        # updates action trace to include the composite actions of previously selected, terminated pending schemas
-        for pending_details in selection_details.terminated_pending:
-            pending_schema = pending_details.schema
-            self._stats.action_trace.update([pending_schema.action])
-
+        self._stats.action_trace.update(actions)
         self._stats.delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
 
         # updates unconditional state value average
@@ -619,32 +617,32 @@ class SchemaMechanism:
         self._stats.update_baseline(result_state)
 
 
-def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion: ItemAssertion) -> Schema:
+def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, item: Item) -> Schema:
     """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
 
     :param schema: the schema from which the new spin-off schema will be based
     :param spin_off_type: a supported Schema.SpinOffType
-    :param assertion: an assertion to add to the context or result of a spin-off schema
+    :param item: an item to add to the context or result of a spin-off schema
 
     :return: a spin-off schema based on this one
     """
     if not schema:
         ValueError('Schema must not be None')
 
-    if not assertion or len(assertion) == 0:
-        ValueError('Assertion must not be None or empty')
+    if not item:
+        ValueError('Item must not be None or empty')
 
     if Schema.SpinOffType.CONTEXT == spin_off_type:
         new_context = (
-            StateAssertion(asserts=(assertion,))
+            StateAssertion(items=(item,))
             if schema.context is NULL_STATE_ASSERT
-            else Assertion.replicate_with(old=schema.context, new=assertion)
+            else schema.context.union([item])
         )
 
         # add composite contexts to ItemPool to support learning of composite results
         if not is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
             if len(new_context) > 1:
-                _ = ItemPool().get(new_context, item_type=CompositeItem)
+                _ = ItemPool().get(new_context.as_state(), item_type=CompositeItem)
 
         return SchemaPool().get(SchemaUniqueKey(action=schema.action, context=new_context, result=schema.result))
 
@@ -653,9 +651,9 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
             raise ValueError('Result spin-off for primitive schemas only (unless ER_INCREMENTAL_RESULTS enabled)')
 
         new_result = (
-            StateAssertion(asserts=(assertion,))
+            StateAssertion(items=(item,))
             if schema.result is NULL_STATE_ASSERT
-            else Assertion.replicate_with(old=schema.result, new=assertion)
+            else schema.result.union([item])
         )
 
         return SchemaPool().get(SchemaUniqueKey(action=schema.action, context=schema.context, result=new_result))
@@ -664,21 +662,21 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, assertion
         raise ValueError(f'Unsupported spin-off mode: {spin_off_type}')
 
 
-def create_context_spin_off(source: Schema, item_assert: ItemAssertion) -> Schema:
+def create_context_spin_off(source: Schema, item: Item) -> Schema:
     """ Creates a CONTEXT spin-off schema from the given source schema.
 
     :param source: the source schema
-    :param item_assert: the new item assertion to include in the spin-off's context
+    :param item: the new item to include in the spin-off's context
     :return: a new context spin-off
     """
-    return create_spin_off(source, Schema.SpinOffType.CONTEXT, item_assert)
+    return create_spin_off(source, Schema.SpinOffType.CONTEXT, item)
 
 
-def create_result_spin_off(source: Schema, item_assert: ItemAssertion) -> Schema:
+def create_result_spin_off(source: Schema, item: Item) -> Schema:
     """ Creates a RESULT spin-off schema from the given source schema.
 
     :param source: the source schema
-    :param item_assert: the new item assertion to include in the spin-off's result
+    :param item: the new item to include in the spin-off's result
     :return: a new result spin-off
     """
-    return create_spin_off(source, Schema.SpinOffType.RESULT, item_assert)
+    return create_spin_off(source, Schema.SpinOffType.RESULT, item)

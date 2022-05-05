@@ -422,24 +422,7 @@ def item_contained_in(item_1: Item, item_2: Item) -> bool:
     set_1 = item_1.state_elements
     set_2 = item_2.state_elements
 
-    # all non-negated elements of item_1 in item_2's state elements
-    if set_1.issubset(set_2):
-
-        if isinstance(item_1, CompositeItem):
-            # if both args are composite, check negated item assertions
-            if isinstance(item_2, CompositeItem):
-                set_1 = item_1.negated_asserts
-                set_2 = item_2.negated_asserts
-
-                return set_1.issubset(set_2)
-
-            # if first argument is composite, but 2nd is non-composite return False
-            else:
-                return False
-        else:
-            return True
-
-    return False
+    return set_1.issubset(set_2)
 
 
 def reduce_to_most_specific_items(items: Optional[Collection[Item]]) -> Collection[Item]:
@@ -907,176 +890,86 @@ NULL_EC_ITEM_STATS = ReadOnlyECItemStats()
 NULL_ER_ITEM_STATS = ReadOnlyERItemStats()
 
 
-class Assertion(ABC):
-    def __init__(self, negated: bool, **kwargs) -> None:
-        super().__init__(**kwargs)
+# TODO: This could be collapsed into a single item class that allowed a set of 1 or more state elements as a source!!!
+class CompositeItem(Item):
+    """ An Item whose source is a set containing 2 or more state elements. """
 
-        self._is_negated = negated
+    def __init__(self, source: Collection[StateElement], primitive_value: float = None, **kwargs) -> None:
+        if len(source) < 2:
+            raise ValueError('CompositeItems must have at least two elements in their source.')
 
-    @abstractmethod
-    def __iter__(self) -> Iterator[Assertion]:
-        pass
+        self._items = frozenset([ItemPool().get(se) for se in source])
 
-    @abstractmethod
-    def __len__(self) -> int:
-        pass
+        # by default, primitive value is the sum over non-composite item primitive values, but this can be overridden
+        primitive_value = (
+            sum(item.primitive_value for item in self._items)
+            if primitive_value is None
+            else primitive_value
+        )
 
-    @abstractmethod
-    def __contains__(self, assertion: Assertion) -> bool:
-        pass
+        super().__init__(source=frozenset(source), primitive_value=primitive_value)
 
-    @abstractmethod
-    def __hash__(self) -> int:
-        pass
-
+    # TODO: once I move CompositeItem and Item into a single class, the class can be changed to inherit from frozenset
+    # TODO: and this property can be removed!
     @property
-    def is_negated(self) -> bool:
-        return self._is_negated
+    def state_elements(self) -> set[StateElement]:
+        return self.source
 
-    @abstractmethod
-    def is_satisfied(self, state: State) -> bool:
-        pass
+    def is_on(self, state: State, **kwargs) -> bool:
+        return all((item.is_on(state) for item in self._items))
 
-    # TODO: This should be removed
-    @property
-    @abstractmethod
-    def items(self) -> frozenset[Item]:
-        pass
-
-    # TODO: This should be removed
-    @staticmethod
-    def replicate_with(old: Assertion, new: Assertion) -> StateAssertion:
-        for ia in new:
-            if ia in old:
-                raise ValueError('New assertion already exists in old assertion')
-
-        return StateAssertion(asserts=(*old, *new))
-
-
-class ItemAssertion(Assertion):
-
-    def __init__(self, item: Item, negated: bool = False, **kwargs) -> None:
-        super().__init__(negated, **kwargs)
-
-        self._item = item
-
-    def __iter__(self) -> Iterator[Assertion]:
-        yield from [self]
-
-    # TODO: This is ugly. Need a better way of handling CompositeItems.
-    def __len__(self) -> int:
-        return len(self._item.source) if isinstance(self._item, CompositeItem) else 1
-
-    def __contains__(self, assertion: Assertion) -> bool:
-        return self == assertion
-
-    def __eq__(self, other: Any) -> bool:
-        if isinstance(other, ItemAssertion):
-            return self._item == other._item and self.is_negated == other.is_negated
-        elif isinstance(other, Item):
-            return self._item == other
-
-        return False if other is None else NotImplemented
-
-    def __hash__(self) -> int:
-        """ Returns a hash of this object.
-
-        :return: an integer hash of this object
-        """
-        return hash((self._item, self.is_negated))
-
-    def __str__(self) -> str:
-        return f'{"~" if self.is_negated else ""}{self._item}'
-
-    def __repr__(self) -> str:
-        return repr_str(self, {'item': self._item, 'negated': self.is_negated})
-
-    @property
-    def item(self) -> Item:
-        """ Returns the Item on which this ItemAssertion is based.
-
-        This method is unique to ItemAssertions (i.e., it does not appear in parent class).
-        :return: an Item
-        """
-        return self._item
-
-    # TODO: This should be removed
-    @property
-    def items(self) -> frozenset[Item]:
-        return frozenset([self._item])
-
-    def is_satisfied(self, state: State, **kwargs) -> bool:
-        if self.is_negated:
-            return self._item.is_off(state, **kwargs)
-        else:
-            return self._item.is_on(state, **kwargs)
-
-
-class StateAssertion(Assertion):
-
-    def __init__(self,
-                 asserts: Optional[Collection[ItemAssertion, ...]] = None,
-                 negated: bool = False,
-                 **kwargs):
-        super().__init__(negated, **kwargs)
-
-        # item assertions must be expanded to flatten composite item assertions
-        _asserts = set()
-        if asserts:
-            for ia in asserts:
-                if isinstance(ia.item, CompositeItem):
-                    _asserts.update(*ia.item.source)
-                else:
-                    _asserts.update(ia)
-
-        self._asserts = frozenset(filter(lambda a: not a.is_negated, _asserts)) if _asserts else frozenset()
-        self._neg_asserts = frozenset(filter(lambda a: a.is_negated, _asserts)) if _asserts else frozenset()
-
-        self._items = frozenset(itertools.chain.from_iterable(a.items for a in asserts)) if asserts else frozenset()
-
-    def __iter__(self) -> Iterator[ItemAssertion]:
-        yield from self._asserts
-        yield from self._neg_asserts
-
-    def __len__(self) -> int:
-        return sum(len(ia) for ia in self._asserts) + sum(len(ia) for ia in self._neg_asserts)
-
-    def __contains__(self, item_assert: ItemAssertion) -> bool:
-        if isinstance(item_assert.item, CompositeItem):
-            return all({ia in self._neg_asserts if ia.is_negated else ia in self._asserts
-                        for ia in item_assert.item.source})
-
-        return (item_assert in self._neg_asserts if item_assert.is_negated
-                else item_assert in self._asserts)
+    def __contains__(self, element: StateElement) -> bool:
+        if isinstance(element, StateElement):
+            return element in self.source
+        return False
 
     def __eq__(self, other) -> bool:
-        if isinstance(other, StateAssertion):
-            return (self._asserts == other._asserts
-                    and self._neg_asserts == other._neg_asserts)
-
+        if isinstance(other, CompositeItem):
+            return self.source == other.source
         return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
-        return hash((self._asserts, self._neg_asserts))
+        return hash(self.source)
+
+
+class StateAssertion:
+
+    def __init__(self, items: Optional[Collection[Item, ...]] = None, **kwargs):
+        self._items = frozenset(items) if items else frozenset()
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __iter__(self) -> Iterator[Item]:
+        yield from self._items
+
+    def __contains__(self, item: Item) -> bool:
+        return item in self._items
 
     def __str__(self) -> str:
-        return ','.join(sorted(map(str, self)))
+        return ','.join(sorted(map(str, self._items)))
 
     def __repr__(self) -> str:
-        return repr_str(self, {'asserts': str(self)})
+        return repr_str(self, {'items': str(self)})
 
-    # TODO: This should be removed
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, StateAssertion):
+            return self._items == other._items
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self._items)
+
+    # TODO: can this be replace by making this class an iterable?
     @property
     def items(self) -> frozenset[Item]:
         return self._items
 
-    @property
-    def asserts(self) -> frozenset[ItemAssertion]:
-        return self._asserts
+    def union(self, items: Collection[Item, ...]) -> StateAssertion:
+        return StateAssertion(items=[*self._items, *items])
 
-    @property
-    def negated_asserts(self) -> frozenset[ItemAssertion]:
-        return self._neg_asserts
+    def issubset(self, other: StateAssertion) -> bool:
+        return self._items.issubset(other._items)
 
     def is_satisfied(self, state: State, **kwargs) -> bool:
         """ Satisfied when all non-negated items are On, and all negated items are Off.
@@ -1085,79 +978,31 @@ class StateAssertion(Assertion):
         :param kwargs: optional keyword arguments
         :return: True if this state assertion is satisfied given the current state; False otherwise.
         """
-        return all({ia.is_satisfied(state, **kwargs) for ia in self})
+        return all((item.is_on(state, **kwargs) for item in self._items))
 
     def as_state(self) -> State:
         """ Returns a State consistent with this StateAssertion.
 
         :return: a State
         """
-        return frozenset(itertools.chain.from_iterable([ia.item.state_elements for ia in self.asserts]))
+        return frozenset(itertools.chain.from_iterable([item.state_elements for item in self._items]))
 
     @staticmethod
     def from_state(state: State) -> StateAssertion:
         """ Factory method for creating state assertions that would be satisfied by the given State.
 
         :param state: a State
+
         :return: a StateAssertion
         """
-        return StateAssertion(asserts=[ItemAssertion(ReadOnlyItemPool().get(se)) for se in state])
+        return StateAssertion([ReadOnlyItemPool().get(se) for se in state])
+
+    def flatten(self) -> StateAssertion:
+        """ Returns a version of this StateAssertion that is composed of non-composite items. """
+        return StateAssertion.from_state(self.as_state())
 
 
 NULL_STATE_ASSERT = StateAssertion()
-
-
-# TODO: There may be a subtle bug here when the StateAssertion is negated and a CompositeItem containing
-# TODO: that negated assertion is included in a negated ItemAssertion or StateAssertion.
-class CompositeItem(StateAssertion, Item):
-    """ A StateAssertion wrapper that functions like an Item.
-
-    This class is primarily used to support ExtendedResult statistics when the ER_INCREMENTAL_RESULTS is disabled.
-    """
-
-    def __init__(self, source: StateAssertion, primitive_value: float = None, **kwargs) -> None:
-        if len(source) < 2:
-            raise ValueError('Source assertion must have at least two elements')
-
-        super().__init__(source=source,
-                         primitive_value=primitive_value,
-                         asserts=[*source.asserts, *source.negated_asserts])
-
-    @property
-    def source(self) -> StateAssertion:
-        return super().source
-
-    @property
-    def state_elements(self) -> set[StateElement]:
-        return set(itertools.chain.from_iterable([ia.item.state_elements for ia in self.source.asserts]))
-
-    @property
-    def primitive_value(self) -> float:
-        return self._primitive_value if self._primitive_value else calc_primitive_value(self.source)
-
-    @primitive_value.setter
-    def primitive_value(self, value: float) -> None:
-        self._primitive_value = value
-
-    def is_on(self, state: State, **kwargs) -> bool:
-        return self.source.is_satisfied(state)
-
-    def __contains__(self, assertion: Assertion) -> bool:
-        if isinstance(assertion, ItemAssertion):
-            return assertion in self.source
-        return False
-
-    def __eq__(self, other) -> bool:
-        return super().__eq__(other)
-
-    def __hash__(self) -> int:
-        return hash(self.source)
-
-    def __str__(self) -> str:
-        return Item.__str__(self)
-
-    def __repr__(self) -> str:
-        return Item.__repr__(self)
 
 
 class ExtendedItemCollection(Observable):
@@ -1168,9 +1013,8 @@ class ExtendedItemCollection(Observable):
 
         self._suppressed_items: frozenset[Item] = frozenset(suppressed_items) or frozenset()
 
-        # FIXME: these names are confusing... they are not items! They are item assertions.
-        self._relevant_items: set[ItemAssertion] = set()
-        self._new_relevant_items: set[ItemAssertion] = set()
+        self._relevant_items: set[Item] = set()
+        self._new_relevant_items: set[Item] = set()
 
         self._stats: dict[Any, ItemStats] = defaultdict(self._get_null_stats)
 
@@ -1196,7 +1040,6 @@ class ExtendedItemCollection(Observable):
     def __eq__(self, other: Any):
         if isinstance(other, ExtendedItemCollection):
             return all({
-                # self._null_member == other._null_member,
                 self._suppressed_items == other._suppressed_items,
                 self._relevant_items == other._relevant_items,
                 self._new_relevant_items == other._new_relevant_items,
@@ -1212,20 +1055,19 @@ class ExtendedItemCollection(Observable):
     def suppressed_items(self) -> frozenset[Item]:
         return self._suppressed_items
 
-    # TODO: "relevant items" is confusing. these are item assertion. this terminology is a carry-over from Drescher.
     @property
-    def relevant_items(self) -> frozenset[Assertion]:
+    def relevant_items(self) -> frozenset[Item]:
         return frozenset(self._relevant_items)
 
-    def update_relevant_items(self, assertion: ItemAssertion, suppressed: bool = False):
-        if assertion not in self._relevant_items:
-            self._relevant_items.add(assertion)
+    def update_relevant_items(self, item: Item, suppressed: bool = False):
+        if item not in self._relevant_items:
+            self._relevant_items.add(item)
 
             # if suppressed then no spin-offs will be created for this item
             if suppressed:
-                debug(f'suppressing spin-off for item assertion {assertion}')
+                debug(f'suppressing spin-off for item {item}')
             else:
-                self._new_relevant_items.add(assertion)
+                self._new_relevant_items.add(item)
 
     def notify_all(self, **kwargs) -> None:
         if 'source' not in kwargs:
@@ -1236,13 +1078,12 @@ class ExtendedItemCollection(Observable):
         # clears the set
         self._new_relevant_items = set()
 
-    # TODO: this is an ugly design! there must be a better way....
     @property
-    def new_relevant_items(self) -> frozenset[Assertion]:
+    def new_relevant_items(self) -> frozenset[Item]:
         return frozenset(self._new_relevant_items)
 
     @new_relevant_items.setter
-    def new_relevant_items(self, value: Collection[Assertion]) -> None:
+    def new_relevant_items(self, value: Collection[Item]) -> None:
         self._new_relevant_items = frozenset(value)
 
     def _get_null_stats(self) -> ItemStats:
@@ -1275,8 +1116,8 @@ class ExtendedResult(ExtendedItemCollection):
             chains of schemas
     """
 
-    def __init__(self, result: StateAssertion) -> None:
-        super().__init__(suppressed_items=result.items, null_member=NULL_ER_ITEM_STATS)
+    def __init__(self, suppressed_items: Collection[Item]) -> None:
+        super().__init__(suppressed_items=suppressed_items, null_member=NULL_ER_ITEM_STATS)
 
     @property
     def stats(self) -> dict[Item, ERItemStats]:
@@ -1310,16 +1151,12 @@ class ExtendedResult(ExtendedItemCollection):
 
     def _check_for_relevance(self, item: Item, item_stats: ERItemStats) -> None:
         if item_stats.positive_correlation:
-            item_assert = ItemAssertion(item)
-            if item_assert not in self.relevant_items:
-                self.update_relevant_items(item_assert)
+            if item not in self.relevant_items:
+                self.update_relevant_items(item)
 
+        # TODO: freeze updates?
         elif item_stats.negative_correlation:
-            item_assert = ItemAssertion(item, negated=True)
-            if item_assert not in self.relevant_items:
-                self.update_relevant_items(
-                    item_assert,
-                    suppressed=is_feature_enabled(SupportedFeature.ER_POSITIVE_ASSERTIONS_ONLY))
+            pass
 
 
 class ExtendedContext(ExtendedItemCollection):
@@ -1338,8 +1175,8 @@ class ExtendedContext(ExtendedItemCollection):
             conditions for turning Off a synthetic item (see Drescher, 1991, Section 4.2.2)
     """
 
-    def __init__(self, context: StateAssertion) -> None:
-        super().__init__(suppressed_items=context.items, null_member=NULL_EC_ITEM_STATS)
+    def __init__(self, suppressed_items: Collection[Item]) -> None:
+        super().__init__(suppressed_items=suppressed_items, null_member=NULL_EC_ITEM_STATS)
 
         self._pending_relevant_items = set()
         self._pending_max_specificity = -np.inf
@@ -1378,27 +1215,20 @@ class ExtendedContext(ExtendedItemCollection):
                 self.stats.clear()
 
     def defer_update_to_spin_offs(self, state: State) -> bool:
-        """ Checks if this state activates previously recognized non-negated relevant items. If so, defer to spin-offs.
+        """ Checks if this state activates previously recognized relevant items. If so, defer to spin-offs.
 
         Note: This method supports the optional enhancement SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA
 
         :param state: a State
+
         :return: True if should defer stats updates for this state to this schema's spin-offs.
         """
-        for ia in self.relevant_items:
-            deferring = (
-                not ia.is_negated and ia.is_satisfied(state)
-                if is_feature_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY) else
-                ia.is_satisfied(state)
-            )
-
-            if deferring:
-                trace(f'deferring update to spin_off for state {state} due to relevant assertion {ia}')
-                return True
-        return False
+        if not is_feature_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY):
+            return False
+        return any((item.is_on(state) for item in self.relevant_items))
 
     @property
-    def pending_relevant_items(self) -> frozenset[ItemAssertion]:
+    def pending_relevant_items(self) -> frozenset[Item]:
         return frozenset(self._pending_relevant_items)
 
     @property
@@ -1407,10 +1237,8 @@ class ExtendedContext(ExtendedItemCollection):
 
     # TODO: Rename this method. It is not a check, but more of a flush of the pending items to the super class.
     def check_pending_relevant_items(self) -> None:
-        for ia in self._pending_relevant_items:
-            self.update_relevant_items(
-                assertion=ia,
-                suppressed=is_feature_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY) and ia.is_negated)
+        for item in self._pending_relevant_items:
+            self.update_relevant_items(item=item)
 
         self.clear_pending_relevant_items()
 
@@ -1419,34 +1247,26 @@ class ExtendedContext(ExtendedItemCollection):
         self._pending_max_specificity = -np.inf
 
     def _check_for_relevance(self, item: Item, item_stats: ECItemStats) -> None:
+        if not item_stats.positive_correlation or item in self.relevant_items:
+            return
 
-        # if item is relevant, a new item assertion is created
-        item_assert = (
-            ItemAssertion(item) if item_stats.positive_correlation else
-            ItemAssertion(item, negated=True) if item_stats.negative_correlation else
-            None
-        )
+        # if enabled, this enhancement allows only a single relevant item per update (the most "specific").
+        if is_feature_enabled(SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE):
+            # item is less specific than earlier item; suppress it on this update.
+            if item_stats.specificity < self._pending_max_specificity:
+                return
 
-        if item_assert and item_assert not in self.relevant_items:
-            specificity = self.stats[item].specificity
+            # item is the most specific so far; replace previous pending item assertion.
+            else:
+                self._pending_relevant_items.clear()
+                self._pending_max_specificity = max(self._pending_max_specificity, item_stats.specificity)
 
-            # if enabled, this enhancement allows only a single relevant item per update (the most "specific").
-            if is_feature_enabled(SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE):
-                # item is less specific than earlier item; suppress it on this update.
-                if specificity < self._pending_max_specificity:
-                    return
-
-                # item is the most specific so far; replace previous pending item assertion.
-                else:
-                    self._pending_relevant_items.clear()
-                    self._pending_max_specificity = max(self._pending_max_specificity, specificity)
-
-            self._pending_relevant_items.add(item_assert)
+        self._pending_relevant_items.add(item)
 
 
 class Controller:
     def __init__(self, goal_state: StateAssertion):
-        self._goal_state = goal_state
+        self._goal_state: StateAssertion = goal_state
         self._proximity: dict[Schema, float] = defaultdict(float)
         self._total_cost: dict[Schema, float] = defaultdict(float)
         self._components: set[Schema] = set()
@@ -1775,11 +1595,11 @@ class Schema(Observer, Observable, UniqueIdMixin):
         self._extended_context: ExtendedContext = (
             None
             if self._is_bare else
-            ExtendedContext(self._context)
+            ExtendedContext(suppressed_items=self._context.items)
         )
 
         self._extended_result: ExtendedResult = (
-            ExtendedResult(self._result)
+            ExtendedResult(suppressed_items=self._result.items)
             if self._is_bare or is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) else
             None
         )
@@ -1993,23 +1813,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         if not self.result:
             return False
 
-        # all (negated and non-negated) assertions in schema's result must be satisfied
-        is_satisfied = self.result.is_satisfied(state)
-
-        # all state elements must be accounted for by POSITIVE assertions
-        state_items = set(ItemPool().get(se) for se in state)
-
-        # only include non-negated assertions
-        result_items = set()
-        for ia in self.result.asserts:
-            item = ia.item
-            if isinstance(item, CompositeItem):
-                for nested_ia in item.source.asserts:
-                    result_items.add(nested_ia.item)
-            else:
-                result_items.add(item)
-
-        return is_satisfied and state_items == result_items
+        return StateAssertion.from_state(state) == self.result.flatten()
 
     def update(self,
                activated: bool,
@@ -2062,7 +1866,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         # ext_source should be an ExtendedContext, ExtendedResult, or one of their subclasses
         ext_source: ExtendedItemCollection = kwargs['source']
-        relevant_items: Collection[Assertion] = ext_source.new_relevant_items
+        relevant_items: Collection[Item] = ext_source.new_relevant_items
 
         spin_off_type = (
             Schema.SpinOffType.CONTEXT if isinstance(ext_source, ExtendedContext) else
@@ -2196,10 +2000,9 @@ class SchemaTree:
     """ A search tree of SchemaTreeNodes with the following special properties:
 
     1. Each tree node contains a set of schemas with identical contexts and actions.
-    2. Each tree node (except the root) has the same action as their descendants.
-    3. Each tree node's depth equals the number of item assertion in its context plus one; for example, the
+    2. Each tree node's depth equals the number of item assertion in its context plus one; for example, the
     tree nodes corresponding to primitive (action only) schemas would have a tree height of one.
-    4. Each tree node's context contains all of the item assertion in their ancestors plus one new item assertion
+    3. Each tree node's context contains all of the item assertion in their ancestors plus one new item assertion
     not found in ANY ancestor. For example, if a node's parent's context contains item assertion 1,2,3, then it
     will contain 1,2,and 3 plus a new item assertion (say 4).
 
@@ -2216,7 +2019,7 @@ class SchemaTree:
         self._root = SchemaTreeNode(label='root')
 
         self._nodes: dict[StateAssertion, SchemaTreeNode] = dict()
-        self._nodes[self._root.context] = self._root
+        self._nodes[self._root.context.flatten()] = self._root
 
         self._n_schemas: int = 0
 
@@ -2234,9 +2037,9 @@ class SchemaTree:
 
     def __contains__(self, s: Union[SchemaTreeNode, Schema]) -> bool:
         if isinstance(s, SchemaTreeNode):
-            return s.context in self._nodes
+            return s.context.flatten() in self._nodes
         elif isinstance(s, Schema):
-            node = self._nodes.get(s.context)
+            node = self._nodes.get(s.context.flatten())
             return s in node.schemas_satisfied_by if node else False
 
         return False
@@ -2266,9 +2069,9 @@ class SchemaTree:
         return self.root.height
 
     def get(self, assertion: StateAssertion) -> SchemaTreeNode:
-        """ Retrieves the SchemaTreeNode matching this schema's context and action (if it exists).
+        """ Retrieves a SchemaTreeNode matching this given state assertion (if it exists).
 
-        :param assertion: the assertion on which this retrieval is based
+        :param assertion: the state assertion on which this retrieval is based
         :return: a SchemaTreeNode (if found) or raises a KeyError
         """
         return self._nodes[assertion]
@@ -2344,7 +2147,7 @@ class SchemaTree:
             return False
 
         # 2. node has proper depth for context
-        if len(node.context) != node.depth:
+        if len(node.context.flatten()) != node.depth:
             if raise_on_invalid:
                 raise ValueError('invalid node: depth must equal the number of item assertion in context minus 1')
             return False
@@ -2352,13 +2155,16 @@ class SchemaTree:
         if node is not self.root:
 
             # 3. node's context contains all of parents
-            if not all({ia in node.context for ia in node.parent.context}):
+            node_context_asserts = node.context.flatten()
+            parent_asserts = node.parent.context.flatten()
+
+            if not parent_asserts.issubset(node_context_asserts):
                 if raise_on_invalid:
                     raise ValueError('invalid node: context should contain all of parent\'s item assertion')
                 return False
 
             # 4. node's context contains exactly one item assertion not in parent's context
-            if len(node.parent.context) + 1 != len(node.context):
+            if len(parent_asserts) + 1 != len(node_context_asserts):
                 if raise_on_invalid:
                     raise ValueError('invalid node: context must differ from parent in exactly one assertion.')
                 return False
@@ -2366,22 +2172,30 @@ class SchemaTree:
         # consistency checks between node and its schemas
         for s in node.schemas_satisfied_by:
 
-            # 5. contexts should be identical across all contained schemas, and equal to node's context
-            if node.context != s.context:
+            node_context_asserts = node.context.flatten()
+
+            schema_context_asserts = s.context.flatten()
+            schema_result_asserts = s.result.flatten()
+
+            # 5. item assertions should be identical across all contained schemas, and equal to node's assertions
+            if node_context_asserts != schema_context_asserts:
                 if raise_on_invalid:
-                    raise ValueError('invalid node: schemas in schemas_satisfied_by must have same context as node')
+                    raise ValueError('invalid node: schemas in schemas_satisfied_by must have same assertions as node')
                 return False
 
             # 6. composite results should exist as contexts in the tree
-            if len(s.result) > 1 and SchemaTreeNode(context=s.result) not in self:
+            if len(schema_result_asserts) > 1 and SchemaTreeNode(context=s.result) not in self:
                 if raise_on_invalid:
                     raise ValueError('invalid node: composite results must exist as a context in tree')
                 return False
 
         for s in node.schemas_would_satisfy:
 
+            node_context_asserts = node.context.flatten()
+            schema_result_asserts = s.result.flatten()
+
             # 7. results should be identical across all contained schemas, and equal to node's context
-            if node.context != s.result:
+            if not node_context_asserts.issubset(schema_result_asserts):
                 if raise_on_invalid:
                     raise ValueError('invalid node: schemas in schemas_would_satisfy must have result = node context')
                 return False
@@ -2417,7 +2231,7 @@ class SchemaTree:
             raise ValueError('Spin-off schemas must have the same action as their source.')
 
         try:
-            node = source if isinstance(source, SchemaTreeNode) else self.get(source.context)
+            node = source if isinstance(source, SchemaTreeNode) else self.get(source.context.flatten())
 
             if Schema.SpinOffType.RESULT is spin_off_type:
                 # needed because schemas to add may already exist in set reducing total new count
@@ -2428,7 +2242,9 @@ class SchemaTree:
             # for context spin-offs
             else:
                 for s in spin_offs:
-                    match = self._nodes.get(s.context)
+                    schema_context_assertions = s.context.flatten()
+
+                    match = self._nodes.get(schema_context_assertions)
 
                     # node already exists in tree (generated from different source)
                     if match:
@@ -2442,21 +2258,24 @@ class SchemaTree:
 
                         node.children += (new_node,)
 
-                        self._nodes[s.context] = new_node
+                        self._nodes[schema_context_assertions] = new_node
 
                         self._n_schemas += len(new_node.schemas_satisfied_by)
 
             # updates schemas_would_satisfy, creating a new tree node if necessary
             for s in spin_offs:
-                match = self._nodes.get(s.result)
+                schema_result_assertions = s.result.flatten()
+
+                match = self._nodes.get(schema_result_assertions)
 
                 # node already exists in tree (should always be the case for composite results)
                 if match:
                     if s not in match.schemas_would_satisfy:
                         match.schemas_would_satisfy.add(s)
                 else:
-                    if len(s.result) != 1:
-                        raise ValueError(f'Encountered an illegal composite result spin-off: {s.result}')
+                    # TODO: WHY DID I ADD THIS CHECK????
+                    # if len(s.result) != 1:
+                    #     raise ValueError(f'Encountered an illegal composite result spin-off: {s.result}')
 
                     new_node = SchemaTreeNode(s.result)
                     new_node.schemas_would_satisfy.add(s)
@@ -2464,7 +2283,7 @@ class SchemaTree:
                     # must be a primitive schema's result spin-off - add new node as child of root
                     self.root.children += (new_node,)
 
-                    self._nodes[s.result] = new_node
+                    self._nodes[schema_result_assertions] = new_node
 
             return node
         except KeyError:
@@ -2476,7 +2295,7 @@ class ItemPool(metaclass=Singleton):
     Implements a flyweight design pattern for Item types.
     """
     _items: dict[StateElement, Item] = dict()
-    _composite_items: dict[StateAssertion, CompositeItem] = dict()
+    _composite_items: dict[frozenset[StateElement], CompositeItem] = dict()
 
     def __contains__(self, source: Any) -> bool:
         return source in ItemPool._items or source in ItemPool._composite_items
@@ -2519,17 +2338,18 @@ class ItemPool(metaclass=Singleton):
 
     @get.register
     def _(self,
-          source: StateAssertion, /, *,
+          source: frozenset, /, *,
           item_type: Optional[Type[CompositeItem]] = None,
           **kwargs) -> Optional[CompositeItem]:
         read_only = kwargs.get('read_only', False)
         item_type = item_type or CompositeItem
 
-        obj = ItemPool._composite_items.get(source)
+        key = frozenset(source)
+        obj = ItemPool._composite_items.get(key)
 
         # create new item and add to pool if not found and not read_only
         if not obj and not read_only:
-            obj = ItemPool._composite_items[source] = item_type(source, **kwargs)
+            obj = ItemPool._composite_items[key] = item_type(key, **kwargs)
 
         return obj
 
@@ -2595,16 +2415,8 @@ def _(state: State) -> float:
 
 
 @calc_primitive_value.register
-def _(assertion: ItemAssertion) -> float:
-    return 0.0 if assertion.is_negated else calc_primitive_value(assertion.item)
-
-
-@calc_primitive_value.register
 def _(assertion: StateAssertion) -> float:
-    if assertion.is_negated:
-        return 0.0
-    items = [ia.item for ia in assertion.asserts]
-    return sum(i.primitive_value for i in items)
+    return sum(item.primitive_value for item in assertion)
 
 
 @calc_primitive_value.register
@@ -2632,16 +2444,8 @@ def _(state: State) -> float:
 
 
 @calc_delegated_value.register
-def _(assertion: ItemAssertion) -> float:
-    return 0.0 if assertion.is_negated else calc_delegated_value(assertion.item)
-
-
-@calc_delegated_value.register
 def _(assertion: StateAssertion) -> float:
-    if assertion.is_negated:
-        return 0.0
-    items = [ia.item for ia in assertion.asserts if ia.item]
-    return sum(i.delegated_value for i in items) if items else 0.0
+    return sum(item.delegated_value for item in assertion)
 
 
 @calc_delegated_value.register

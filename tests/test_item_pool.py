@@ -1,14 +1,11 @@
 from collections import defaultdict
-from random import sample
-from time import time
 from unittest import TestCase
 
-import test_share
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import ReadOnlyItemPool
 from schema_mechanism.core import SymbolicItem
-from schema_mechanism.func_api import sym_state_assert
+from schema_mechanism.func_api import sym_state
 from test_share.test_func import common_test_setup
 
 
@@ -80,62 +77,20 @@ class TestItemPool(TestCase):
             _ = pool.get(se, item_type=SymbolicItem)
 
         # populate CompositeItems
-        state_assertions = frozenset((
-            sym_state_assert('1,2'),
-            sym_state_assert('1,3'),
-            sym_state_assert('~2,4'),
+        states = frozenset((
+            sym_state('1,2'),
+            sym_state('3,4,5')
         ))
-        for sa in state_assertions:
-            _ = pool.get(sa, item_type=CompositeItem)
+
+        for source in states:
+            _ = pool.get(source, item_type=CompositeItem)
 
         encountered = defaultdict(lambda: 0)
         for item in pool:
             encountered[item] += 1
 
-        self.assertEqual(sum(encountered[k] for k in encountered.keys()), len(state_elements) + len(state_assertions))
+        self.assertEqual(sum(encountered[k] for k in encountered.keys()), len(states) + len(state_elements))
         self.assertTrue(all({encountered[k] == 1 for k in encountered.keys()}))
-
-    @test_share.performance_test
-    def test_performance(self):
-        n_items = 100_000
-
-        pool = ItemPool()
-
-        elapsed_time = 0
-
-        for element in range(n_items):
-            start = time()
-            pool.get(str(element))
-            end = time()
-            elapsed_time += end - start
-
-        self.assertEqual(n_items, len(pool))
-        print(f'Time creating {n_items:,} new items in pool: {elapsed_time}s')
-
-        elapsed_time = 0
-        start = time()
-        for _ in pool:
-            pass
-        end = time()
-        elapsed_time += end - start
-
-        print(f'Time iterating over {n_items:,} items in pool: {elapsed_time}s')
-
-        n_repeats = 10_000
-        n_distinct_states = n_items
-        n_state_elements = 10
-        elapsed_time = 0
-        state = sample(range(n_distinct_states), k=n_state_elements)
-
-        for _ in range(n_repeats):
-            for element in state:
-                start = time()
-                pool.get(str(element))
-                end = time()
-                elapsed_time += end - start
-
-        n_iterations = n_repeats * n_state_elements
-        print(f'Time retrieving {n_iterations:,} items randomly from pool of {n_items:,} items : {elapsed_time}s ')
 
 
 class TestReadOnlyItemPool(TestCase):

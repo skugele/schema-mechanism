@@ -6,10 +6,8 @@ from typing import Optional
 import lark.exceptions
 
 from schema_mechanism.core import Action
-from schema_mechanism.core import Assertion
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import Item
-from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaPool
@@ -24,8 +22,8 @@ from schema_mechanism.func_api.parser import parse
 
 def sym_state(str_repr: str) -> State:
     if not str_repr:
-        return tuple()
-    return tuple(se for se in str_repr.split(','))
+        return frozenset()
+    return frozenset(se for se in str_repr.split(','))
 
 
 def sym_item(str_repr: str, **kwargs) -> Item:
@@ -52,25 +50,13 @@ def sym_items(str_repr: str, primitive_values: Collection[float] = None, **kwarg
     return [sym_item(source, **kwargs) for source in sources]
 
 
-def sym_item_assert(str_repr: str, **kwargs) -> ItemAssertion:
-    obj = sym_assert(str_repr, **kwargs)
-    if not isinstance(obj, ItemAssertion):
-        raise ValueError(f'String representation for item assertion is invalid: {str_repr}')
-    return obj
+# TODO: this can eventually be removed. It is kept as an alias for sym_state_assert while I deal with this massive
+# TODO: redesign.
+def sym_assert(str_repr: str, **kwargs) -> StateAssertion:
+    return sym_state_assert(str_repr, **kwargs)
 
 
 def sym_state_assert(str_repr: str, **kwargs) -> StateAssertion:
-    # parser requires a trailing comma for one element state assertions
-    if str_repr and not str_repr.endswith(','):
-        str_repr += ','
-
-    obj = sym_assert(str_repr, **kwargs)
-    if not isinstance(obj, StateAssertion):
-        raise ValueError(f'String representation for state assertion is invalid: {str_repr}')
-    return obj
-
-
-def sym_assert(str_repr: str, **kwargs) -> Assertion:
     try:
         obj = parse(str_repr, **kwargs)
     except (lark.exceptions.UnexpectedInput, lark.exceptions.UnexpectedCharacters) as e:
@@ -78,13 +64,12 @@ def sym_assert(str_repr: str, **kwargs) -> Assertion:
 
     # workaround to a parsing ambiguity when single character strings are passed (parser currently returns an Item)
     if isinstance(obj, Item):
-        obj = ItemAssertion(item=obj)
+        obj = StateAssertion(items=[obj])
+
+    if not isinstance(obj, StateAssertion):
+        raise ValueError(f'String representation for assertion is invalid')
 
     return obj
-
-
-def sym_asserts(str_repr: str, **kwargs) -> Collection[Assertion]:
-    return [sym_assert(token, **kwargs) for token in str_repr.split(',')]
 
 
 def sym_schema_tree_node(str_repr: str, label: str = None) -> SchemaTreeNode:

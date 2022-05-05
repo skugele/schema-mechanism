@@ -16,8 +16,6 @@ class TestItemContainedIn(TestCase):
             sym_item('A'),
             sym_item('(A,B)'),
             sym_item('(A,B,C)'),
-            sym_item('(~A,~B)'),
-            sym_item('(A,~B,~C)'),
         ]
 
         # test: identical items should return True
@@ -36,23 +34,14 @@ class TestItemContainedIn(TestCase):
         self.assertTrue(item_contained_in(sym_item('A'), sym_item('(A,B)')))
         self.assertTrue(item_contained_in(sym_item('B'), sym_item('(A,B)')))
         self.assertTrue(item_contained_in(sym_item('C'), sym_item('(A,B,C)')))
-        self.assertTrue(item_contained_in(sym_item('A'), sym_item('(A,~B)')))
-        self.assertTrue(item_contained_in(sym_item('B'), sym_item('(~A,B,C)')))
-        self.assertTrue(item_contained_in(sym_item('C'), sym_item('(~A,B,C)')))
 
         # test: should return False if a non-composite element argument is NOT a state element of a composite item
         self.assertFalse(item_contained_in(sym_item('C'), sym_item('(A,B)')))
         self.assertFalse(item_contained_in(sym_item('D'), sym_item('(A,B,C)')))
-        self.assertFalse(item_contained_in(sym_item('B'), sym_item('(A,~B)')))
-        self.assertFalse(item_contained_in(sym_item('C'), sym_item('(A,~B)')))
-        self.assertFalse(item_contained_in(sym_item('A'), sym_item('(~A,B,C)')))
-        self.assertFalse(item_contained_in(sym_item('D'), sym_item('(~A,B,C)')))
 
     def test_composite_first_arg_non_composite_second_arg(self):
         # test: should return False if 1st argument is composite but 2nd is non-composite
         self.assertFalse(item_contained_in(sym_item('(A,B)'), sym_item('A')))
-        self.assertFalse(item_contained_in(sym_item('(A,~B)'), sym_item('A')))
-        self.assertFalse(item_contained_in(sym_item('(~A,~B)'), sym_item('C')))
 
     def test_with_composite_item_arguments(self):
         # test: both positive and negative item assertions in first item should be contained in second
@@ -63,19 +52,6 @@ class TestItemContainedIn(TestCase):
         self.assertFalse(item_contained_in(sym_item('(D,E)'), sym_item('(A,B,C)')))
         self.assertFalse(item_contained_in(sym_item('(C,D)'), sym_item('(A,B,C)')))
         self.assertFalse(item_contained_in(sym_item('(A,B,C,D)'), sym_item('(A,B,C)')))
-
-        # test: negated item assertions of first item should be contained in second
-        self.assertTrue(item_contained_in(sym_item('(A,B)'), sym_item('(A,B,~C)')))
-        self.assertTrue(item_contained_in(sym_item('(~A,~B)'), sym_item('(~A,~B,~C)')))
-        self.assertTrue(item_contained_in(sym_item('(~A,~B)'), sym_item('(~A,~B,C)')))
-        self.assertFalse(item_contained_in(sym_item('(A,~B)'), sym_item('(~A,B)')))
-
-        self.assertFalse(item_contained_in(sym_item('(A,B,~C)'), sym_item('(A,B,C)')))
-        self.assertFalse(item_contained_in(sym_item('(A,B,C)'), sym_item('(A,B,~C)')))
-        self.assertFalse(item_contained_in(sym_item('(~A,~B)'), sym_item('(~A,~C)')))
-
-        self.assertFalse(item_contained_in(sym_item('(~A,~B,~C)'), sym_item('(~A,~B)')))
-        self.assertFalse(item_contained_in(sym_item('(~A,~B,~C)'), sym_item('(~A,~B,~D)')))
 
 
 class TestReduceToMostSpecific(TestCase):
@@ -123,7 +99,7 @@ class TestReduceToMostSpecific(TestCase):
 
     def test_identical_overlapping_items(self):
         # test: identical items should be reduced to a single instance
-        for item in [sym_item('A'), sym_item('(A,B)'), sym_item('(A,B,~C)')]:
+        for item in [sym_item('A'), sym_item('(A,B)')]:
             self.assertListEqual([item], list(reduce_to_most_specific_items([item] * 2)))
             self.assertListEqual([item], list(reduce_to_most_specific_items([item] * 3)))
 
@@ -153,49 +129,6 @@ class TestReduceToMostSpecific(TestCase):
         # test scenario 4: multiple non-composite and multiple composites (some overlapping)
         items = {sym_item('A'), sym_item('B'), sym_item('(A,C)'), sym_item('(B,D)'), sym_item('(B,C,D)')}
         items_to_remove = {sym_item('A'), sym_item('B'), sym_item('(B,D)')}
-        expected_result = items.difference(items_to_remove)
-
-        self.assertSetEqual(expected_result, set(reduce_to_most_specific_items(items)))
-
-    def test_overlapping_items_with_negated_assertions(self):
-        # test scenario 1a: single non-composite and single composite
-        items = {sym_item('A'), sym_item('(A,~B)')}
-        items_to_remove = {sym_item('A')}
-        expected_result = items.difference(items_to_remove)
-
-        self.assertSetEqual(expected_result, set(reduce_to_most_specific_items(items)))
-
-        # test scenario 1b: single non-composite and single composite
-        items = {sym_item('A'), sym_item('(B,~C)')}
-        items_to_remove = {}
-        expected_result = items.difference(items_to_remove)
-
-        self.assertSetEqual(expected_result, set(reduce_to_most_specific_items(items)))
-
-        # test scenario 1c: single non-composite and single composite
-        items = {sym_item('A'), sym_item('(~B,~C)')}
-        items_to_remove = {}
-        expected_result = items.difference(items_to_remove)
-
-        self.assertSetEqual(expected_result, set(reduce_to_most_specific_items(items)))
-
-        # test scenario 2: multiple non-composite and single composite
-        items = {sym_item('A'), sym_item('B'), sym_item('(~A,B)')}
-        items_to_remove = {sym_item('B')}
-        expected_result = items.difference(items_to_remove)
-
-        self.assertSetEqual(expected_result, set(reduce_to_most_specific_items(items)))
-
-        # test scenario 3: multiple non-composite and multiple (non-overlapping) composites
-        items = {sym_item('A'), sym_item('B'), sym_item('(A,~C)'), sym_item('(B,~D)')}
-        items_to_remove = {sym_item('A'), sym_item('B')}
-        expected_result = items.difference(items_to_remove)
-
-        self.assertSetEqual(expected_result, set(reduce_to_most_specific_items(items)))
-
-        # test scenario 4: multiple non-composite and multiple composites (some overlapping)
-        items = {sym_item('A'), sym_item('B'), sym_item('(A,~C)'), sym_item('(B,~D)'), sym_item('(B,~C,~D)')}
-        items_to_remove = {sym_item('A'), sym_item('B'), sym_item('(B,~D)')}
         expected_result = items.difference(items_to_remove)
 
         self.assertSetEqual(expected_result, set(reduce_to_most_specific_items(items)))

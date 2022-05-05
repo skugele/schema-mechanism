@@ -3,17 +3,14 @@ import unittest
 from schema_mechanism.core import Action
 from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import CompositeItem
-from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTreeNode
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.func_api import sym_assert
-from schema_mechanism.func_api import sym_asserts
 from schema_mechanism.func_api import sym_composite_item
 from schema_mechanism.func_api import sym_item
-from schema_mechanism.func_api import sym_item_assert
 from schema_mechanism.func_api import sym_items
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_schema_tree_node
@@ -52,14 +49,14 @@ class TestFunctionalApi(unittest.TestCase):
         item = sym_composite_item('(1,2)')
 
         self.assertIsInstance(item, CompositeItem)
-        self.assertEqual(sym_state_assert('1,2'), item.source)
+        self.assertIn('1', item.source)
         self.assertEqual(0.0, item.primitive_value)
 
         # test: should give composite item with primitive value set if given state elements and a primitive value
         item = sym_composite_item('(1,3)', primitive_value=1.0)
 
         self.assertIsInstance(item, CompositeItem)
-        self.assertEqual(sym_state_assert('1,3'), item.source)
+        self.assertEqual(frozenset(['1', '3']), item.source)
         self.assertEqual(1.0, item.primitive_value)
 
         # test: multiple calls with same state element should return the same object on each call
@@ -68,7 +65,7 @@ class TestFunctionalApi(unittest.TestCase):
 
         self.assertIsInstance(item1, CompositeItem)
         self.assertIs(item1, item2)
-        self.assertEqual(sym_state_assert('1,4'), item2.source)
+        self.assertEqual(frozenset(['1', '4']), item2.source)
         self.assertEqual(-1.5, item2.primitive_value)
 
         # test: invalid string representations should return a ValueError
@@ -85,33 +82,34 @@ class TestFunctionalApi(unittest.TestCase):
             ['1', '2', '3'],
 
             # composite item sources
-            [sym_state_assert('(1,2)')],
-            [sym_state_assert('(1,2)'), sym_state_assert('(2,3)')],
-            [sym_state_assert('(1,2)'), sym_state_assert('(2,3)'), sym_state_assert('(3,4)')],
+            ['(1,2)'],
+            ['(1,~3)'],
+            ['(1,2)', '(1,~3)'],
+            ['(1,2)', '(1,~3)', '(3,4)'],
 
             # mixed non-composite & composite sources
-            ['1', sym_state_assert('(1,2)')],
-            [sym_state_assert('(2,3)'), '4'],
-            ['3', sym_state_assert('(4,5)'), '6', '7'],
+            ['1', '(1,2)'],
+            ['(2,3)', '4'],
+            ['3', '(4,5)', '6'],
         ]
 
         for sources in sources_lists:
 
             # multiple sources should be delimited by semi-colons
-            str_repr = ';'.join([f'({s})' if isinstance(s, StateAssertion) else str(s) for s in sources])
+            str_repr = ';'.join([s for s in sources])
             items = sym_items(str_repr)
 
             # test: the number of items returned should equal the number of sources
             self.assertEqual(len(sources), len(items))
 
             for item, source in zip(items, sources):
-                expected_item_type = CompositeItem if isinstance(source, StateAssertion) else SymbolicItem
+                expected_item_type = CompositeItem if ',' in source else SymbolicItem
 
                 # test: the item type should match the expected item type for source string
                 self.assertIsInstance(item, expected_item_type)
 
                 # test: the returned item's source should match the expected source for the corresponding string element
-                self.assertEqual(source, item.source)
+                self.assertEqual(sym_item(source), item)
 
                 # test: primitive value should be the default
                 self.assertEqual(0.0, item.primitive_value)
@@ -143,89 +141,34 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertEqual(5, len(state))
         self.assertTrue(all({str(se) in state for se in range(1, 6)}))
 
-    def test_sym_assert(self):
-        # test: non-negated item assertion
-        ia = sym_assert('1')
-        self.assertIsInstance(ia, ItemAssertion)
-        self.assertEqual(sym_item('1'), ia.item)
-        self.assertEqual(False, ia.is_negated)
-
-        # test: negated item assertion
-        ia = sym_assert('~1')
-        self.assertIsInstance(ia, ItemAssertion)
-        self.assertEqual(sym_item('1'), ia.item)
-        self.assertEqual(True, ia.is_negated)
-
-        # test: non-negated state assertion
-        sa = sym_assert('1,2')
-        self.assertIsInstance(sa, StateAssertion)
-        self.assertSetEqual({sym_item_assert('1'), sym_item_assert('2')}, sa.asserts)
-        self.assertSetEqual(set(), sa.negated_asserts)
-        self.assertEqual(False, sa.is_negated)
-
-        # test: negated state assertion
-        sa = sym_assert('1,~2')
-        self.assertIsInstance(sa, StateAssertion)
-        self.assertSetEqual({sym_item_assert('1')}, sa.asserts)
-        self.assertSetEqual({sym_item_assert('~2')}, sa.negated_asserts)
-        self.assertEqual(False, sa.is_negated)
-
-        # test: ValueError should be raised for invalid string representations
-        self.assertRaises(ValueError, lambda: sym_assert(','))
-        self.assertRaises(ValueError, lambda: sym_assert('X/A/Z'))
-        self.assertRaises(ValueError, lambda: sym_assert('X,,'))
-        self.assertRaises(ValueError, lambda: sym_assert('((X,Y,Z))'))
-
-    def test_sym_asserts(self):
-        # single item assertion
-        ias = sym_asserts('1')
-        self.assertEqual(1, len(ias))
-        self.assertIn(sym_assert('1'), ias)
-
-        # multiple, mixed item assertion
-        ias = sym_asserts('~1,2,7')
-        self.assertEqual(3, len(ias))
-        self.assertIn(sym_assert('~1'), ias)
-        self.assertIn(sym_assert('2'), ias)
-        self.assertIn(sym_assert('7'), ias)
-
     def test_sym_state_assert(self):
-        # test: single non-negated element state assertion
+        # test: single element state assertion
         sa = sym_state_assert('1,')
         self.assertIsInstance(sa, StateAssertion)
         self.assertEqual(1, len(sa))
-        self.assertIn(sym_item_assert('1'), sa)
+        self.assertIn(sym_item('1'), sa)
 
-        # test: single negated element state assertion
-        sa = sym_state_assert('~1,')
+        # test: multiple elements
+        sa = sym_state_assert('1,2,3')
         self.assertIsInstance(sa, StateAssertion)
-        self.assertEqual(1, len(sa))
-        self.assertIn(sym_item_assert('~1'), sa)
+        self.assertEqual(3, len(sa))
+        self.assertIn(sym_item('1'), sa)
+        self.assertIn(sym_item('2'), sa)
+        self.assertIn(sym_item('3'), sa)
 
-        # test: multiple elements with mixed negation state assertion
-        sa = sym_state_assert('~1,2,3,~4,5')
-        self.assertIsInstance(sa, StateAssertion)
-        self.assertEqual(5, len(sa))
-        self.assertIn(sym_item_assert('~1'), sa)
-        self.assertIn(sym_item_assert('2'), sa)
-        self.assertIn(sym_item_assert('3'), sa)
-        self.assertIn(sym_item_assert('~4'), sa)
-        self.assertIn(sym_item_assert('5'), sa)
-
-        # test: single composite item (note: composite items function as a state assertion)
+        # test: single composite item
         sa = sym_state_assert('(1,2,3),')
         self.assertIsInstance(sa, StateAssertion)
-        self.assertEqual(3, len(sa))
-
-        # test: single negated composite item
-        sa = sym_state_assert('~(1,2,3),')
-        self.assertIsInstance(sa, StateAssertion)
-        self.assertEqual(3, len(sa))
+        self.assertEqual(1, len(sa))
+        self.assertIn(sym_item('(1,2,3)'), sa)
 
         # test: multiple item state assertion with optional trailing comma
-        sa = sym_state_assert('1,~2,~3,')
+        sa = sym_state_assert('1,2,3,')
         self.assertIsInstance(sa, StateAssertion)
         self.assertEqual(3, len(sa))
+        self.assertIn(sym_item('1'), sa)
+        self.assertIn(sym_item('2'), sa)
+        self.assertIn(sym_item('3'), sa)
 
         # test: ValueError should be raised for invalid string representations
         self.assertRaises(ValueError, lambda: sym_state_assert(','))
@@ -236,22 +179,6 @@ class TestFunctionalApi(unittest.TestCase):
         # test: ValueError should be raise if string representation corresponds to a different object type
         self.assertRaises(ValueError, lambda: sym_state_assert('X,/A1/Z,'))
 
-    def test_sym_item_assert(self):
-        # test: non-negated item assertion
-        ia = sym_item_assert('1')
-        self.assertIsInstance(ia, ItemAssertion)
-        self.assertEqual(sym_item('1'), ia.item)
-        self.assertEqual(False, ia.is_negated)
-
-        # test: negated item assertion
-        ia = sym_item_assert('~1')
-        self.assertIsInstance(ia, ItemAssertion)
-        self.assertEqual(sym_item('1'), ia.item)
-        self.assertEqual(True, ia.is_negated)
-
-        # test: ValueError should be raise if string representation is for a state assertion
-        self.assertRaises(ValueError, lambda: sym_item_assert('X,Y'))
-
     def test_sym_schema_tree_node(self):
         # blank node should be allowed
         stn = sym_schema_tree_node('', label='blank')
@@ -260,14 +187,14 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertEqual('blank', stn.label)
 
         # context and action node
-        stn = sym_schema_tree_node('1,2,~3')
+        stn = sym_schema_tree_node('1,2,3')
         self.assertIsInstance(stn, SchemaTreeNode)
-        self.assertEqual(sym_assert('1,2,~3'), stn.context)
+        self.assertEqual(sym_assert('1,2,3'), stn.context)
 
         # should work even if a result is given
-        stn = sym_schema_tree_node('1,2,~3')
+        stn = sym_schema_tree_node('1,2,3')
         self.assertIsInstance(stn, SchemaTreeNode)
-        self.assertEqual(sym_assert('1,2,~3'), stn.context)
+        self.assertEqual(sym_assert('1,2,3'), stn.context)
 
     def test_sym_schema(self):
         # no action should return error
@@ -281,46 +208,34 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertEqual(Action('A1'), schema.action)
 
         # context only schema
-        schema = sym_schema('1,~2/A1/')
+        schema = sym_schema('1,2/A1/')
         self.assertIsInstance(schema, Schema)
         self.assertIsNot(NULL_STATE_ASSERT, schema.context)
         self.assertIs(NULL_STATE_ASSERT, schema.result)
         self.assertEqual(Action('A1'), schema.action)
-        self.assertIn(sym_assert('1'), schema.context)
-        self.assertIn(sym_assert('~2'), schema.context)
-        self.assertNotIn(sym_assert('3'), schema.context)
+        self.assertEqual(sym_assert('1,2'), schema.context)
+        self.assertIs(NULL_STATE_ASSERT, schema.result)
 
         # result only schema
-        schema = sym_schema('/A1/1,~2')
+        schema = sym_schema('/A1/1,2')
         self.assertIsInstance(schema, Schema)
         self.assertIs(NULL_STATE_ASSERT, schema.context)
-        self.assertIsNot(NULL_STATE_ASSERT, schema.result)
         self.assertEqual(Action('A1'), schema.action)
-        self.assertIn(sym_assert('1'), schema.result)
-        self.assertIn(sym_assert('~2'), schema.result)
-        self.assertNotIn(sym_assert('3'), schema.result)
+        self.assertEqual(sym_assert('1,2'), schema.result)
 
         # full schema
-        schema = sym_schema('1,~2/A1/~3,4')
+        schema = sym_schema('1,2/A1/3,4')
         self.assertIsInstance(schema, Schema)
-        self.assertIsNot(NULL_STATE_ASSERT, schema.context)
-        self.assertIsNot(NULL_STATE_ASSERT, schema.result)
+        self.assertEqual(sym_assert('1,2'), schema.context)
         self.assertEqual(Action('A1'), schema.action)
-        self.assertIn(sym_assert('1'), schema.context)
-        self.assertIn(sym_assert('~2'), schema.context)
-        self.assertNotIn(sym_assert('3'), schema.context)
-        self.assertIn(sym_assert('~3'), schema.result)
-        self.assertIn(sym_assert('4'), schema.result)
-        self.assertNotIn(sym_assert('5'), schema.result)
+        self.assertEqual(sym_assert('3,4'), schema.result)
 
         # schema with composite item in result
-        schema = sym_schema('/A1/(~3,4),5')
+        schema = sym_schema('/A1/(3,4),5')
         self.assertIsInstance(schema, Schema)
         self.assertIs(NULL_STATE_ASSERT, schema.context)
-        self.assertIsNot(NULL_STATE_ASSERT, schema.result)
         self.assertEqual(Action('A1'), schema.action)
-        self.assertIn(sym_assert('(~3,4)'), schema.result)
-        self.assertIn(sym_assert('5'), schema.result)
+        self.assertEqual(sym_assert('(3,4),5'), schema.result)
 
     def test_sym_schema_with_composite_actions(self):
         # primitive schemas with composite actions
@@ -330,53 +245,29 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertIs(NULL_STATE_ASSERT, schema.result)
         self.assertEqual(CompositeAction(sym_state_assert('A,')), schema.action)
 
-        schema = sym_schema('/~A,/')
-        self.assertIsInstance(schema, Schema)
-        self.assertIs(NULL_STATE_ASSERT, schema.context)
-        self.assertIs(NULL_STATE_ASSERT, schema.result)
-        self.assertEqual(CompositeAction(sym_state_assert('~A,')), schema.action)
-
         schema = sym_schema('/(1,2),/')
         self.assertIsInstance(schema, Schema)
         self.assertIs(NULL_STATE_ASSERT, schema.context)
         self.assertIs(NULL_STATE_ASSERT, schema.result)
         self.assertEqual(CompositeAction(sym_state_assert('(1,2),')), schema.action)
 
-        schema = sym_schema('/(~1,2),/')
-        self.assertIsInstance(schema, Schema)
-        self.assertIs(NULL_STATE_ASSERT, schema.context)
-        self.assertIs(NULL_STATE_ASSERT, schema.result)
-        self.assertEqual(CompositeAction(sym_state_assert('(~1,2),')), schema.action)
-
         # context only schema with composite actions
-        schema = sym_schema('1,~2/(~1,2),/')
+        schema = sym_schema('1,2/(1,2),/')
         self.assertIsInstance(schema, Schema)
-        self.assertIsNot(NULL_STATE_ASSERT, schema.context)
+        self.assertEqual(sym_assert('1,2'), schema.context)
+        self.assertEqual(CompositeAction(sym_state_assert('(1,2),')), schema.action)
         self.assertIs(NULL_STATE_ASSERT, schema.result)
-        self.assertEqual(CompositeAction(sym_state_assert('(~1,2),')), schema.action)
-        self.assertIn(sym_assert('1'), schema.context)
-        self.assertIn(sym_assert('~2'), schema.context)
-        self.assertNotIn(sym_assert('3'), schema.context)
 
         # result only schema
-        schema = sym_schema('/(~1,2),/1,~2')
+        schema = sym_schema('/(1,2),/1,2')
         self.assertIsInstance(schema, Schema)
         self.assertIs(NULL_STATE_ASSERT, schema.context)
-        self.assertIsNot(NULL_STATE_ASSERT, schema.result)
-        self.assertEqual(CompositeAction(sym_state_assert('(~1,2),')), schema.action)
-        self.assertIn(sym_assert('1'), schema.result)
-        self.assertIn(sym_assert('~2'), schema.result)
-        self.assertNotIn(sym_assert('3'), schema.result)
+        self.assertEqual(CompositeAction(sym_state_assert('(1,2),')), schema.action)
+        self.assertEqual(sym_assert('1,2'), schema.result)
 
         # full schema
-        schema = sym_schema('1,~2/(~1,2),/~3,4')
+        schema = sym_schema('1,2/(1,2),/3,4')
         self.assertIsInstance(schema, Schema)
-        self.assertIsNot(NULL_STATE_ASSERT, schema.context)
-        self.assertIsNot(NULL_STATE_ASSERT, schema.result)
-        self.assertEqual(CompositeAction(sym_state_assert('(~1,2),')), schema.action)
-        self.assertIn(sym_assert('1'), schema.context)
-        self.assertIn(sym_assert('~2'), schema.context)
-        self.assertNotIn(sym_assert('3'), schema.context)
-        self.assertIn(sym_assert('~3'), schema.result)
-        self.assertIn(sym_assert('4'), schema.result)
-        self.assertNotIn(sym_assert('5'), schema.result)
+        self.assertEqual(sym_assert('1,2'), schema.context)
+        self.assertEqual(CompositeAction(sym_state_assert('(1,2),')), schema.action)
+        self.assertEqual(sym_assert('3,4'), schema.result)

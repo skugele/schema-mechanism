@@ -5,7 +5,6 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from schema_mechanism.core import ExtendedResult
-from schema_mechanism.core import ItemAssertion
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_ER_ITEM_STATS
 from schema_mechanism.func_api import sym_item
@@ -35,18 +34,18 @@ class TestExtendedResult(TestCase):
             _ = self._item_pool.get(str(i))
 
         self.result = sym_state_assert('100,101')
-        self.er = ExtendedResult(result=self.result)
+        self.er = ExtendedResult(suppressed_items=self.result.items)
 
         # for convenience, register a single observer
         self.obs = MockObserver()
         self.er.register(self.obs)
 
     def test_init(self):
-        for i in ItemPool():
-            self.assertIs(NULL_ER_ITEM_STATS, self.er.stats[i])
+        for item in ItemPool():
+            self.assertIs(NULL_ER_ITEM_STATS, self.er.stats[item])
 
-        for ia in self.result:
-            self.assertIn(ia.item, self.er.suppressed_items)
+        for item in self.result:
+            self.assertIn(item, self.er.suppressed_items)
 
     def test_update_1(self):
         # testing updates for Items
@@ -113,7 +112,7 @@ class TestExtendedResult(TestCase):
 
         # verify only one relevant item
         self.assertEqual(1, len(self.er.relevant_items))
-        self.assertIn(ItemAssertion(i1), self.er.relevant_items)
+        self.assertIn(i1, self.er.relevant_items)
 
         # should add a 2nd relevant item
         i2 = items[1]
@@ -122,7 +121,7 @@ class TestExtendedResult(TestCase):
         self.er.update(i2, on=False, activated=False)
 
         self.assertEqual(2, len(self.er.relevant_items))
-        self.assertIn(ItemAssertion(i2), self.er.relevant_items)
+        self.assertIn(i2, self.er.relevant_items)
 
         # number of new relevant items SHOULD be reset to zero after notifying observers
         self.er.notify_all()
@@ -147,7 +146,7 @@ class TestExtendedResult(TestCase):
 
         # verify suppressed item NOT in relevant items list
         self.assertEqual(0, len(self.er.relevant_items))
-        self.assertNotIn(ItemAssertion(i1), self.er.relevant_items)
+        self.assertNotIn(i1, self.er.relevant_items)
 
     def test_serialize(self):
         # update extended result before serialize

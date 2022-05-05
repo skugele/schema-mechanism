@@ -1,9 +1,7 @@
-from time import time
 from unittest import TestCase
 
 import numpy as np
 
-import test_share
 from schema_mechanism.util import AssociativeArrayList
 from test_share.test_func import common_test_setup
 
@@ -362,22 +360,3 @@ class TestAssociativeArrayList(TestCase):
 
         arr_list.add([pre_allocated + 1])
         self.assertTrue(pre_allocated + arr_list.block_size, arr_list.n_allocated)
-
-    @test_share.performance_test
-    def test_performance(self):
-        n = 10_000
-
-        arr_list = AssociativeArrayList(pre_allocated=0, block_size=1_000)
-
-        elapsed_time = 0
-
-        for i in range(n):
-            element = str(i)
-            value = i
-
-            start = time()
-            arr_list[element] = value
-            end = time()
-            elapsed_time += end - start
-
-        print(f'Time adding {n:,} new elements to AssociativeArrayList: {elapsed_time}s')

@@ -1,5 +1,5 @@
+import time
 import unittest
-from time import time
 from typing import Iterable
 
 import test_share
@@ -10,11 +10,11 @@ from schema_mechanism.stats import FisherExactCorrelationTest
 from test_share.test_func import common_test_setup
 
 
-class TestItemCorrTest(unittest.TestCase):
+class TestItemCorrelationTest(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        class TestItemCorr(ItemCorrelationTest):
+        class TestItemCorrelation(ItemCorrelationTest):
             def __init__(self, pcs: float, ncs: float):
                 self._pcs = pcs
                 self._ncs = ncs
@@ -25,7 +25,7 @@ class TestItemCorrTest(unittest.TestCase):
             def negative_corr_statistic(self, table: Iterable) -> float:
                 return self._ncs
 
-        self.TestClass = TestItemCorr
+        self.TestClass = TestItemCorrelation
 
         self.pcs = 0.95
         self.ncs = 0.95
@@ -33,7 +33,7 @@ class TestItemCorrTest(unittest.TestCase):
         self.test_instance = self.TestClass(pcs=self.pcs, ncs=self.ncs)
 
 
-class TestDrescherCorrTest(unittest.TestCase):
+class TestDrescherCorrelationTest(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
@@ -60,9 +60,9 @@ class TestDrescherCorrTest(unittest.TestCase):
         table = (12, 7, 3, 8)
 
         for n in range(n_iter):
-            start = time()
+            start = time.perf_counter()
             self.dct.positive_corr_statistic(table)
-            end = time()
+            end = time.perf_counter()
             elapsed_time += end - start
 
         print(f'Time for {n_iter} Drescher ratio correlation tests: {elapsed_time}s')
@@ -95,9 +95,9 @@ class TestBarnardExactTest(unittest.TestCase):
         table = (12, 7, 3, 8)
 
         for n in range(n_iter):
-            start = time()
+            start = time.perf_counter()
             self.bet.positive_corr_statistic(table)
-            end = time()
+            end = time.perf_counter()
             elapsed_time += end - start
 
         print(f'Time for {n_iter} Barnard exact correlation tests: {elapsed_time}s')
@@ -130,9 +130,9 @@ class TestFisherExactTest(unittest.TestCase):
         table = (12, 7, 3, 8)
 
         for n in range(n_iter):
-            start = time()
+            start = time.perf_counter()
             self.fet.positive_corr_statistic(table)
-            end = time()
+            end = time.perf_counter()
             elapsed_time += end - start
 
         print(f'Time for {n_iter} Fisher exact correlation tests: {elapsed_time}s')
