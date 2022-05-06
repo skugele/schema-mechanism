@@ -26,9 +26,9 @@ from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
-from schema_mechanism.strategies.evaluation import DelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
+from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 
 MAX_EPISODES = 5000
@@ -45,7 +45,7 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
         select_strategy=RandomizeBestSelectionStrategy(),
         evaluation_strategy=CompositeEvaluationStrategy(
             strategies=[
-                DelegatedValueEvaluationStrategy(),
+                TotalDelegatedValueEvaluationStrategy(),
                 # HabituationEvaluationStrategy(
                 #     trace=GlobalStats().action_trace,
                 #     multiplier=1.0),

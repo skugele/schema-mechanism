@@ -320,8 +320,6 @@ class Item(ABC):
         # TODO: let this be set by argument to __init__
         self._delegated_value_helper: DelegatedValueHelper = GlobalStats().delegated_value_helper
 
-    # TODO: Need to be really careful with the default hash implementations which produce different values between
-    # TODO: runs. This will kill and direct serialization/deserialization of data structures that rely on hashes.
     @abstractmethod
     def __hash__(self) -> int:
         pass
@@ -890,9 +888,8 @@ NULL_EC_ITEM_STATS = ReadOnlyECItemStats()
 NULL_ER_ITEM_STATS = ReadOnlyERItemStats()
 
 
-# TODO: This could be collapsed into a single item class that allowed a set of 1 or more state elements as a source!!!
 class CompositeItem(Item):
-    """ An Item whose source is a set containing 2 or more state elements. """
+    """ An Item whose source is a collection of state elements. """
 
     def __init__(self, source: Collection[StateElement], primitive_value: float = None, **kwargs) -> None:
         if len(source) < 2:

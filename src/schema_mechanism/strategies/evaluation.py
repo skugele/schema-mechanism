@@ -78,25 +78,54 @@ class NoOpEvaluationStrategy(EvaluationStrategy):
         return np.zeros_like(schemas)
 
 
-class PrimitiveValueEvaluationStrategy(EvaluationStrategy):
+class TotalPrimitiveValueEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the evaluation strategy protocol based solely on the primitive values of schemas."""
+
+    def __init__(self) -> None:
+        self.calc_schema_values = np.vectorize(self._calc_schema_value, otypes=[float])
+
+    def _calc_schema_value(self, schema: Schema) -> float:
+        return sum(item.primitive_value for item in schema.result.items if schema.result)
 
     def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         return (
             np.array([])
             if schemas is None or len(schemas) == 0
-            else np.array([calc_primitive_value(s.result) for s in schemas])
+            else self.calc_schema_values(schemas)
         )
 
 
-class DelegatedValueEvaluationStrategy(EvaluationStrategy):
+class TotalDelegatedValueEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the evaluation strategy protocol based solely on the delegated values of schemas. """
+
+    def __init__(self) -> None:
+        self.calc_schema_values = np.vectorize(self._calc_schema_value, otypes=[float])
+
+    def _calc_schema_value(self, schema: Schema) -> float:
+        return sum(item.delegated_value for item in schema.result.items if schema.result)
 
     def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         return (
             np.array([])
             if schemas is None or len(schemas) == 0
-            else np.array([calc_delegated_value(s.result) for s in schemas])
+            else self.calc_schema_values(schemas)
+        )
+
+
+class MaxDelegatedValueEvaluationStrategy(EvaluationStrategy):
+    """ An implementation of the evaluation strategy protocol based solely on the delegated values of schemas. """
+
+    def __init__(self) -> None:
+        self.calc_schema_values = np.vectorize(self._calc_schema_value, otypes=[float])
+
+    def _calc_schema_value(self, schema: Schema) -> float:
+        return max([item.delegated_value for item in schema.result.items if schema.result], default=0.0)
+
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+        return (
+            np.array([])
+            if schemas is None or len(schemas) == 0
+            else self.calc_schema_values(schemas)
         )
 
 
@@ -461,8 +490,8 @@ class DefaultGoalPursuitEvaluationStrategy(EvaluationStrategy):
                  pending_focus_decay_strategy: DecayStrategy = None):
         self.value_strategy = CompositeEvaluationStrategy(
             strategies=[
-                PrimitiveValueEvaluationStrategy(),
-                DelegatedValueEvaluationStrategy(),
+                TotalPrimitiveValueEvaluationStrategy(),
+                TotalDelegatedValueEvaluationStrategy(),
                 InstrumentalValueEvaluationStrategy(),
                 ReliabilityEvaluationStrategy(max_penalty=max_reliability_penalty),
                 PendingFocusEvaluationStrategy(

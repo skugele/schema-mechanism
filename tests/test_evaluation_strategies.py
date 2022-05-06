@@ -9,27 +9,87 @@ import numpy as np
 
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import Item
-from schema_mechanism.core import ItemPool
 from schema_mechanism.core import Schema
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
+from schema_mechanism.strategies.evaluation import MaxDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
-from schema_mechanism.strategies.evaluation import PrimitiveValueEvaluationStrategy
-from test_share.test_classes import MockSchema
+from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
+from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
+from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
 
 
 class TestCommon(TestCase):
+    # noinspection PyTypeChecker
     def setUp(self) -> None:
         common_test_setup()
 
-        self.schemas = [
-            sym_schema(f'C{i},C{i + 1},/A{i}/R{i},R{i + 1},', schema_type=MockSchema) for i in range(10)
+        self.item_a = sym_item('A', item_type=MockSymbolicItem, primitive_value=-100.5, delegated_value=0.0)
+        self.item_b = sym_item('B', item_type=MockSymbolicItem, primitive_value=0.0, delegated_value=25.65)
+        self.item_c = sym_item('C', item_type=MockSymbolicItem, primitive_value=101.27, delegated_value=-75.8)
+
+        # default primitive values for CompositeItems is the sum of the primitive values over their state elements;
+        # however, this can be overridden with an initializer argument.
+        self.composite_item_ab: CompositeItem = (
+            sym_item('(A,B)', item_type=MockCompositeItem, delegated_value=0.0)
+        )
+        self.composite_item_bc: CompositeItem = (
+            sym_item('(B,C)', item_type=MockCompositeItem, primitive_value=25.1, delegated_value=-20.1)
+        )
+        self.composite_item_abc: CompositeItem = (
+            sym_item('(A,B,C)', item_type=MockCompositeItem, delegated_value=55.1)
+        )
+
+        # sanity check: primitive values should have been set as expected
+        self.assertAlmostEqual(-100.5, self.item_a.primitive_value)
+        self.assertAlmostEqual(0.0, self.item_b.primitive_value)
+        self.assertAlmostEqual(101.27, self.item_c.primitive_value)
+        self.assertAlmostEqual(-100.5, self.composite_item_ab.primitive_value)
+        self.assertAlmostEqual(25.1, self.composite_item_bc.primitive_value)
+        self.assertAlmostEqual(0.77, self.composite_item_abc.primitive_value)
+
+        # sanity check: delegated values should have been set as expected
+        self.assertAlmostEqual(0.0, self.item_a.delegated_value)
+        self.assertAlmostEqual(25.65, self.item_b.delegated_value)
+        self.assertAlmostEqual(-75.8, self.item_c.delegated_value)
+        self.assertAlmostEqual(0.0, self.composite_item_ab.delegated_value)
+        self.assertAlmostEqual(-20.1, self.composite_item_bc.delegated_value)
+        self.assertAlmostEqual(55.1, self.composite_item_abc.delegated_value)
+
+        self.simple_result_schemas = [
+            sym_schema('X,/A1/A,'),
+            sym_schema('Y,/A1/B,'),
+            sym_schema('Z,/A1/C,'),
         ]
 
-        self.composite_action_schema = sym_schema('C1,/S1,/R1,', schema_type=MockSchema)
+        self.composite_result_schemas = [
+            sym_schema('X,/A1/(A,B),'),
+            sym_schema('Y,/A1/(B,C),'),
+            sym_schema('Z,/A1/(A,B,C),'),
+        ]
+
+        self.composite_action_schema = sym_schema('X,/X,Y/A,B')
+
+        # sanity check: composite action schema should have a composite action
+        self.assertTrue(self.composite_action_schema.action.is_composite())
+
+        self.schemas = [
+            *self.simple_result_schemas,
+            *self.composite_result_schemas,
+            self.composite_action_schema
+        ]
+
+        self.simple_items: list[Item] = [self.item_a, self.item_b, self.item_c]
+
+        self.composite_items: list[CompositeItem] = [
+            self.composite_item_ab,
+            self.composite_item_bc,
+            self.composite_item_abc,
+        ]
+        self.state_elements = list(itertools.chain.from_iterable([i.state_elements for i in self.simple_items]))
 
     def assert_implements_evaluation_strategy_protocol(self, strategy: EvaluationStrategy):
         # test: strategy should implement the EvaluationStrategy protocol
@@ -103,34 +163,12 @@ class TestNoOpEvaluationStrategy(TestCommon):
                 self.strategy.values(self.schemas, pending=self.composite_action_schema)))
 
 
-class TestPrimitiveValueEvaluationStrategy(TestCommon):
-    # noinspection PyTypeChecker
+class TestTotalPrimitiveValueEvaluationStrategy(TestCommon):
     def setUp(self) -> None:
         super().setUp()
         common_test_setup()
 
-        self.strategy = PrimitiveValueEvaluationStrategy()
-
-        self.item_a = ItemPool().get('A', item_type=MockSymbolicItem, primitive_value=-100.0)
-        self.item_b = ItemPool().get('B', item_type=MockSymbolicItem, primitive_value=0.0)
-        self.item_c = ItemPool().get('C', item_type=MockSymbolicItem, primitive_value=100.0)
-
-        self.composite_item_ab: CompositeItem = sym_item('(A,B)')
-        self.composite_item_bc: CompositeItem = sym_item('(B,C)')
-        self.composite_item_not_a_c: CompositeItem = sym_item('(~A,C)')
-        self.composite_item_a_not_c: CompositeItem = sym_item('(A,~C)')
-
-        self.composite_result_schemas = [
-            sym_schema('A,/A1/(A,B),'),
-            sym_schema('A,/A1/(B,C),'),
-            sym_schema('A,/A1/(~A,C),'),
-            sym_schema('A,/A1/(A,~C),'),
-        ]
-
-        self.items: list[Item] = [self.item_a, self.item_b, self.item_c]
-        self.composite_items: list[CompositeItem] = [self.composite_item_ab, self.composite_item_bc,
-                                                     self.composite_item_not_a_c, self.composite_item_a_not_c]
-        self.state_elements = list(itertools.chain.from_iterable([i.state_elements for i in self.items]))
+        self.strategy = TotalPrimitiveValueEvaluationStrategy()
 
     def test_common(self):
         self.assert_implements_evaluation_strategy_protocol(self.strategy)
@@ -142,30 +180,76 @@ class TestPrimitiveValueEvaluationStrategy(TestCommon):
         self.assertEqual(np.zeros(shape=1), self.strategy.values(schemas=[sym_schema('/A1/')]))
 
         # test: schemas with results containing previously unknown state elements should have zero primitive value
-        for schema_unknown_result in [sym_schema('A,/A1/UNK,'), sym_schema('A,/A1/UNK,NOPE,NADA')]:
-            self.assertEqual(np.zeros(shape=1), self.strategy.values(schemas=[schema_unknown_result]))
+        for schema in [sym_schema('A,/A1/UNK,'), sym_schema('A,/A1/UNK,NOPE,NADA')]:
+            self.assertEqual(np.zeros(shape=1), self.strategy.values(schemas=[schema]))
 
-        # test: the primitive value of a schema equals the SUM of its result's items' primitive values
-        schemas = [
-            sym_schema('/A1/A,'),
-            sym_schema('/A1/B,'),
-            sym_schema('/A1/C,'),
-            sym_schema('/A1/(A,B),'),
-        ]
-
-        expected_values = [
-            np.array([self.item_a.primitive_value]),
-            np.array([self.item_b.primitive_value]),
-            np.array([self.item_c.primitive_value]),
-            np.array([self.composite_item_ab.primitive_value])
-        ]
-
-        for schema, expected_value in zip(schemas, expected_values):
-            np.testing.assert_array_equal(expected_value, self.strategy.values(schemas=[schema]))
+        # test: the primitive value of a schema should be the sum over the primitive values of its result's items
+        actual_values = self.strategy.values(self.schemas)
+        expected_values = (
+            np.array([sum(item.primitive_value for item in schema.result.items) for schema in self.schemas])
+        )
+        np.testing.assert_array_equal(expected_values, actual_values)
 
 
-class TestDelegatedValueEvaluationStrategy(TestCommon):
-    pass
+class TestTotalDelegatedValueEvaluationStrategy(TestCommon):
+    # noinspection PyTypeChecker
+    def setUp(self) -> None:
+        super().setUp()
+        common_test_setup()
+
+        self.strategy = TotalDelegatedValueEvaluationStrategy()
+
+    def test_common(self):
+        self.assert_implements_evaluation_strategy_protocol(self.strategy)
+        self.assert_returns_array_of_correct_length(self.strategy)
+        self.assert_correctly_invokes_post_process_callables(self.strategy)
+
+    def test_values(self):
+        # test: bare schemas should have zero delegated value
+        self.assertEqual(np.zeros(shape=1), self.strategy.values(schemas=[sym_schema('/A1/')]))
+
+        # test: schemas with results containing previously unknown state elements should have zero delegated value
+        for schema in [sym_schema('A,/A1/UNK,'), sym_schema('A,/A1/UNK,NOPE,NADA')]:
+            self.assertEqual(np.zeros(shape=1), self.strategy.values(schemas=[schema]))
+
+        # test: the delegated value of a schema should be the sum over the delegated values of its result's items
+        actual_values = self.strategy.values(self.schemas)
+        expected_values = (
+            np.array([sum(item.delegated_value for item in schema.result.items) for schema in self.schemas])
+        )
+        np.testing.assert_array_equal(expected_values, actual_values)
+
+
+class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
+    # noinspection PyTypeChecker
+    def setUp(self) -> None:
+        super().setUp()
+        common_test_setup()
+
+        self.strategy = MaxDelegatedValueEvaluationStrategy()
+
+    def test_common(self):
+        self.assert_implements_evaluation_strategy_protocol(self.strategy)
+        self.assert_returns_array_of_correct_length(self.strategy)
+        self.assert_correctly_invokes_post_process_callables(self.strategy)
+
+    def test_values(self):
+        # test: bare schemas should have zero delegated value
+        self.assertEqual(np.zeros(shape=1), self.strategy.values(schemas=[sym_schema('/A1/')]))
+
+        # test: schemas with results containing previously unknown state elements should have zero delegated value
+        for schema in [sym_schema('A,/A1/UNK,'), sym_schema('A,/A1/UNK,NOPE,NADA')]:
+            self.assertEqual(np.zeros(shape=1), self.strategy.values(schemas=[schema]))
+
+        # test: the delegated value of a schema should be the sum over the delegated values of its result's items
+        actual_values = self.strategy.values(self.schemas)
+        expected_values = (
+            np.array([
+                max([item.delegated_value for item in schema.result.items], default=0.0)
+                for schema in self.schemas
+            ])
+        )
+        np.testing.assert_array_equal(expected_values, actual_values)
 
 # class TestInstrumentalValueEvaluationStrategy(TestCase):
 #     def setUp(self) -> None:

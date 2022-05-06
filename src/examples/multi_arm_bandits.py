@@ -24,11 +24,11 @@ from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
-from schema_mechanism.strategies.evaluation import DelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import PendingFocusEvaluationStrategy
-from schema_mechanism.strategies.evaluation import PrimitiveValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
+from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
+from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
 from schema_mechanism.util import Observable
 
 # global constants
@@ -237,8 +237,8 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
         select_strategy=RandomizeBestSelectionStrategy(),
         evaluation_strategy=CompositeEvaluationStrategy(
             strategies=[
-                PrimitiveValueEvaluationStrategy(),
-                DelegatedValueEvaluationStrategy(),
+                TotalPrimitiveValueEvaluationStrategy(),
+                TotalDelegatedValueEvaluationStrategy(),
                 PendingFocusEvaluationStrategy(),
                 ReliabilityEvaluationStrategy(max_penalty=0.05),
                 EpsilonGreedyEvaluationStrategy(epsilon=0.9999,

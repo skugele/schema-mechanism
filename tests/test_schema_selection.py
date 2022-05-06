@@ -13,7 +13,7 @@ from schema_mechanism.modules import PendingStatus
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
-from schema_mechanism.strategies.evaluation import PrimitiveValueEvaluationStrategy
+from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
 from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from test_share.test_classes import MockSchema
@@ -83,7 +83,7 @@ class TestSchemaSelection(TestCase):
         self.assertIsInstance(ss.evaluation_strategy, NoOpEvaluationStrategy)
 
         select_strategy = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1))
-        evaluation_strategy = PrimitiveValueEvaluationStrategy()
+        evaluation_strategy = TotalPrimitiveValueEvaluationStrategy()
 
         ss = SchemaSelection(
             select_strategy=select_strategy,
@@ -118,7 +118,7 @@ class TestSchemaSelection(TestCase):
         ##################################
         ss = SchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
-            evaluation_strategy=PrimitiveValueEvaluationStrategy()
+            evaluation_strategy=TotalPrimitiveValueEvaluationStrategy()
         )
 
         # selection between uneven schemas, all with non-negated items (s1_c12_r5 should win)
@@ -143,7 +143,7 @@ class TestSchemaSelection(TestCase):
         # testing selection with composite action schema (scenario: composite action schema wins)
         ss = SchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
+            evaluation_strategy=TotalPrimitiveValueEvaluationStrategy(),
         )
 
         self.assertIs(None, ss.pending_schema)
@@ -184,7 +184,7 @@ class TestSchemaSelection(TestCase):
         # testing selection with composite action schema (scenario: composite action schema loses)
         ss = SchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            evaluation_strategy=PrimitiveValueEvaluationStrategy()
+            evaluation_strategy=TotalPrimitiveValueEvaluationStrategy()
         )
 
         self.assertIs(None, ss.pending_schema)
@@ -227,7 +227,7 @@ class TestSchemaSelection(TestCase):
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
+            evaluation_strategy=TotalPrimitiveValueEvaluationStrategy(),
             pending_schemas=deque([PendingDetails(schema=self.sca24_c12_r35, selection_state=sym_state('2'))])
         )
 
@@ -263,7 +263,7 @@ class TestSchemaSelection(TestCase):
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
+            evaluation_strategy=TotalPrimitiveValueEvaluationStrategy(),
             pending_schemas=deque([PendingDetails(schema=self.sca24_c12_r35, selection_state=sym_state('2'))])
         )
 
@@ -314,7 +314,7 @@ class TestSchemaSelection(TestCase):
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
+            evaluation_strategy=TotalPrimitiveValueEvaluationStrategy(),
             pending_schemas=deque([PendingDetails(schema=pending, selection_state=sym_state('2'))])
         )
 
@@ -344,7 +344,7 @@ class TestSchemaSelection(TestCase):
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
+            evaluation_strategy=TotalPrimitiveValueEvaluationStrategy(),
             pending_schemas=deque([PendingDetails(schema=pending, selection_state=sym_state('2'))])
         )
 
@@ -368,7 +368,7 @@ class TestSchemaSelection(TestCase):
         # mock is used to directly set the pending schema
         mock_ss = MockSchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.01)),
-            evaluation_strategy=PrimitiveValueEvaluationStrategy(),
+            evaluation_strategy=TotalPrimitiveValueEvaluationStrategy(),
             pending_schemas=deque([PendingDetails(schema=pending, selection_state=sym_state('2'))])
         )
 
