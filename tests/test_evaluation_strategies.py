@@ -7,17 +7,23 @@ from unittest.mock import call
 
 import numpy as np
 
+from schema_mechanism.core import Chain
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import Item
 from schema_mechanism.core import Schema
+from schema_mechanism.core import calc_delegated_value
+from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
+from schema_mechanism.share import GlobalParams
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
+from schema_mechanism.strategies.evaluation import InstrumentalValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import MaxDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
 from test_share.test_classes import MockCompositeItem
+from test_share.test_classes import MockSchema
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
 
@@ -127,6 +133,7 @@ class TestCommon(TestCase):
             self.assertListEqual(self.schemas, mock.call_args.kwargs['schemas'])
             np.testing.assert_array_equal(values, mock.call_args.kwargs['values'])
 
+        # noinspection PyUnusedLocal, PyShadowingNames
         # test: post-process callables should be capable of changing the values returned from strategy
         def add_one_post_process(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
             values += 1.0
@@ -137,6 +144,22 @@ class TestCommon(TestCase):
 
         self.assertTrue(np.array_equal(expected_values, actual_values))
 
+    def assert_values_consistent_with_call(self, strategy: EvaluationStrategy) -> None:
+        np.testing.assert_array_equal(
+            strategy(self.schemas, pending=None),
+            strategy.values(self.schemas, pending=None)
+        )
+        np.testing.assert_array_equal(
+            strategy(self.schemas, pending=self.composite_action_schema),
+            strategy.values(self.schemas, pending=self.composite_action_schema)
+        )
+
+    def assert_all_common_functionality(self, strategy: EvaluationStrategy) -> None:
+        self.assert_implements_evaluation_strategy_protocol(strategy)
+        self.assert_returns_array_of_correct_length(strategy)
+        self.assert_correctly_invokes_post_process_callables(strategy)
+        self.assert_values_consistent_with_call(strategy)
+
 
 class TestNoOpEvaluationStrategy(TestCommon):
     def setUp(self) -> None:
@@ -145,9 +168,7 @@ class TestNoOpEvaluationStrategy(TestCommon):
         self.strategy = NoOpEvaluationStrategy()
 
     def test_common(self):
-        self.assert_implements_evaluation_strategy_protocol(self.strategy)
-        self.assert_returns_array_of_correct_length(self.strategy)
-        self.assert_correctly_invokes_post_process_callables(self.strategy)
+        self.assert_all_common_functionality(self.strategy)
 
     def test_values(self):
         # test: strategy should return zero for all supplied schemas (check with no pending)
@@ -171,9 +192,7 @@ class TestTotalPrimitiveValueEvaluationStrategy(TestCommon):
         self.strategy = TotalPrimitiveValueEvaluationStrategy()
 
     def test_common(self):
-        self.assert_implements_evaluation_strategy_protocol(self.strategy)
-        self.assert_returns_array_of_correct_length(self.strategy)
-        self.assert_correctly_invokes_post_process_callables(self.strategy)
+        self.assert_all_common_functionality(self.strategy)
 
     def test_values(self):
         # test: bare schemas should have zero primitive value
@@ -200,9 +219,7 @@ class TestTotalDelegatedValueEvaluationStrategy(TestCommon):
         self.strategy = TotalDelegatedValueEvaluationStrategy()
 
     def test_common(self):
-        self.assert_implements_evaluation_strategy_protocol(self.strategy)
-        self.assert_returns_array_of_correct_length(self.strategy)
-        self.assert_correctly_invokes_post_process_callables(self.strategy)
+        self.assert_all_common_functionality(self.strategy)
 
     def test_values(self):
         # test: bare schemas should have zero delegated value
@@ -229,9 +246,7 @@ class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
         self.strategy = MaxDelegatedValueEvaluationStrategy()
 
     def test_common(self):
-        self.assert_implements_evaluation_strategy_protocol(self.strategy)
-        self.assert_returns_array_of_correct_length(self.strategy)
-        self.assert_correctly_invokes_post_process_callables(self.strategy)
+        self.assert_all_common_functionality(self.strategy)
 
     def test_values(self):
         # test: bare schemas should have zero delegated value
@@ -251,149 +266,147 @@ class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
         )
         np.testing.assert_array_equal(expected_values, actual_values)
 
-# class TestInstrumentalValueEvaluationStrategy(TestCase):
-#     def setUp(self) -> None:
-#         common_test_setup()
-#
-#         self.instrumental_values = InstrumentalValueEvaluationStrategy()
-#
-#     def test_no_schemas(self):
-#         # test: should return an empty numpy array if no schemas provided and no pending
-#         result = self.instrumental_values(schemas=[], pending=None)
-#         self.assertIsInstance(result, np.ndarray)
-#         self.assertTrue(np.array_equal(result, np.array([])))
-#
-#     def test_no_pending(self):
-#         # test: should return a numpy array of zeros with length == 1 if len(schemas) == 1 and no pending
-#         schemas = [sym_schema('/A1/')]
-#         result = self.instrumental_values(schemas=schemas, pending=None)
-#         self.assertIsInstance(result, np.ndarray)
-#         self.assertTrue(np.array_equal(result, np.zeros_like(schemas)))
-#
-#         # test: should return a numpy array of zeros with length == 100 if len(schemas) == 100 and no pending
-#         schemas = [sym_schema(f'/A{i}/') for i in range(100)]
-#         result = self.instrumental_values(schemas=schemas, pending=None)
-#         self.assertIsInstance(result, np.ndarray)
-#         self.assertTrue(np.array_equal(result, np.zeros_like(schemas)))
-#
-#     # noinspection PyTypeChecker
-#     def test_pending_but_no_schemas(self):
-#         # test: should return a ValueError if pending provided but no schemas
-#         self.assertRaises(ValueError, lambda: self.instrumental_values(schemas=[], pending=sym_schema('1,/2,3/4,')))
-#         self.assertRaises(ValueError, lambda: self.instrumental_values(schemas=None, pending=sym_schema('1,/2,3/4,')))
-#
-#     def test_non_composite_pending(self):
-#         # test: should return a ValueError if pending schema has a non-composite action
-#         schemas = [sym_schema(f'/A{i}/') for i in range(5)]
-#
-#         non_composite_pending = sym_schema('1,/A2/3,')
-#         self.assertFalse(non_composite_pending.action.is_composite())  # sanity check
-#
-#         self.assertRaises(ValueError, lambda: self.instrumental_values(schemas=schemas, pending=non_composite_pending))
-#
-#     def test_pending_with_non_positive_goal_state_value(self):
-#         _i_neg = sym_item('1', primitive_value=-100.0)
-#         _i_zero = sym_item('2', primitive_value=0.0)
-#         _i_pos = sym_item('3', primitive_value=100.0)
-#
-#         schemas = [sym_schema('X,/A1/1,'), sym_schema('1,/A2/2,'), sym_schema('2,/A3/3,')]
-#
-#         neg_value_goal_state = sym_schema('/1,/')
-#         neg_value_goal_state.action.controller.update([Chain([sym_schema('X,/A1/1,')])])
-#
-#         zero_value_goal_state = sym_schema('/2,/')
-#         zero_value_goal_state.action.controller.update([Chain([sym_schema('1,/A2/2,')])])
-#
-#         pos_value_goal_state = sym_schema('/3,/')
-#         pos_value_goal_state.action.controller.update([Chain([sym_schema('2,/A3/3,')])])
-#
-#         # test: instrumental values should be zeros if pending schema's goal state has zero value (pv + dv)
-#         result = self.instrumental_values(schemas=schemas, pending=neg_value_goal_state)
-#         self.assertTrue(np.array_equal(result, np.zeros_like(schemas)))
-#
-#         result = self.instrumental_values(schemas=schemas, pending=zero_value_goal_state)
-#         self.assertTrue(np.array_equal(result, np.zeros_like(schemas)))
-#
-#         # test: instrumental values should be non-zeros if pending schema's goal state has non-zero value (pv + dv)
-#         #    assumes: (1) cost is less than goal value (2) proximity is not close to zero
-#         result = self.instrumental_values(schemas=schemas, pending=pos_value_goal_state)
-#         self.assertFalse(np.array_equal(result, np.zeros_like(schemas)))
-#
-#     def test_proximity_scaling(self):
-#         GlobalParams().set('learning_rate', 1.0)
-#
-#         _ = [sym_item(str(i), primitive_value=0.0) for i in range(1, 6)]
-#         goal = sym_item('6', item_type=MockSymbolicItem, primitive_value=100.0, avg_accessible_value=10.0)
-#
-#         chain = Chain([
-#             sym_schema('1,/A1/2,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/5.0 = 0.2
-#             sym_schema('2,/A2/3,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/4.0 = 0.25
-#             sym_schema('3,/A3/4,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/3.0 = 0.33
-#             sym_schema('4,/A2/5,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/2.0 = 0.5
-#             sym_schema('5,/A4/6,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0
-#         ])
-#
-#         pending = sym_schema('/6,/')
-#         pending.action.controller.update([chain])
-#
-#         non_components = [
-#             sym_schema('/A1/', schema_type=MockSchema, cost=0.0),
-#             sym_schema('/A2/', schema_type=MockSchema, cost=0.0),
-#         ]
-#         schemas = [*chain, *non_components]
-#
-#         proximities = [pending.action.controller.proximity(s) for s in chain]
-#
-#         # test: when cost is zero, instrumental value should be the goal value scaled by a schema's goal proximity
-#         component_ivs = np.array(proximities, dtype=np.float64) * (
-#                 calc_primitive_value(goal) + calc_delegated_value(goal))
-#         non_component_ivs = np.zeros_like(non_components, dtype=np.float64)
-#
-#         expected_result = np.concatenate([component_ivs, non_component_ivs])
-#         actual_result = self.instrumental_values(schemas, pending)
-#
-#         self.assertTrue(np.allclose(expected_result, actual_result))
-#
-#     def test_cost_deduction(self):
-#         GlobalParams().set('learning_rate', 1.0)
-#
-#         _ = [sym_item(str(i), primitive_value=0.0) for i in range(1, 6)]
-#         goal = sym_item('6', item_type=MockSymbolicItem, primitive_value=100.0, avg_accessible_value=10.0)
-#
-#         chain = Chain([
-#             sym_schema('1,/A1/2,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/5.0 = 0.2
-#             sym_schema('2,/A2/3,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/4.0 = 0.25
-#             sym_schema('3,/A3/4,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/3.0 = 0.33
-#             sym_schema('4,/A2/5,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/2.0 = 0.5
-#             sym_schema('5,/A4/6,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0
-#         ])
-#
-#         pending = sym_schema('/6,/')
-#         pending.action.controller.update([chain])
-#
-#         non_components = [
-#             sym_schema('/A1/', schema_type=MockSchema, cost=0.0),
-#             sym_schema('/A2/', schema_type=MockSchema, cost=0.0),
-#         ]
-#         schemas = [*chain, *non_components]
-#
-#         proximities = [pending.action.controller.proximity(s) for s in chain]
-#         costs = [pending.action.controller.total_cost(s) for s in chain]
-#
-#         # test: instrumental value should always be non-negative
-#         component_ivs = np.maximum(
-#             np.array(proximities, dtype=np.float64) * (calc_primitive_value(goal) + calc_delegated_value(goal)) - costs,
-#             np.zeros_like(chain, dtype=np.float64)
-#         )
-#
-#         non_component_ivs = np.zeros_like(non_components, dtype=np.float64)
-#
-#         expected_result = np.concatenate([component_ivs, non_component_ivs])
-#         actual_result = self.instrumental_values(schemas, pending)
-#
-#         self.assertTrue(np.allclose(expected_result, actual_result))
-#
-#
+
+class TestInstrumentalValueEvaluationStrategy(TestCommon):
+    def setUp(self) -> None:
+        super().setUp()
+        common_test_setup()
+
+        self.strategy = InstrumentalValueEvaluationStrategy()
+
+    def test_common(self):
+        self.assert_all_common_functionality(self.strategy)
+
+    def test_no_pending(self):
+        # test: should return a numpy array of zeros with length == 1 if len(schemas) == 1 and no pending
+        schemas = [sym_schema('/A1/')]
+        result = self.strategy(schemas=schemas, pending=None)
+        self.assertIsInstance(result, np.ndarray)
+        self.assertTrue(np.array_equal(result, np.zeros_like(schemas)))
+
+        # test: should return a numpy array of zeros with length == 100 if len(schemas) == 100 and no pending
+        schemas = [sym_schema(f'/A{i}/') for i in range(100)]
+        result = self.strategy(schemas=schemas, pending=None)
+        self.assertIsInstance(result, np.ndarray)
+        self.assertTrue(np.array_equal(result, np.zeros_like(schemas)))
+
+    # noinspection PyTypeChecker
+    def test_pending_but_no_schemas(self):
+        # test: should return a ValueError if pending provided but no schemas
+        self.assertRaises(ValueError, lambda: self.strategy.values(schemas=[], pending=self.composite_action_schema))
+        self.assertRaises(ValueError, lambda: self.strategy.values(schemas=None, pending=self.composite_action_schema))
+
+    def test_non_composite_pending(self):
+        # test: should return a ValueError if pending schema has a non-composite action
+        non_composite_action_schema = self.simple_result_schemas[0]
+        self.assertFalse(non_composite_action_schema.action.is_composite())
+
+        self.assertRaises(
+            ValueError,
+            lambda: self.strategy.values(schemas=self.schemas, pending=non_composite_action_schema))
+
+    def test_pending_with_non_positive_goal_state_value(self):
+        _i_neg = sym_item('1', primitive_value=-100.0)
+        _i_zero = sym_item('2', primitive_value=0.0)
+        _i_pos = sym_item('3', primitive_value=100.0)
+
+        schemas = [sym_schema('X,/A1/1,'), sym_schema('1,/A2/2,'), sym_schema('2,/A3/3,')]
+
+        neg_value_goal_state = sym_schema('/1,/')
+        neg_value_goal_state.action.controller.update([Chain([sym_schema('X,/A1/1,')])])
+
+        zero_value_goal_state = sym_schema('/2,/')
+        zero_value_goal_state.action.controller.update([Chain([sym_schema('1,/A2/2,')])])
+
+        pos_value_goal_state = sym_schema('/3,/')
+        pos_value_goal_state.action.controller.update([Chain([sym_schema('2,/A3/3,')])])
+
+        # test: instrumental values should be zeros if pending schema's goal state has zero value (pv + dv)
+        result = self.strategy.values(schemas=schemas, pending=neg_value_goal_state)
+        self.assertTrue(np.array_equal(result, np.zeros_like(schemas)))
+
+        result = self.strategy.values(schemas=schemas, pending=zero_value_goal_state)
+        self.assertTrue(np.array_equal(result, np.zeros_like(schemas)))
+
+        # test: instrumental values should be non-zeros if pending schema's goal state has non-zero value (pv + dv)
+        #    assumes: (1) cost is less than goal value (2) proximity is not close to zero
+        result = self.strategy.values(schemas=schemas, pending=pos_value_goal_state)
+        self.assertFalse(np.array_equal(result, np.zeros_like(schemas)))
+
+    def test_proximity_scaling(self):
+        GlobalParams().set('learning_rate', 1.0)
+
+        _ = [sym_item(str(i), primitive_value=0.0) for i in range(1, 6)]
+        goal = sym_item('6', item_type=MockSymbolicItem, primitive_value=100.0, avg_accessible_value=10.0)
+
+        chain = Chain([
+            sym_schema('1,/A1/2,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/5.0 = 0.2
+            sym_schema('2,/A2/3,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/4.0 = 0.25
+            sym_schema('3,/A3/4,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/3.0 = 0.33
+            sym_schema('4,/A2/5,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0/2.0 = 0.5
+            sym_schema('5,/A4/6,', schema_type=MockSchema, cost=0.0, avg_duration=1.0),  # proximity = 1.0
+        ])
+
+        pending = sym_schema('/6,/')
+        pending.action.controller.update([chain])
+
+        non_components = [
+            sym_schema('/A1/', schema_type=MockSchema, cost=0.0),
+            sym_schema('/A2/', schema_type=MockSchema, cost=0.0),
+        ]
+        schemas = [*chain, *non_components]
+
+        proximities = [pending.action.controller.proximity(s) for s in chain]
+
+        # test: when cost is zero, instrumental value should be the goal value scaled by a schema's goal proximity
+        component_ivs = np.array(proximities, dtype=np.float64) * (
+                calc_primitive_value(goal) + calc_delegated_value(goal))
+        non_component_ivs = np.zeros_like(non_components, dtype=np.float64)
+
+        expected_result = np.concatenate([component_ivs, non_component_ivs])
+        actual_result = self.strategy.values(schemas, pending)
+
+        self.assertTrue(np.allclose(expected_result, actual_result))
+
+    def test_cost_deduction(self):
+        GlobalParams().set('learning_rate', 1.0)
+
+        _ = [sym_item(str(i), primitive_value=0.0) for i in range(1, 6)]
+        goal = sym_item('6', item_type=MockSymbolicItem, primitive_value=100.0, avg_accessible_value=10.0)
+
+        chain = Chain([
+            sym_schema('1,/A1/2,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/5.0 = 0.2
+            sym_schema('2,/A2/3,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/4.0 = 0.25
+            sym_schema('3,/A3/4,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/3.0 = 0.33
+            sym_schema('4,/A2/5,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0/2.0 = 0.5
+            sym_schema('5,/A4/6,', schema_type=MockSchema, cost=10.0, avg_duration=1.0),  # proximity = 1.0
+        ])
+
+        pending = sym_schema('/6,/')
+        pending.action.controller.update([chain])
+
+        non_components = [
+            sym_schema('/A1/', schema_type=MockSchema, cost=0.0),
+            sym_schema('/A2/', schema_type=MockSchema, cost=0.0),
+        ]
+        schemas = [*chain, *non_components]
+
+        proximities = [pending.action.controller.proximity(s) for s in chain]
+        costs = [pending.action.controller.total_cost(s) for s in chain]
+
+        # test: instrumental value should always be non-negative
+        component_ivs = np.maximum(
+            np.array(proximities, dtype=np.float64) * (calc_primitive_value(goal) + calc_delegated_value(goal)) - costs,
+            np.zeros_like(chain, dtype=np.float64)
+        )
+
+        non_component_ivs = np.zeros_like(non_components, dtype=np.float64)
+
+        expected_result = np.concatenate([component_ivs, non_component_ivs])
+        actual_result = self.strategy.values(schemas, pending)
+
+        self.assertTrue(np.allclose(expected_result, actual_result))
+
 # class TestPendingFocusEvaluationStrategy(TestCase):
 #     def setUp(self) -> None:
 #         common_test_setup()
@@ -681,14 +694,14 @@ class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
 #     def test_empty_schemas_list(self):
 #         # test: empty schemas list should return empty numpy array
 #         expected = np.array([])
-#         actual = self.habituation_strategy(schemas=[])
+#         actual = self.habituation_strategy.values(schemas=[])
 #
 #         self.assertTrue(np.array_equal(expected, actual))
 #
 #     def test_single_action(self):
 #         # test: single action should have zero value
 #         expected = np.zeros(1)
-#         actual = self.habituation_strategy(schemas=[self.schemas[0]])
+#         actual = self.habituation_strategy.values(schemas=[self.schemas[0]])
 #
 #         self.assertTrue(np.array_equal(expected, actual))
 #
@@ -698,12 +711,12 @@ class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
 #         schemas = self.schemas[:5]
 #
 #         expected = np.zeros_like(schemas)
-#         actual = self.habituation_strategy(schemas=schemas)
+#         actual = self.habituation_strategy.values(schemas=schemas)
 #
 #         self.assertTrue(np.array_equal(expected, actual))
 #
 #     def test_multiple_actions_different_values_contains_median(self):
-#         values = self.habituation_strategy(schemas=self.schemas)
+#         values = self.habituation_strategy.values(schemas=self.schemas)
 #
 #         # sanity check
 #         self.assertTrue(np.median(values) in values)
@@ -718,7 +731,7 @@ class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
 #         self.assertTrue(np.alltrue(values[6:] < 0.0))
 #
 #     def test_multiple_actions_different_values_does_not_contain_median(self):
-#         values = self.habituation_strategy(schemas=self.schemas[1:])
+#         values = self.habituation_strategy.values(schemas=self.schemas[1:])
 #
 #         # sanity check
 #         self.assertTrue(np.median(values) not in values)
@@ -732,7 +745,7 @@ class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
 #     def test_unknown_values(self):
 #         # test: schemas with unknown actions should raise ValueError
 #         schemas = [*self.schemas, sym_schema('/UNK/')]
-#         self.assertRaises(ValueError, lambda: self.habituation_strategy(schemas=schemas))
+#         self.assertRaises(ValueError, lambda: self.habituation_strategy.values(schemas=schemas))
 #
 #     def test_multiplier(self):
 #         multiplier = 8.0
@@ -809,7 +822,7 @@ class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
 #     #         value_strategies=[primitive_value_evaluation_strategy],
 #     #     )
 #     #
-#     #     expected_values = primitive_value_evaluation_strategy(schemas)
+#     #     expected_values = primitive_value_evaluation_strategy.values(schemas)
 #     #
 #     #     # test: primitive-only value strategy should return primitive values for each schema
 #     #     self.assertTrue(np.array_equal(expected_values, ss.calc_effective_values(schemas, pending=None)))
@@ -820,8 +833,8 @@ class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
 #     #         value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
 #     #     )
 #     #
-#     #     pvs = primitive_value_evaluation_strategy(schemas)
-#     #     dvs = delegated_value_evaluation_strategy(schemas)
+#     #     pvs = primitive_value_evaluation_strategy.values(schemas)
+#     #     dvs = delegated_value_evaluation_strategy.values(schemas)
 #     #     expected_values = (pvs + dvs) / 2.0
 #     #     actual_values = ss.calc_effective_values(schemas, pending=None)
 #     #
