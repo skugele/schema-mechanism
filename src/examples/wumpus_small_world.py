@@ -10,7 +10,6 @@ from examples import display_summary
 from examples import is_paused
 from examples import is_running
 from examples import run_decorator
-from examples.environments.wumpus_world import MOVE_FORWARD
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
 from schema_mechanism.core import SchemaPool
@@ -24,10 +23,9 @@ from schema_mechanism.share import display_params
 from schema_mechanism.share import info
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
-from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
-from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 
@@ -49,10 +47,10 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
                 # HabituationEvaluationStrategy(
                 #     trace=GlobalStats().action_trace,
                 #     multiplier=1.0),
-                ReliabilityEvaluationStrategy(max_penalty=0.1),
-                EpsilonGreedyEvaluationStrategy(epsilon=0.999,
+                # ReliabilityEvaluationStrategy(max_penalty=0.1),
+                EpsilonGreedyEvaluationStrategy(epsilon=0.99999,
                                                 epsilon_min=0.05,
-                                                decay_strategy=GeometricDecayStrategy(rate=0.999))
+                                                decay_strategy=ExponentialDecayStrategy(rate=0.99999))
             ],
         )
     )
@@ -181,7 +179,7 @@ def run() -> None:
             if is_paused():
                 display_item_values()
                 display_known_schemas(sm)
-                display_schema_info(sym_schema(f'/{MOVE_FORWARD}/'))
+                display_schema_info(sym_schema(f'/USE[EXIT]/'))
                 if episode > 1:
                     display_performance_summary(max_steps, steps_in_episode)
 

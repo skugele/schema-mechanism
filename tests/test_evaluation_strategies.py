@@ -1,4 +1,5 @@
 import itertools
+from collections import Counter
 from typing import Sequence
 from unittest import TestCase
 from unittest.mock import ANY
@@ -16,10 +17,15 @@ from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.share import GlobalParams
+from schema_mechanism.strategies.decay import ExponentialDecayStrategy
+from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
 from schema_mechanism.strategies.evaluation import InstrumentalValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import MaxDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
+from schema_mechanism.strategies.evaluation import PendingFocusEvaluationStrategy
+from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
 from test_share.test_classes import MockCompositeItem
@@ -187,7 +193,6 @@ class TestNoOpEvaluationStrategy(TestCommon):
 class TestTotalPrimitiveValueEvaluationStrategy(TestCommon):
     def setUp(self) -> None:
         super().setUp()
-        common_test_setup()
 
         self.strategy = TotalPrimitiveValueEvaluationStrategy()
 
@@ -214,7 +219,6 @@ class TestTotalDelegatedValueEvaluationStrategy(TestCommon):
     # noinspection PyTypeChecker
     def setUp(self) -> None:
         super().setUp()
-        common_test_setup()
 
         self.strategy = TotalDelegatedValueEvaluationStrategy()
 
@@ -241,7 +245,6 @@ class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
     # noinspection PyTypeChecker
     def setUp(self) -> None:
         super().setUp()
-        common_test_setup()
 
         self.strategy = MaxDelegatedValueEvaluationStrategy()
 
@@ -270,7 +273,6 @@ class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
 class TestInstrumentalValueEvaluationStrategy(TestCommon):
     def setUp(self) -> None:
         super().setUp()
-        common_test_setup()
 
         self.strategy = InstrumentalValueEvaluationStrategy()
 
@@ -407,250 +409,419 @@ class TestInstrumentalValueEvaluationStrategy(TestCommon):
 
         self.assertTrue(np.allclose(expected_result, actual_result))
 
-# class TestPendingFocusEvaluationStrategy(TestCase):
-#     def setUp(self) -> None:
-#         common_test_setup()
-#
-#         self.sa1_a_b = sym_schema('A,/A1/B,')
-#         self.sa2_b_c = sym_schema('B,/A2/C,')
-#         self.sa3_c_s1 = sym_schema('C,/A3/S1,')
-#         self.sa4_c_s2 = sym_schema('C,/A4/S2,')
-#
-#         # schemas with composite actions
-#         self.s_s1 = sym_schema('/S1,/')
-#         self.s_s2 = sym_schema('/S2,/')
-#
-#         self.s_s1.action.controller.update([
-#             Chain([self.sa1_a_b, self.sa2_b_c, self.sa3_c_s1])
-#         ])
-#
-#         self.s_s2.action.controller.update([
-#             Chain([self.sa1_a_b, self.sa2_b_c, self.sa4_c_s2])
-#         ])
-#
-#         self.schemas = [
-#             self.sa1_a_b,
-#             self.sa2_b_c,
-#             self.sa3_c_s1,
-#             self.sa4_c_s2,
-#             self.s_s1,
-#             self.s_s2,
-#         ]
-#
-#         self.pending_focus_values = PendingFocusEvaluationStrategy()
-#
-#     def test_no_schemas(self):
-#         # test: an empty array should be returned if not schemas supplied
-#         self.assertTrue(np.array_equal(np.array([]), self.pending_focus_values(schemas=[])))
-#
-#     def test_no_pending(self):
-#         # test: schemas should have no focus value if there is no active pending schema
-#         expected = np.zeros_like(self.schemas)
-#         actual = self.pending_focus_values(schemas=self.schemas, pending=None)
-#
-#         self.assertTrue(np.array_equal(expected, actual))
-#
-#     def test_initial_component_values(self):
-#         max_value = self.pending_focus_values.max_value
-#         pending = self.s_s1
-#         pending_components = pending.action.controller.components
-#
-#         values = self.pending_focus_values(schemas=self.schemas, pending=pending)
-#         for schema, value in zip(self.schemas, values):
-#             # test: components of the active pending schema should initially have max focus
-#             if schema in pending_components:
-#                 self.assertEqual(max_value, value)
-#
-#             # test: other schemas should have zero focus value
-#             else:
-#                 self.assertEqual(0.0, value)
-#
-#     def test_unbounded_reduction_in_value(self):
-#         pending = self.s_s1
-#         schemas = list(pending.action.controller.components)
-#
-#         values = self.pending_focus_values(schemas=schemas, pending=pending)
-#         diff = 0.0
-#         for n in range(1, 20):
-#             new_values = self.pending_focus_values(schemas=schemas, pending=pending)
-#             new_diff = values - new_values
-#
-#             # test: new values should be strictly less than previous values
-#             self.assertTrue(np.alltrue(new_values < values))
-#
-#             # test: the differences between subsequent values should increase
-#             self.assertTrue(np.alltrue(new_diff > diff))
-#
-#             values = new_values
-#             diff = new_diff
-#
-#
-# class TestReliabilityEvaluationStrategy(TestCase):
-#
-#     def setUp(self) -> None:
-#         common_test_setup()
-#
-#         self.reliability_values = ReliabilityEvaluationStrategy()
-#
-#     def test_no_schemas(self):
-#         # test: should return an empty numpy array if no schemas provided and no pending
-#         result = self.reliability_values(schemas=[], pending=None)
-#         self.assertIsInstance(result, np.ndarray)
-#         self.assertTrue(np.array_equal(result, np.array([])))
-#
-#     def test_values(self):
-#         max_penalty = 1.0
-#         self.reliability_values.max_penalty = max_penalty
-#
-#         # test: a reliability of 1.0 should result in penalty of 0.0
-#         schemas = [sym_schema('A,/A1/B,', schema_type=MockSchema, reliability=1.0)]
-#         rvs = self.reliability_values(schemas, max_penalty=max_penalty)
-#         self.assertTrue(np.array_equal(np.zeros_like(schemas), rvs))
-#
-#         # test: a reliability of 0.0 should result in max penalty
-#         schemas = [sym_schema('A,/A1/C,', schema_type=MockSchema, reliability=0.0)]
-#         rvs = self.reliability_values(schemas, max_penalty=max_penalty)
-#         self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
-#
-#         # test: a reliability of nan should result in max penalty
-#         schemas = [sym_schema('A,/A1/D,', schema_type=MockSchema, reliability=np.nan)]
-#         rvs = self.reliability_values(schemas, max_penalty=max_penalty)
-#         self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
-#
-#         # test: a reliability less than 1.0 should result in penalty greater than 0.0
-#         schemas = [sym_schema('A,/A1/E,', schema_type=MockSchema, reliability=rel)
-#                    for rel in np.linspace(0.01, 1.0, endpoint=False)]
-#         rvs = self.reliability_values(schemas, max_penalty=max_penalty)
-#         self.assertTrue(all({-max_penalty < rv < 0.0 for rv in rvs}))
-#
-#     def test_max_penalty(self):
-#
-#         # test: max penalty values > 0.0 should be accepted
-#         try:
-#             # test via property setter
-#             self.reliability_values.max_penalty = 0.0001
-#             self.reliability_values.max_penalty = 1.0
-#
-#             # test via initializer argument
-#             _ = ReliabilityEvaluationStrategy(max_penalty=0.0001)
-#             _ = ReliabilityEvaluationStrategy(max_penalty=1.0)
-#         except ValueError as e:
-#             self.fail(e)
-#
-#         # test: max penalty <= 0.0 should raise a ValueError
-#         with self.assertRaises(ValueError):
-#
-#             # test via property setter
-#             self.reliability_values.max_penalty = 0.0
-#             self.reliability_values.max_penalty = -1.0
-#
-#             # test via initializer argument
-#             _ = ReliabilityEvaluationStrategy(max_penalty=0.0)
-#             _ = ReliabilityEvaluationStrategy(max_penalty=-1.0)
-#
-#
-# class TestEpsilonGreedyEvaluationStrategy(TestCase):
-#     def setUp(self) -> None:
-#         common_test_setup()
-#
-#         self.eps_always_explore = EpsilonGreedyEvaluationStrategy(epsilon=1.0)
-#         self.eps_never_explore = EpsilonGreedyEvaluationStrategy(epsilon=0.0)
-#         self.eps_even_chance = EpsilonGreedyEvaluationStrategy(epsilon=0.5)
-#
-#         self.schema = sym_schema('1,2/A/3,4')
-#
-#         # schema with a composite action
-#         self.ca_schema = sym_schema('1,2/S1,/5,7')
-#
-#         self.schemas = [self.schema,
-#                         self.ca_schema,
-#                         sym_schema('1,2/A/3,5'),
-#                         sym_schema('1,2/A/3,6')]
-#
-#     def test_init(self):
-#         epsilon = 0.1
-#         eps_greedy = EpsilonGreedyEvaluationStrategy(epsilon)
-#         self.assertEqual(epsilon, eps_greedy.epsilon)
-#
-#     def test_epsilon_setter(self):
-#         eps_greedy = EpsilonGreedyEvaluationStrategy(0.5)
-#
-#         eps_greedy.epsilon = 0.0
-#         self.assertEqual(0.0, eps_greedy.epsilon)
-#
-#         eps_greedy.epsilon = 1.0
-#         self.assertEqual(1.0, eps_greedy.epsilon)
-#
-#         try:
-#             eps_greedy.epsilon = -1.00001
-#             eps_greedy.epsilon = 1.00001
-#             self.fail('ValueError expected on illegal assignment')
-#         except ValueError:
-#             pass
-#
-#     def test_call(self):
-#         # test: should return empty np.array given empty ndarray
-#         values = self.eps_never_explore([])
-#         self.assertIsInstance(values, np.ndarray)
-#         self.assertEqual(0, len(values))
-#
-#         values = self.eps_always_explore([])
-#         self.assertIsInstance(values, np.ndarray)
-#         self.assertEqual(0, len(values))
-#
-#         # test: non-empty schema array should return an np.array with a single np.inf on exploratory choice
-#         values = self.eps_always_explore([self.schema])
-#         self.assertEqual(1, len(values))
-#         self.assertEqual(1, np.count_nonzero(values == np.inf))
-#         self.assertIsInstance(values, np.ndarray)
-#
-#         values = self.eps_always_explore(self.schemas)
-#         self.assertIsInstance(values, np.ndarray)
-#         self.assertEqual(len(self.schemas), len(values))
-#         self.assertEqual(1, np.count_nonzero(values == np.inf))
-#
-#         # test: non-empty schema array should return an np.array with same length of zeros non-exploratory choice
-#         values = self.eps_never_explore([self.schema])
-#         self.assertIsInstance(values, np.ndarray)
-#         self.assertListEqual(list(np.array([0])), list(values))
-#
-#         values = self.eps_never_explore(self.schemas)
-#         self.assertIsInstance(values, np.ndarray)
-#         self.assertListEqual(list(np.zeros_like(self.schemas)), list(values))
-#
-#     def test_epsilon_decay(self):
-#         epsilon = 1.0
-#         rate = 0.99
-#
-#         decay_strategy = GeometricDecayStrategy(rate=rate)
-#         eps_greedy = EpsilonGreedyEvaluationStrategy(epsilon=epsilon, decay_strategy=decay_strategy)
-#
-#         prev_epsilon = epsilon
-#         for _ in range(100):
-#             _ = eps_greedy(schemas=self.schemas)
-#             self.assertEqual(decay_strategy.decay(prev_epsilon), eps_greedy.epsilon)
-#             prev_epsilon = eps_greedy.epsilon
-#
-#     def test_epsilon_decay_to_minimum(self):
-#         epsilon = 1.0
-#         minimum = 0.5
-#
-#         decay_strategy = GeometricDecayStrategy(rate=0.99, minimum=minimum)
-#         eps_greedy = EpsilonGreedyEvaluationStrategy(epsilon=epsilon, decay_strategy=decay_strategy)
-#
-#         for _ in range(100):
-#             _ = eps_greedy(schemas=self.schemas)
-#
-#         self.assertEqual(minimum, eps_greedy.epsilon)
-#
-#     def test_pending_bypass(self):
-#         # test: epsilon greedy values SHOULD all be zero when a pending schema is provided
-#         expected = np.zeros_like(self.schemas)
-#         actual = self.eps_always_explore(self.schemas, pending=self.schema)
-#
-#         self.assertTrue(np.array_equal(expected, actual))
-#
-#
+
+class TestPendingFocusEvaluationStrategy(TestCommon):
+    def setUp(self) -> None:
+        super().setUp()
+
+        self.strategy = PendingFocusEvaluationStrategy(
+            max_value=1.0,
+            decay_strategy=ExponentialDecayStrategy(rate=0.1, minimum=-np.inf)
+        )
+
+        self.sa1_a_b = sym_schema('A,/A1/B,')
+        self.sa2_b_c = sym_schema('B,/A2/C,')
+        self.sa3_c_s1 = sym_schema('C,/A3/S1,')
+        self.sa4_c_s2 = sym_schema('C,/A4/S2,')
+
+        # schemas with composite actions
+        self.s_s1 = sym_schema('/S1,/')
+        self.s_s2 = sym_schema('/S2,/')
+
+        self.s_s1.action.controller.update([
+            Chain([self.sa1_a_b, self.sa2_b_c, self.sa3_c_s1])
+        ])
+
+        self.s_s2.action.controller.update([
+            Chain([self.sa1_a_b, self.sa2_b_c, self.sa4_c_s2])
+        ])
+
+        self.schemas = [
+            self.sa1_a_b,
+            self.sa2_b_c,
+            self.sa3_c_s1,
+            self.sa4_c_s2,
+            self.s_s1,
+            self.s_s2,
+        ]
+
+    def test_common(self):
+        self.assert_all_common_functionality(self.strategy)
+
+    def test_init(self):
+        # test: attribute values should be set properly if values were given to initializer
+        max_value = 1.0
+        decay_strategy = ExponentialDecayStrategy(rate=0.1, initial=max_value)
+        strategy = PendingFocusEvaluationStrategy(max_value=max_value, decay_strategy=decay_strategy)
+
+        self.assertEqual(max_value, strategy.max_value)
+        self.assertEqual(decay_strategy, strategy.decay_strategy)
+
+        # test: default attribute values should be set if values not given to initializer
+        default_max_value = 1.0
+        default_decay_strategy = None
+
+        strategy = PendingFocusEvaluationStrategy()
+        self.assertEqual(default_max_value, strategy.max_value)
+        self.assertEqual(default_decay_strategy, strategy.decay_strategy)
+
+    def test_no_pending(self):
+        # test: schemas should have zero value if there is no active pending schema
+        expected = np.zeros_like(self.schemas)
+        actual = self.strategy.values(schemas=self.schemas, pending=None)
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+    def test_initial_component_values(self):
+        max_value = self.strategy.max_value
+        pending = self.s_s1
+        pending_components = pending.action.controller.components
+
+        values = self.strategy.values(schemas=self.schemas, pending=pending)
+        for schema, value in zip(self.schemas, values):
+            # test: components of the active pending schema should initially have max focus
+            if schema in pending_components:
+                self.assertEqual(max_value, value)
+
+            # test: other schemas should have zero focus value
+            else:
+                self.assertEqual(0.0, value)
+
+    def test_value_decay(self):
+        # test: values should decay after each subsequent call with the same pending schema
+        max_value = self.strategy.max_value * np.ones_like(self.schemas, dtype=np.float64)
+        pending = self.s_s1
+        pending_components = pending.action.controller.components
+
+        expected_value_arrays = [
+            self.strategy.decay_strategy.decay(values=max_value, step_size=i) for i in range(0, 10)
+        ]
+
+        non_component_indexes = [
+            self.schemas.index(schema) for schema in self.schemas if schema not in pending_components
+        ]
+
+        for array in expected_value_arrays:
+            array[non_component_indexes] = 0.0
+
+        for expected_values in expected_value_arrays:
+            values = self.strategy.values(schemas=self.schemas, pending=pending)
+            np.testing.assert_array_equal(expected_values, values)
+
+    def test_unbounded_reduction_in_value(self):
+        pending = self.s_s1
+        pending_components = list(pending.action.controller.components)
+
+        old_values = self.strategy.values(schemas=pending_components, pending=pending)
+        for _ in range(100):
+            new_values = self.strategy.values(schemas=pending_components, pending=pending)
+            np.testing.assert_array_less(new_values, old_values)
+
+
+class TestReliabilityEvaluationStrategy(TestCommon):
+
+    def setUp(self) -> None:
+        super().setUp()
+
+        self.strategy = ReliabilityEvaluationStrategy()
+
+    def test_common(self):
+        self.assert_all_common_functionality(self.strategy)
+
+    def test_init(self):
+        # test: attribute values should be set properly if values were given to initializer
+        max_penalty = 10.75
+        severity = 2.5
+        strategy = ReliabilityEvaluationStrategy(max_penalty=max_penalty, severity=severity)
+
+        self.assertEqual(max_penalty, strategy.max_penalty)
+        self.assertEqual(severity, strategy.severity)
+
+        # test: default attribute values should be set if values not given to initializer
+        default_max_penalty = 1.0
+        default_severity = 2.0
+        strategy = ReliabilityEvaluationStrategy()
+
+        self.assertEqual(default_max_penalty, strategy.max_penalty)
+        self.assertEqual(default_severity, strategy.severity)
+
+    def test_values(self):
+        max_penalty = 1.0
+        self.strategy.max_penalty = max_penalty
+
+        # test: a reliability of 1.0 should result in penalty of 0.0
+        schemas = [sym_schema('A,/A1/B,', schema_type=MockSchema, reliability=1.0)]
+        rvs = self.strategy(schemas, max_penalty=max_penalty)
+        self.assertTrue(np.array_equal(np.zeros_like(schemas), rvs))
+
+        # test: a reliability of 0.0 should result in max penalty
+        schemas = [sym_schema('A,/A1/C,', schema_type=MockSchema, reliability=0.0)]
+        rvs = self.strategy(schemas, max_penalty=max_penalty)
+        self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
+
+        # test: a reliability of nan should result in max penalty
+        schemas = [sym_schema('A,/A1/D,', schema_type=MockSchema, reliability=np.nan)]
+        rvs = self.strategy(schemas, max_penalty=max_penalty)
+        self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
+
+        # test: testing expected reliability values over a range of reliabilities between 0.0 and 1.0
+        schemas = [
+            sym_schema('A,/A1/U,', schema_type=MockSchema, reliability=0.01),
+            sym_schema('A,/A1/V,', schema_type=MockSchema, reliability=0.1),
+            sym_schema('A,/A1/W,', schema_type=MockSchema, reliability=0.25),
+            sym_schema('A,/A2/X,', schema_type=MockSchema, reliability=0.5),
+            sym_schema('A,/A3/Y,', schema_type=MockSchema, reliability=0.75),
+            sym_schema('A,/A4/Z,', schema_type=MockSchema, reliability=0.9),
+            sym_schema('A,/A5/ZZ,', schema_type=MockSchema, reliability=0.99),
+        ]
+
+        # these values assume that severity is 2.0 (the default)
+        values = np.array([-0.9999, -0.99, -0.9375, -0.75, -0.4375, -0.19, -0.0199])
+
+        np.testing.assert_array_almost_equal(self.strategy(schemas=schemas), values)
+
+    def test_max_penalty(self):
+
+        # test: max penalty values > 0.0 should be accepted
+        try:
+            # test via property setter
+            self.strategy.max_penalty = 0.0001
+            self.strategy.max_penalty = 1.0
+
+            # test via initializer argument
+            _ = ReliabilityEvaluationStrategy(max_penalty=0.0001)
+            _ = ReliabilityEvaluationStrategy(max_penalty=1.0)
+        except ValueError as e:
+            self.fail(e)
+
+        # test: max penalty <= 0.0 should raise a ValueError
+        with self.assertRaises(ValueError):
+
+            # test via property setter
+            self.strategy.max_penalty = 0.0
+            self.strategy.max_penalty = -1.0
+
+            # test via initializer argument
+            _ = ReliabilityEvaluationStrategy(max_penalty=0.0)
+            _ = ReliabilityEvaluationStrategy(max_penalty=-1.0)
+
+
+class TestEpsilonGreedyEvaluationStrategy(TestCommon):
+    def setUp(self) -> None:
+        super().setUp()
+
+        self.strategy = EpsilonGreedyEvaluationStrategy()
+
+        self.eps_always_explore = EpsilonGreedyEvaluationStrategy(epsilon=1.0)
+        self.eps_never_explore = EpsilonGreedyEvaluationStrategy(epsilon=0.0)
+        self.eps_even_chance = EpsilonGreedyEvaluationStrategy(epsilon=0.5)
+
+        self.schema = sym_schema('1,2/A/3,4')
+
+        # schema with a composite action
+        self.ca_schema = sym_schema('1,2/S1,/5,7')
+
+        self.schemas = [self.schema,
+                        self.ca_schema,
+                        sym_schema('1,2/A/3,5'),
+                        sym_schema('1,2/A/3,6')]
+
+    def test_init(self):
+        # test: attribute values should be set properly if values were given to initializer
+        epsilon = 0.991
+        epsilon_min = 0.025
+        decay_strategy = ExponentialDecayStrategy(rate=0.7)
+
+        strategy = EpsilonGreedyEvaluationStrategy(
+            epsilon=epsilon,
+            epsilon_min=epsilon_min,
+            decay_strategy=decay_strategy
+        )
+
+        self.assertEqual(epsilon, strategy.epsilon)
+        self.assertEqual(epsilon_min, strategy.epsilon_min)
+        self.assertEqual(decay_strategy, strategy.decay_strategy)
+
+        # test: default attribute values should be set if values not given to initializer
+        default_epsilon = 0.99
+        default_epsilon_min = 0.0
+        default_decay_strategy = None
+
+        strategy = EpsilonGreedyEvaluationStrategy()
+
+        self.assertEqual(default_epsilon, strategy.epsilon)
+        self.assertEqual(default_epsilon_min, strategy.epsilon_min)
+        self.assertEqual(default_decay_strategy, strategy.decay_strategy)
+
+        # test: epsilon values between 0.0 and 1.0 (inclusion) should be allowed
+        for epsilon in np.linspace(0.0, 1.0, endpoint=True):
+            try:
+                _ = EpsilonGreedyEvaluationStrategy(epsilon=epsilon)
+            except ValueError:
+                self.fail(f'Raised unexpected value error for valid epsilon value: {epsilon}')
+
+        # test: initializer should raise a ValueError if epsilon values are not between 0.0 and 1.0 (inclusion)
+        self.assertRaises(ValueError, lambda: EpsilonGreedyEvaluationStrategy(epsilon=-1e-5))
+        self.assertRaises(ValueError, lambda: EpsilonGreedyEvaluationStrategy(epsilon=1 + 1e-5))
+
+        # test: epsilon min values between 0.0 and 1.0 (inclusion) should be allowed
+        for epsilon_min in np.linspace(0.0, 1.0, endpoint=True):
+            try:
+                _ = EpsilonGreedyEvaluationStrategy(epsilon=1.0, epsilon_min=epsilon_min)
+            except ValueError:
+                self.fail(f'Raised unexpected value error for valid epsilon min value: {epsilon_min}')
+
+        # test: initializer should raise a ValueError if epsilon values are not between 0.0 and 1.0 (inclusion)
+        self.assertRaises(ValueError, lambda: EpsilonGreedyEvaluationStrategy(epsilon=1.0, epsilon_min=-1e-5))
+        self.assertRaises(ValueError, lambda: EpsilonGreedyEvaluationStrategy(epsilon=1.0, epsilon_min=1 + 1e-5))
+
+        # test: a ValueError should be raised if epsilon is less than epsilon min
+        self.assertRaises(ValueError, lambda: EpsilonGreedyEvaluationStrategy(epsilon=0.1, epsilon_min=0.3))
+
+    def test_common(self):
+        self.assert_all_common_functionality(self.eps_never_explore)
+
+    def test_epsilon_setter(self):
+        eps_greedy = EpsilonGreedyEvaluationStrategy(0.5)
+
+        eps_greedy.epsilon = 0.0
+        self.assertEqual(0.0, eps_greedy.epsilon)
+
+        eps_greedy.epsilon = 1.0
+        self.assertEqual(1.0, eps_greedy.epsilon)
+
+        try:
+            eps_greedy.epsilon = -1.00001
+            eps_greedy.epsilon = 1.00001
+            self.fail('ValueError expected on illegal assignment')
+        except ValueError:
+            pass
+
+    def test_values(self):
+        # test: non-empty schema array should return an np.array with a single np.inf on exploratory choice
+        values = self.eps_always_explore([self.schema])
+        self.assertEqual(1, len(values))
+        self.assertEqual(1, np.count_nonzero(values == np.inf))
+        self.assertIsInstance(values, np.ndarray)
+
+        values = self.eps_always_explore(self.schemas)
+        self.assertIsInstance(values, np.ndarray)
+        self.assertEqual(len(self.schemas), len(values))
+        self.assertEqual(1, np.count_nonzero(values == np.inf))
+
+        # test: non-empty schema array should return an np.array with same length of zeros on non-exploratory choice
+        values = self.eps_never_explore([self.schema])
+        self.assertIsInstance(values, np.ndarray)
+        self.assertListEqual(list(np.array([0])), list(values))
+
+        values = self.eps_never_explore(self.schemas)
+        self.assertIsInstance(values, np.ndarray)
+        self.assertListEqual(list(np.zeros_like(self.schemas)), list(values))
+
+    def test_empirical_exploration_probability_consistent_with_epsilon(self):
+        n = 10000
+
+        for epsilon in [0.1, 0.9]:
+            n_exploration = 0
+            for n_calls in range(0, n):
+                strategy = EpsilonGreedyEvaluationStrategy(epsilon=epsilon)
+                values = strategy(self.schemas)
+                if np.inf in values:
+                    n_exploration += 1
+
+            expected_probability = epsilon
+            actual_probability = n_exploration / n
+
+            self.assertAlmostEqual(
+                expected_probability,
+                actual_probability,
+                delta=1e-1,
+                msg=f'exploration probability {actual_probability} does not match expected probability '
+                    f'{expected_probability}')
+
+    def test_epsilon_decay(self):
+        epsilon = 1.0
+        rate = 0.99
+
+        decay_strategy = GeometricDecayStrategy(rate=rate)
+        eps_greedy = EpsilonGreedyEvaluationStrategy(epsilon=epsilon, decay_strategy=decay_strategy)
+
+        expected_epsilon_value = epsilon
+        for i in range(100):
+            # apply strategy to advance decay epsilon
+            _ = eps_greedy(schemas=self.schemas)
+
+            expected_epsilon_value = decay_strategy.decay(values=np.array([expected_epsilon_value]))[0]
+            actual_epsilon_value = eps_greedy.epsilon
+
+            self.assertAlmostEqual(expected_epsilon_value, actual_epsilon_value)
+
+    def test_epsilon_decay_to_minimum(self):
+        epsilon = 1.0
+        epsilon_min = 0.5
+
+        decay_strategy = GeometricDecayStrategy(rate=0.25)
+        eps_greedy = EpsilonGreedyEvaluationStrategy(
+            epsilon=epsilon,
+            epsilon_min=epsilon_min,
+            decay_strategy=decay_strategy)
+
+        for _ in range(100):
+            _ = eps_greedy(schemas=self.schemas)
+
+            if epsilon <= epsilon_min:
+                break
+
+        self.assertEqual(epsilon_min, eps_greedy.epsilon)
+
+    def test_pending_schema_component_selection(self):
+        # test: greedy selection should be limited to pending schema components when a pending schema is provided
+
+        pending_schema = sym_schema('A,/S1,/B,')
+        pending_component_schemas = [
+            sym_schema('A,/A1/B,', schema_type=MockSchema, reliability=1.0),
+            sym_schema('B,/A1/C,', schema_type=MockSchema, reliability=1.0),
+            sym_schema('C,/A1/D,', schema_type=MockSchema, reliability=1.0),
+            sym_schema('D,/A1/S1,', schema_type=MockSchema, reliability=1.0),
+        ]
+
+        # registers component schemas with controller
+        chains = [Chain(pending_component_schemas)]
+        pending_schema.action.controller.update(chains)
+
+        # sanity check: make sure components have been added to pending schema
+        for schema in pending_component_schemas:
+            self.assertIn(schema, pending_schema.action.controller.components)
+
+        other_schemas = [
+            sym_schema('X1,/A2/Y1,', schema_type=MockSchema, reliability=1.0),
+            sym_schema('X2,/A2/Y2,', schema_type=MockSchema, reliability=1.0),
+            sym_schema('X3,/A2/Y3,', schema_type=MockSchema, reliability=1.0),
+            sym_schema('X4,/A2/Y4,', schema_type=MockSchema, reliability=1.0),
+        ]
+
+        all_schemas = [
+            *pending_component_schemas,
+            *other_schemas
+        ]
+
+        component_indexes = [all_schemas.index(schema) for schema in pending_component_schemas]
+        non_component_indexes = [all_schemas.index(schema) for schema in other_schemas]
+
+        counter = Counter()
+
+        for _ in range(1000):
+            values = self.eps_always_explore(schemas=all_schemas, pending=pending_schema)
+            greedy_selection_index = np.argwhere(values == np.inf)[0][0]
+            counter[greedy_selection_index] += 1
+
+        for index in non_component_indexes:
+            self.assertEqual(0, counter[index], msg=f'Non-component schema {all_schemas[index]} was selected')
+
+        for index in component_indexes:
+            self.assertNotEqual(0, counter[index], msg=f'Component schema {all_schemas[index]} was never selected')
+
+
 # class TestHabituationEvaluationStrategy(TestCase):
 #     def setUp(self) -> None:
 #         common_test_setup()
@@ -757,100 +928,99 @@ class TestInstrumentalValueEvaluationStrategy(TestCommon):
 #         values_with_mult = habituation_with_non_default_multiplier(schemas=self.schemas)
 #
 #         self.assertTrue(np.array_equal(values * multiplier, values_with_mult))
-#
-#
-# class TestCompositeEvaluationStrategy(TestCase):
-#     def setUp(self) -> None:
-#         common_test_setup()
-#
-#     # def test_weights(self):
-#     #     ss = SchemaSelection(
-#     #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-#     #         value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
-#     #     )
-#     #
-#     #     # test: initializer should set weights to the requested values
-#     #     weights = [0.4, 0.6]
-#     #     ss.weights = weights
-#     #     self.assertListEqual(weights, list(ss.weights))
-#     #
-#     #     # test: should raise a ValueError if initializer given an invalid number of weights
-#     #     with self.assertRaises(ValueError):
-#     #         ss.weights = [1.0]
-#     #
-#     #     # test: should raise a ValueError if the weights do not sum to 1.0
-#     #     with self.assertRaises(ValueError):
-#     #         ss.weights = [0.1, 0.2]
-#     #
-#     #     # test: should raise a ValueError if any of the weights are non-positive
-#     #     with self.assertRaises(ValueError):
-#     #         ss.weights = [1.8, -0.8]
-#     #
-#     #     # test: weights of 0.0 and 1.0 should be allowed
-#     #     try:
-#     #         ss.weights = [0.0, 1.0]
-#     #     except ValueError as e:
-#     #         self.fail(f'Unexpected ValueError occurred: {str(e)}')
-#
-#     # def test_call(self):
-#     #     s1 = sym_schema('/A1/1,')  # pv = 0.0
-#     #     s2 = sym_schema('/A2/2,')  # pv = 0.0
-#     #     s3 = sym_schema('/A1/3,')  # pv = 0.95
-#     #     s4 = sym_schema('/A3/4,')  # pv = -1.0
-#     #     s5 = sym_schema('/A1/5,')  # pv = 2.0
-#     #     s6 = sym_schema('/A2/6,')  # pv = -3.0
-#     #
-#     #     self.s1_c12_r34 = sym_schema('1,2/A1/(3,4),', reliability=1.0)  # total pv = -0.05; total dv = 0.0
-#     #     self.s1_c12_r345 = sym_schema('1,2/A1/(3,4,5),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
-#     #     self.s1_c12_r3456 = sym_schema('1,2/A1/(3,4,5,6),', reliability=1.0)  # total pv = -1.05; total dv = 0.0
-#     #     self.s1_c12_r345_not6 = sym_schema('1,2/A1/(3,4,5,~6),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
-#     #
-#     #     schemas = [s1, s2, s3, s4, s5, s6, self.s1_c12_r34, self.s1_c12_r345, self.s1_c12_r3456, self.s1_c12_r345_not6]
-#     #
-#     #     # testing with no evaluation strategies
-#     #     ss = SchemaSelection(
-#     #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-#     #         value_strategies=[],
-#     #     )
-#     #
-#     #     # test: should returns array of zeros if no value strategies specified
-#     #     self.assertTrue(np.array_equal(np.zeros_like(schemas), ss.calc_effective_values(schemas)))
-#     #
-#     #     # testing single evaluation strategy
-#     #     ss = SchemaSelection(
-#     #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-#     #         value_strategies=[primitive_value_evaluation_strategy],
-#     #     )
-#     #
-#     #     expected_values = primitive_value_evaluation_strategy.values(schemas)
-#     #
-#     #     # test: primitive-only value strategy should return primitive values for each schema
-#     #     self.assertTrue(np.array_equal(expected_values, ss.calc_effective_values(schemas, pending=None)))
-#     #
-#     #     # testing multiple evaluation strategies (equal weighting)
-#     #     ss = SchemaSelection(
-#     #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-#     #         value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
-#     #     )
-#     #
-#     #     pvs = primitive_value_evaluation_strategy.values(schemas)
-#     #     dvs = delegated_value_evaluation_strategy.values(schemas)
-#     #     expected_values = (pvs + dvs) / 2.0
-#     #     actual_values = ss.calc_effective_values(schemas, pending=None)
-#     #
-#     #     # test: should return weighted sum of evaluation strategy values
-#     #     self.assertTrue(np.array_equal(expected_values, actual_values))
-#     #
-#     #     # testing multiple evaluation strategies (uneven weighting)
-#     #     ss.weights = np.array([0.95, 0.05])
-#     #
-#     #     expected_values = 0.95 * pvs + 0.05 * dvs
-#     #     actual_values = ss.calc_effective_values(schemas, pending=None)
-#     #
-#     #     # test: should return weighted sum of evaluation strategy values
-#     #     self.assertTrue(np.array_equal(expected_values, actual_values))
-#
-#
+
+
+class TestCompositeEvaluationStrategy(TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+    # def test_weights(self):
+    #     ss = SchemaSelection(
+    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+    #         value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
+    #     )
+    #
+    #     # test: initializer should set weights to the requested values
+    #     weights = [0.4, 0.6]
+    #     ss.weights = weights
+    #     self.assertListEqual(weights, list(ss.weights))
+    #
+    #     # test: should raise a ValueError if initializer given an invalid number of weights
+    #     with self.assertRaises(ValueError):
+    #         ss.weights = [1.0]
+    #
+    #     # test: should raise a ValueError if the weights do not sum to 1.0
+    #     with self.assertRaises(ValueError):
+    #         ss.weights = [0.1, 0.2]
+    #
+    #     # test: should raise a ValueError if any of the weights are non-positive
+    #     with self.assertRaises(ValueError):
+    #         ss.weights = [1.8, -0.8]
+    #
+    #     # test: weights of 0.0 and 1.0 should be allowed
+    #     try:
+    #         ss.weights = [0.0, 1.0]
+    #     except ValueError as e:
+    #         self.fail(f'Unexpected ValueError occurred: {str(e)}')
+
+    # def test_call(self):
+    #     s1 = sym_schema('/A1/1,')  # pv = 0.0
+    #     s2 = sym_schema('/A2/2,')  # pv = 0.0
+    #     s3 = sym_schema('/A1/3,')  # pv = 0.95
+    #     s4 = sym_schema('/A3/4,')  # pv = -1.0
+    #     s5 = sym_schema('/A1/5,')  # pv = 2.0
+    #     s6 = sym_schema('/A2/6,')  # pv = -3.0
+    #
+    #     self.s1_c12_r34 = sym_schema('1,2/A1/(3,4),', reliability=1.0)  # total pv = -0.05; total dv = 0.0
+    #     self.s1_c12_r345 = sym_schema('1,2/A1/(3,4,5),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
+    #     self.s1_c12_r3456 = sym_schema('1,2/A1/(3,4,5,6),', reliability=1.0)  # total pv = -1.05; total dv = 0.0
+    #     self.s1_c12_r345_not6 = sym_schema('1,2/A1/(3,4,5,~6),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
+    #
+    #     schemas = [s1, s2, s3, s4, s5, s6, self.s1_c12_r34, self.s1_c12_r345, self.s1_c12_r3456, self.s1_c12_r345_not6]
+    #
+    #     # testing with no evaluation strategies
+    #     ss = SchemaSelection(
+    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+    #         value_strategies=[],
+    #     )
+    #
+    #     # test: should returns array of zeros if no value strategies specified
+    #     self.assertTrue(np.array_equal(np.zeros_like(schemas), ss.calc_effective_values(schemas)))
+    #
+    #     # testing single evaluation strategy
+    #     ss = SchemaSelection(
+    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+    #         value_strategies=[primitive_value_evaluation_strategy],
+    #     )
+    #
+    #     expected_values = primitive_value_evaluation_strategy.values(schemas)
+    #
+    #     # test: primitive-only value strategy should return primitive values for each schema
+    #     self.assertTrue(np.array_equal(expected_values, ss.calc_effective_values(schemas, pending=None)))
+    #
+    #     # testing multiple evaluation strategies (equal weighting)
+    #     ss = SchemaSelection(
+    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
+    #         value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
+    #     )
+    #
+    #     pvs = primitive_value_evaluation_strategy.values(schemas)
+    #     dvs = delegated_value_evaluation_strategy.values(schemas)
+    #     expected_values = (pvs + dvs) / 2.0
+    #     actual_values = ss.calc_effective_values(schemas, pending=None)
+    #
+    #     # test: should return weighted sum of evaluation strategy values
+    #     self.assertTrue(np.array_equal(expected_values, actual_values))
+    #
+    #     # testing multiple evaluation strategies (uneven weighting)
+    #     ss.weights = np.array([0.95, 0.05])
+    #
+    #     expected_values = 0.95 * pvs + 0.05 * dvs
+    #     actual_values = ss.calc_effective_values(schemas, pending=None)
+    #
+    #     # test: should return weighted sum of evaluation strategy values
+    #     self.assertTrue(np.array_equal(expected_values, actual_values))
+
 # class TestDefaultExploratoryEvaluationStrategy(TestCase):
 #     def setUp(self) -> None:
 #         common_test_setup()
@@ -859,6 +1029,3 @@ class TestInstrumentalValueEvaluationStrategy(TestCommon):
 # class TestDefaultGoalPursuitEvaluationStrategy(TestCase):
 #     def setUp(self) -> None:
 #         common_test_setup()
-
-# if __name__ == '__main__':
-#     unittest.main()

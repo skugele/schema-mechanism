@@ -15,7 +15,7 @@ from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.share import debug
 from schema_mechanism.share import rng
 from schema_mechanism.strategies.decay import DecayStrategy
-from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.util import AccumulatingTrace
 from schema_mechanism.util import Trace
 from schema_mechanism.util import equal_weights
@@ -51,7 +51,7 @@ class EvaluationStrategy(ABC):
 
         :return: an array containing the values of the schemas (according to this strategy)
         """
-        values = self.values(schemas=schemas, values=pending, **kwargs)
+        values = self.values(schemas=schemas, pending=pending, **kwargs)
 
         if post_process:
             for operation in post_process:
@@ -183,15 +183,9 @@ class PendingFocusEvaluationStrategy(EvaluationStrategy):
     """
 
     def __init__(self,
-                 max_value: float = None,
-                 focus_exp: float = None,
+                 max_value: float = 1.0,
                  decay_strategy: Optional[DecayStrategy] = None) -> None:
-        self.max_value = max_value or 1.0
-
-        # TODO: change the implementation to use decay strategy and remove this
-        self.focus_exp = focus_exp or 1.5
-
-        # TODO: change the implementations to use this
+        self.max_value = max_value
         self.decay_strategy = decay_strategy
 
         self._active_pending: Optional[Schema] = None
@@ -217,22 +211,24 @@ class PendingFocusEvaluationStrategy(EvaluationStrategy):
         if schemas is None or len(schemas) == 0:
             return np.array([])
 
-        values = np.zeros(len(schemas), dtype=np.float64)
+        # zero values (i.e., no pending focus) if pending schema is not set
         if not pending:
             self._active_pending = None
-            return values
+            return np.zeros(len(schemas), dtype=np.float64)
 
         if pending != self._active_pending:
             self._active_pending = pending
             self._n = 0
 
-        # TODO: change this to use a decay strategy?
-        focus_value = self.max_value - self.focus_exp ** self._n + 1
+        values = self.max_value * np.ones_like(schemas, dtype=np.float64)
 
-        # TODO: how can I do this more efficiently?
+        # decay focus value by steps equal to the number of repeated calls for this pending schema
+        if self.decay_strategy:
+            values = self._decay_strategy.decay(values=values, step_size=self._n)
+
         for i, schema in enumerate(schemas):
-            if schema in self._active_pending.action.controller.components:
-                values[i] = focus_value
+            if schema not in self._active_pending.action.controller.components:
+                values[i] = 0.0
 
         self._n += 1
 
@@ -250,8 +246,9 @@ class ReliabilityEvaluationStrategy(EvaluationStrategy):
     reliability approaches 0.0.
     """
 
-    def __init__(self, max_penalty: float = 1.0) -> None:
+    def __init__(self, max_penalty: float = 1.0, severity: float = 2.0) -> None:
         self.max_penalty = max_penalty
+        self.severity = severity
 
     @property
     def max_penalty(self) -> float:
@@ -263,13 +260,23 @@ class ReliabilityEvaluationStrategy(EvaluationStrategy):
             raise ValueError('Max penalty must be > 0.0')
         self._max_penalty = value
 
+    @property
+    def severity(self) -> float:
+        return self._severity
+
+    @severity.setter
+    def severity(self, value: float) -> None:
+        if value <= 0.0:
+            raise ValueError('Severity must be > 0.0')
+        self._severity = value
+
     def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         # nans treated as 0.0 reliability
         reliabilities = np.array([0.0 if s.reliability is np.nan else s.reliability for s in schemas])
         return (
             np.array([])
             if schemas is None or len(schemas) == 0
-            else self.max_penalty * (np.power(reliabilities, 2) - 1.0)
+            else self.max_penalty * (np.power(reliabilities, self.severity) - 1.0)
         )
 
 
@@ -295,12 +302,15 @@ class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
     """
 
     def __init__(self,
-                 epsilon: float = None,
-                 epsilon_min: float = None,
+                 epsilon: float = 0.99,
+                 epsilon_min: float = 0.0,
                  decay_strategy: Optional[DecayStrategy] = None) -> None:
         self.epsilon = epsilon
-        self.epsilon_min = 0.0 if epsilon_min is None else epsilon_min
+        self.epsilon_min = epsilon_min
         self.decay_strategy = decay_strategy
+
+        if self.epsilon_min > self.epsilon:
+            raise ValueError('Epsilon min must be less than or equal to epsilon')
 
     @property
     def epsilon(self) -> float:
@@ -336,26 +346,32 @@ class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
 
         values = np.zeros_like(schemas)
 
-        # TODO: this may be a bad idea. Perhaps randomly selecting from the pending schemas applicable components
-        # TODO: would be a better option???
-
-        # bypass epsilon greedy when schemas selected by a composite action's controller
-        if pending:
-            return values
-
         # determine if taking exploratory or goal-directed action
         is_exploratory = rng().uniform(0.0, 1.0) < self.epsilon
 
-        # randomly select winning schema if exploratory action and set value to np.inf
-        if is_exploratory:
+        if self.decay_strategy:
+            self._decay_epsilon()
+
+        # non-exploratory evaluation - all returned values are zeros
+        if not is_exploratory:
+            return values
+
+        # randomly select winning schema, setting its value to np.inf
+        if pending:
+            pending_components = pending.action.controller.components
+            pending_indexes = [schemas.index(schema) for schema in set(schemas).intersection(pending_components)]
+
+            # if pending, limit choice to pending schema's components
+            values[rng().choice(pending_indexes)] = np.inf
+        else:
+            # bypass epsilon greedy when schemas selected by a composite action's controller
             values[rng().choice(len(schemas))] = np.inf
 
-        # decay epsilon if decay strategy set
-        if self.decay_strategy:
-            if self.epsilon > self.epsilon_min:
-                self.epsilon = max(self.decay_strategy.decay(self.epsilon), self.epsilon_min)
-
         return values
+
+    def _decay_epsilon(self) -> None:
+        decayed_epsilon = self.decay_strategy.decay(np.array([self.epsilon]))
+        self.epsilon = np.maximum(decayed_epsilon, self.epsilon_min)[0]
 
 
 class HabituationEvaluationStrategy(EvaluationStrategy):
@@ -474,7 +490,7 @@ class DefaultExploratoryEvaluationStrategy(EvaluationStrategy):
                 ),
                 EpsilonGreedyEvaluationStrategy(
                     epsilon=epsilon_initial,
-                    decay_strategy=epsilon_decay_strategy or GeometricDecayStrategy(rate=0.95, minimum=epsilon_min)
+                    decay_strategy=epsilon_decay_strategy or ExponentialDecayStrategy(rate=0.95, minimum=epsilon_min)
                 )
             ]
         )
@@ -496,8 +512,7 @@ class DefaultGoalPursuitEvaluationStrategy(EvaluationStrategy):
                 ReliabilityEvaluationStrategy(max_penalty=max_reliability_penalty),
                 PendingFocusEvaluationStrategy(
                     max_value=max_pending_focus,
-                    focus_exp=1.0,
-                    decay_strategy=pending_focus_decay_strategy or GeometricDecayStrategy
+                    decay_strategy=pending_focus_decay_strategy or ExponentialDecayStrategy
                 )
             ]
         )

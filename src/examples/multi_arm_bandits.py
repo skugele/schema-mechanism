@@ -22,6 +22,7 @@ from schema_mechanism.share import info
 from schema_mechanism.share import rng
 from schema_mechanism.stats import CorrelationOnEncounter
 from schema_mechanism.stats import FisherExactCorrelationTest
+from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
@@ -239,10 +240,10 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
             strategies=[
                 TotalPrimitiveValueEvaluationStrategy(),
                 TotalDelegatedValueEvaluationStrategy(),
-                PendingFocusEvaluationStrategy(),
+                PendingFocusEvaluationStrategy(decay_strategy=ExponentialDecayStrategy(rate=0.1)),
                 ReliabilityEvaluationStrategy(max_penalty=0.05),
                 EpsilonGreedyEvaluationStrategy(epsilon=0.9999,
-                                                epsilon_min=0.05,
+                                                epsilon_min=0.1,
                                                 decay_strategy=GeometricDecayStrategy(rate=0.9999))
             ]
         )
