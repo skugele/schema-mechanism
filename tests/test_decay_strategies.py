@@ -6,7 +6,9 @@ import numpy as np
 from schema_mechanism.strategies.decay import DecayStrategy
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.decay import ImmediateDecayStrategy
 from schema_mechanism.strategies.decay import LinearDecayStrategy
+from schema_mechanism.strategies.decay import NoDecayStrategy
 from test_share.test_func import common_test_setup
 
 
@@ -16,6 +18,7 @@ class TestCommon(TestCase):
 
         self.DEFAULT_ARRAY_SIZE = 10
         self.ONES = np.ones(self.DEFAULT_ARRAY_SIZE)
+        self.ZEROS = np.zeros(self.DEFAULT_ARRAY_SIZE)
         self.NEG_INFINITY = -np.inf * self.ONES
 
     def assert_implements_decay_strategy_protocol(self, strategy: DecayStrategy):
@@ -31,11 +34,9 @@ class TestCommon(TestCase):
 
     def assert_expected_general_behavior_from_decay_step_size(self, strategy: DecayStrategy):
         # test: step size of zero should return the same values (try with different initial values)
-        for initial in np.linspace(0.0, 10.0):
-            input_values = self.ONES
-            output_values = strategy.decay(values=input_values, step_size=0.0)
-
-            np.testing.assert_array_equal(input_values, output_values)
+        input_values = self.ONES
+        output_values = strategy.decay(values=self.ONES, step_size=0.0)
+        np.testing.assert_array_equal(input_values, output_values)
 
         # test: step size less than zero should raise a ValueError
         self.assertRaises(ValueError, lambda: strategy.decay(values=self.ONES, step_size=-0.1))
@@ -251,3 +252,67 @@ class TestExponentialDecayStrategy(TestCommon):
         for minimum in np.linspace(-100.0, 1.0):
             self.assert_decay_continues_to_limit(
                 ExponentialDecayStrategy(rate=2.0, initial=1.0, minimum=minimum), limit=minimum)
+
+    def test_playground(self):
+        strategy = ExponentialDecayStrategy(rate=0.0001, initial=1.0, minimum=0.0)
+
+        values = np.ones(10)
+        for _ in range(10000):
+            print(values)
+            values = strategy.decay(values)
+
+
+class TestNoDecayStrategy(TestCommon):
+    def setUp(self) -> None:
+        super().setUp()
+
+        self.strategy = NoDecayStrategy()
+
+    def test_common(self):
+        self.assert_implements_decay_strategy_protocol(self.strategy)
+        self.assert_returns_array_of_correct_length(self.strategy)
+        self.assert_decay_of_negative_infinity_input_produces_negative_infinity_output(self.strategy)
+        self.assert_decay_default_step_size_is_one(self.strategy)
+
+    def test_decay_produces_expected_results(self):
+        # test: expected values should be returned from different step sizes
+
+        for step_size in range(0, 10):
+            output_values = self.strategy.decay(self.ONES, step_size=step_size)
+            np.testing.assert_array_equal(self.ONES, output_values)
+
+
+class TestImmediateDecayStrategy(TestCommon):
+    def setUp(self) -> None:
+        super().setUp()
+
+        self.strategy = ImmediateDecayStrategy()
+
+    def test_init(self):
+        minimum = 0.0
+
+        # test: attributes should be set to given values when provided to initializer
+        strategy = ImmediateDecayStrategy(minimum=minimum)
+
+        self.assertEqual(minimum, strategy.minimum)
+
+        # test: default minimum value should be -np.inf
+        strategy = ImmediateDecayStrategy()
+        self.assertEqual(-np.inf, strategy.minimum)
+
+    def test_common(self):
+        self.assert_implements_decay_strategy_protocol(self.strategy)
+        self.assert_returns_array_of_correct_length(self.strategy)
+        self.assert_expected_general_behavior_from_decay_step_size(self.strategy)
+        self.assert_decay_of_negative_infinity_input_produces_negative_infinity_output(self.strategy)
+        self.assert_decay_default_step_size_is_one(self.strategy)
+
+    def test_decay_produces_expected_results(self):
+        # test: step size of zero should return the input values (no decay)
+        output_values = self.strategy.decay(self.ONES, step_size=0)
+        np.testing.assert_array_equal(self.ONES, output_values)
+
+        # test: step sizes greater than zero should return minimum value (complete decay)
+        for step_size in range(1, 10):
+            output_values = self.strategy.decay(self.ONES, step_size=step_size)
+            np.testing.assert_array_equal(self.strategy.minimum * self.ONES, output_values)

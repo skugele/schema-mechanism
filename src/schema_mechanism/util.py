@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import importlib
 import itertools
-from abc import ABC
 from abc import ABCMeta
-from abc import abstractmethod
 from collections import Collection
 from collections import defaultdict
 from collections.abc import Iterable
@@ -247,79 +245,6 @@ class AssociativeArrayList(Generic[T]):
 
         indexes = np.array([self._indexes[k] for k in keys if k in self._indexes])
         return indexes
-
-
-class Trace(ABC, AssociativeArrayList[T]):
-    """
-
-        See Sutton and Barto, 2018, Chapter 12.)
-    """
-
-    def __init__(self, decay_rate: float = 0.5, **kwargs):
-        super().__init__(**kwargs)
-
-        self.decay_rate = np.float64(decay_rate)
-
-    @property
-    def decay_rate(self) -> float:
-        """ The trace decay rate, (0.0 <= decay rate <= 1.0). """
-        return self._decay_rate
-
-    @decay_rate.setter
-    def decay_rate(self, value: float) -> None:
-        if not 0.0 <= value <= 1.0:
-            raise ValueError(f'Decay rate must be between 0.0 and 1.0 inclusive.')
-
-        self._decay_rate = value
-
-    @abstractmethod
-    def update(self, active_set: Optional[Collection[T]] = None) -> None:
-        pass
-
-    def reset(self) -> None:
-        self.clear()
-
-
-class AccumulatingTrace(Trace):
-    """ Implements a generic-type accumulating trace. """
-
-    def __init__(self, decay_rate: float = 0.5, **kwargs):
-        super().__init__(decay_rate, **kwargs)
-
-    def update(self, active_set: Optional[Collection[T]] = None):
-        active_set = np.array(active_set) if active_set is not None else np.array([])
-
-        # add any new elements
-        self.add(active_set)
-
-        # decay all values
-        self.values *= self._decay_rate
-
-        # increase value of all elements in active_set
-        indexes = self.indexes(active_set)
-        if len(indexes) > 0:
-            self.values[indexes] += 1
-
-
-class ReplacingTrace(Trace):
-    """ Implements a generic-type accumulating trace. """
-
-    def __init__(self, decay_rate: float = 0.5, **kwargs):
-        super().__init__(decay_rate, **kwargs)
-
-    def update(self, active_set: Optional[Collection[T]] = None):
-        active_set = np.array(active_set) if active_set is not None else np.array([])
-
-        # add any new elements
-        self.add(active_set)
-
-        # decay all values
-        self.values *= self._decay_rate
-
-        # set value of all elements in active_set to 1.0
-        indexes = self.indexes(active_set)
-        if len(indexes) > 0:
-            self.values[indexes] = 1
 
 
 class DefaultDictWithKeyFactory(defaultdict):

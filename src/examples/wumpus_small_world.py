@@ -12,6 +12,7 @@ from examples import is_running
 from examples import run_decorator
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
+from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.func_api import sym_item
@@ -26,6 +27,8 @@ from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
+from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
+from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 
@@ -44,13 +47,16 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
         evaluation_strategy=CompositeEvaluationStrategy(
             strategies=[
                 TotalDelegatedValueEvaluationStrategy(),
-                # HabituationEvaluationStrategy(
-                #     trace=GlobalStats().action_trace,
-                #     multiplier=1.0),
-                # ReliabilityEvaluationStrategy(max_penalty=0.1),
-                EpsilonGreedyEvaluationStrategy(epsilon=0.99999,
+                HabituationEvaluationStrategy(
+                    trace=GlobalStats().action_trace,
+                    multiplier=1.0),
+                ReliabilityEvaluationStrategy(max_penalty=0.1),
+                EpsilonGreedyEvaluationStrategy(epsilon=0.9999,
                                                 epsilon_min=0.05,
-                                                decay_strategy=ExponentialDecayStrategy(rate=0.99999))
+                                                decay_strategy=ExponentialDecayStrategy(
+                                                    rate=1e-4,
+                                                    initial=1.0,
+                                                    minimum=0.0))
             ],
         )
     )
@@ -71,8 +77,6 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     sm.params.set('ext_result.positive_correlation_threshold', 0.95)
     sm.params.set('learning_rate', 0.01)
     sm.params.set('reliability_threshold', 0.8)
-
-    # sm.params.get('features').remove(SupportedFeature.COMPOSITE_ACTIONS)
 
     display_params()
 

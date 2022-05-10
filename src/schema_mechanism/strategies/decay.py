@@ -25,6 +25,8 @@ class DecayStrategy(ABC):
 
 class LinearDecayStrategy(DecayStrategy):
     def __init__(self, rate: float, minimum: Optional[float] = None) -> None:
+        super().__init__()
+
         self.minimum = minimum if minimum is not None else -np.inf
         self.rate = rate
 
@@ -55,6 +57,8 @@ class LinearDecayStrategy(DecayStrategy):
 
 class GeometricDecayStrategy(DecayStrategy):
     def __init__(self, rate: float) -> None:
+        super().__init__()
+
         self.rate = rate
 
     @property
@@ -76,6 +80,8 @@ class GeometricDecayStrategy(DecayStrategy):
 
 class ExponentialDecayStrategy(DecayStrategy):
     def __init__(self, rate: float, initial: Optional[float] = 1.0, minimum: Optional[float] = -np.inf) -> None:
+        super().__init__()
+
         self.rate = rate
         self.initial: float = initial
         self.minimum: float = minimum
@@ -98,3 +104,28 @@ class ExponentialDecayStrategy(DecayStrategy):
         y: np.ndarray = self.initial - (1.0 + self.rate) ** (x + step_size) + 1.0
 
         return np.maximum(y, self.minimum * np.ones_like(y))
+
+
+class NoDecayStrategy(DecayStrategy):
+
+    def decay(self, values: np.ndarray, step_size: float = 1.0) -> np.ndarray:
+        if step_size < 0.0:
+            raise ValueError('Step size must be non-negative')
+
+        return values
+
+
+class ImmediateDecayStrategy(DecayStrategy):
+    def __init__(self, minimum: float = -np.inf):
+        super().__init__()
+
+        self.minimum: float = minimum
+
+    def decay(self, values: np.ndarray, step_size: float = 1.0) -> np.ndarray:
+        if step_size < 0.0:
+            raise ValueError('Step size must be non-negative')
+
+        if step_size == 0:
+            return values
+
+        return self.minimum * np.ones_like(values)

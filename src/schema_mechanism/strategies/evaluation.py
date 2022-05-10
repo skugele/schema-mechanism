@@ -16,8 +16,8 @@ from schema_mechanism.share import debug
 from schema_mechanism.share import rng
 from schema_mechanism.strategies.decay import DecayStrategy
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
-from schema_mechanism.util import AccumulatingTrace
-from schema_mechanism.util import Trace
+from schema_mechanism.strategies.trace import AccumulatingTrace
+from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import equal_weights
 
 
@@ -471,27 +471,58 @@ class DefaultExploratoryEvaluationStrategy(EvaluationStrategy):
     """
 
     def __init__(self,
-                 habituation_trace: Trace = None,
+                 habituation_trace: Trace[Action] = None,
                  habituation_multiplier: float = 1.0,
                  epsilon_initial: float = 0.99,
                  epsilon_min: float = 0.2,
                  epsilon_decay_strategy: DecayStrategy = None
                  ):
+        """
+
+        :param habituation_trace:
+        :param habituation_multiplier:
+        :param epsilon_initial:
+        :param epsilon_min:
+        :param epsilon_decay_strategy:
+        """
         # TODO: add an evaluation strategy for the following
         # "a component of exploration value promotes underrepresented levels of actions, where a structure's level is
         # defined as follows: primitive items and actions are of level zero; any structure defined in terms of other
         # structures is of one greater level than the maximum of those structures' levels." (See Drescher, 1991, p. 67)
 
+        default_habituation_trace = (
+            AccumulatingTrace(
+                active_increment=0.1,
+                decay_strategy=ExponentialDecayStrategy(
+                    rate=0.5,
+                    initial=0.1,
+                    minimum=0.0
+                )
+            )
+        ) if not habituation_trace else None
+
+        self.habituation_value_strategy = (
+            HabituationEvaluationStrategy(
+                trace=habituation_trace or default_habituation_trace,
+                multiplier=habituation_multiplier
+            ),
+        )
+
+        default_epsilon_decay = (
+            ExponentialDecayStrategy(rate=0.9999, minimum=epsilon_min)
+        )
+
+        self.epsilon_greedy_value_strategy = (
+            EpsilonGreedyEvaluationStrategy(
+                epsilon=epsilon_initial,
+                decay_strategy=epsilon_decay_strategy or default_epsilon_decay
+            )
+        )
+
         self._value_strategy = CompositeEvaluationStrategy(
             strategies=[
-                HabituationEvaluationStrategy(
-                    trace=habituation_trace or AccumulatingTrace(decay_rate=0.2),
-                    multiplier=habituation_multiplier
-                ),
-                EpsilonGreedyEvaluationStrategy(
-                    epsilon=epsilon_initial,
-                    decay_strategy=epsilon_decay_strategy or ExponentialDecayStrategy(rate=0.95, minimum=epsilon_min)
-                )
+                self.habituation_value_strategy,
+                self.epsilon_greedy_value_strategy
             ]
         )
 
@@ -501,19 +532,51 @@ class DefaultExploratoryEvaluationStrategy(EvaluationStrategy):
 
 class DefaultGoalPursuitEvaluationStrategy(EvaluationStrategy):
     def __init__(self,
-                 max_reliability_penalty: float = 1.0,
-                 max_pending_focus: float = 1.0,
+                 reliability_max_penalty: float = 1.0,
+                 reliability_severity: float = 0.1,
+                 pending_focus_max_value: float = 1.0,
                  pending_focus_decay_strategy: DecayStrategy = None):
+        """
+
+        :param reliability_max_penalty:
+        :param reliability_severity:
+        :param pending_focus_max_value:
+        :param pending_focus_decay_strategy:
+        """
+        self.primitive_value_strategy = TotalPrimitiveValueEvaluationStrategy()
+        self.delegated_value_strategy = TotalDelegatedValueEvaluationStrategy()
+        self.instrumental_value_strategy = InstrumentalValueEvaluationStrategy()
+        self.reliability_value_strategy = ReliabilityEvaluationStrategy(
+            max_penalty=reliability_max_penalty,
+            severity=reliability_severity)
+
+        default_pending_focus_decay_strategy = ExponentialDecayStrategy(
+            rate=0.5,
+            initial=1.0,
+            minimum=0.0
+        )
+
+        self.pending_focus_value_strategy = PendingFocusEvaluationStrategy(
+            max_value=pending_focus_max_value,
+            decay_strategy=(
+                    pending_focus_decay_strategy or
+                    default_pending_focus_decay_strategy
+            )
+        )
+
+        default_pending_focus_decay_strategy = ExponentialDecayStrategy(
+            rate=0.5,
+            initial=1.0,
+            minimum=0.0
+        )
+
         self.value_strategy = CompositeEvaluationStrategy(
             strategies=[
-                TotalPrimitiveValueEvaluationStrategy(),
-                TotalDelegatedValueEvaluationStrategy(),
-                InstrumentalValueEvaluationStrategy(),
-                ReliabilityEvaluationStrategy(max_penalty=max_reliability_penalty),
-                PendingFocusEvaluationStrategy(
-                    max_value=max_pending_focus,
-                    decay_strategy=pending_focus_decay_strategy or ExponentialDecayStrategy
-                )
+                self.primitive_value_strategy,
+                self.delegated_value_strategy,
+                self.instrumental_value_strategy,
+                self.reliability_value_strategy,
+                self.pending_focus_value_strategy
             ]
         )
 

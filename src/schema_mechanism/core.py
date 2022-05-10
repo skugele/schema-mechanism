@@ -35,17 +35,20 @@ from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import debug
 from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import trace
+from schema_mechanism.share import warn
 from schema_mechanism.stats import CorrelationTable
 from schema_mechanism.stats import FisherExactCorrelationTest
 from schema_mechanism.stats import ItemCorrelationTest
-from schema_mechanism.util import AccumulatingTrace
+from schema_mechanism.strategies.decay import ExponentialDecayStrategy
+from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.trace import AccumulatingTrace
+from schema_mechanism.strategies.trace import ReplacingTrace
+from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import AssociativeArrayList
 from schema_mechanism.util import DefaultDictWithKeyFactory
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
-from schema_mechanism.util import ReplacingTrace
 from schema_mechanism.util import Singleton
-from schema_mechanism.util import Trace
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import pairwise
 from schema_mechanism.util import repr_str
@@ -207,7 +210,7 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         Sutton, R. S., & Barto, A. G. (2018). Reinforcement learning: An introduction. MIT press.
     """
 
-    def __init__(self, discount_factor: float, trace_decay: float) -> None:
+    def __init__(self, discount_factor: float, eligibility_trace: Trace[Item]) -> None:
         """ Initializes the EligibilityTraceDelegatedValueHelper
 
         Note: a discount factor of 0.0 will give NO VALUE to future states when calculating delegated value (i.e.,
@@ -215,13 +218,12 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         less distant states (i.e., state value will be undiscounted).
 
         :param discount_factor: quantifies the reduction in future state value w.r.t. an item's delegated value
-        :param trace_decay: quantifies the time horizon over which future states influence an item's delegated values
+        :param eligibility_trace: a trace used to determine the time horizon over which an item's delegated values
+        receive credit for encountered state values.
         """
         self.discount_factor = discount_factor
+        self.eligibility_trace: Trace[Item] = eligibility_trace
 
-        # note: eligibility traces usually multiply the decay rate by the discount factor. At the moment, it seems
-        #       cleaner to disentangle these factors, but I may want to change this in the future.
-        self._eligibility_trace: ReplacingTrace[Item] = ReplacingTrace(decay_rate=trace_decay)
         self._delegated_values: AssociativeArrayList[Item] = AssociativeArrayList()
 
     @property
@@ -240,10 +242,6 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
 
         self._discount_factor = value
 
-    @property
-    def eligibility_trace(self) -> Trace:
-        return self._eligibility_trace
-
     def delegated_value(self, item: Item) -> float:
         """ Returns the delegated value for the requested item.
 
@@ -254,6 +252,10 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         index = self._delegated_values.indexes([item], add_missing=True)[0]
         return self._delegated_values.values[index]
 
+    # TODO: the determination of active items from states should be removed from this method
+    # TODO:    * remove selection_state and result_state parameters
+    # TODO:    * add active_items parameter
+    # TODO: externalize effective_state_value calculation and pass that value in as a parameter?
     def update(self,
                selection_state: State,
                result_state: State,
@@ -441,48 +443,33 @@ def reduce_to_most_specific_items(items: Optional[Collection[Item]]) -> Collecti
 
 class GlobalStats(metaclass=Singleton):
     def __init__(self,
-                 delegated_value_helper: DelegatedValueHelper = None,
                  action_trace: Trace[Action] = None,
+                 delegated_value_helper: DelegatedValueHelper = None,
                  initial_baseline_value: float = 0.0):
-        # TODO: these defaults should be removed... all of this is crap. These objects need to be removed from the
-        # TODO: global stats.
-        self._dv_helper: DelegatedValueHelper = delegated_value_helper or EligibilityTraceDelegatedValueHelper(
-            discount_factor=GlobalParams().get('delegated_value_helper.discount_factor'),
-            trace_decay=GlobalParams().get('delegated_value_helper.decay_rate')
+
+        default_delegated_value_helper: DelegatedValueHelper = (
+            EligibilityTraceDelegatedValueHelper(
+                discount_factor=0.5,
+                eligibility_trace=ReplacingTrace(
+                    decay_strategy=ExponentialDecayStrategy(rate=0.5, initial=1.0, minimum=0.0),
+                    active_value=1.0)
+            )
         )
 
-        self._action_trace: AccumulatingTrace[Action] = action_trace or AccumulatingTrace(decay_rate=0.1)
-        self._baseline_value = initial_baseline_value
+        default_action_trace: Trace[Action] = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.1)
+        )
 
-        self._n: int = 0
+        if not delegated_value_helper:
+            warn(f'Using default delegated value helper: {default_delegated_value_helper}')
 
-    @property
-    def n(self) -> int:
-        return self._n
+        if not default_action_trace:
+            warn(f'Using default action trace: {default_action_trace}')
 
-    @n.setter
-    def n(self, value: int) -> None:
-        self._n = value
-
-    @property
-    def delegated_value_helper(self) -> DelegatedValueHelper:
-        return self._dv_helper
-
-    @property
-    def action_trace(self) -> Trace[Action]:
-        return self._action_trace
-
-    @property
-    def baseline_value(self) -> float:
-        """ A running average of the primitive state value encountered over all visited states.
-
-        :return: the empirical (primitive value) baseline
-        """
-        return self._baseline_value
-
-    @baseline_value.setter
-    def baseline_value(self, value: float) -> None:
-        self._baseline_value = value
+        self.action_trace: Trace[Action] = action_trace or default_action_trace
+        self.delegated_value_helper: DelegatedValueHelper = delegated_value_helper or default_delegated_value_helper
+        self.baseline_value: float = initial_baseline_value
+        self.n: int = 0
 
     def update_baseline(self, state: State) -> None:
         """ Updates an unconditional running average of the primitive values of states encountered.
@@ -491,18 +478,18 @@ class GlobalStats(metaclass=Singleton):
         :return: None
         """
         lr = GlobalParams().get('learning_rate')
-        self._baseline_value += lr * (calc_primitive_value(state) - self._baseline_value)
+        self.baseline_value += lr * (calc_primitive_value(state) - self.baseline_value)
 
     # TODO: implement this, and replace update_baseline
     def update(self):
         pass
 
     def clear(self):
-        self._baseline_value = 0.0
-        self._n = 0
+        self.baseline_value = 0.0
+        self.n = 0
 
-        self._dv_helper.reset()
-        self._action_trace.reset()
+        self.action_trace.clear()
+        self.delegated_value_helper.reset()
 
 
 class SchemaStats:

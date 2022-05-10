@@ -35,7 +35,7 @@ from schema_mechanism.util import Observable
 # global constants
 
 N_MACHINES = 25
-N_STEPS = 20000
+N_STEPS = 15000
 
 
 class Machine:

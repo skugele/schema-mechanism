@@ -10,6 +10,12 @@ from schema_mechanism.core import reduce_to_most_specific_items
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.share import GlobalParams
+from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.decay import ImmediateDecayStrategy
+from schema_mechanism.strategies.decay import LinearDecayStrategy
+from schema_mechanism.strategies.decay import NoDecayStrategy
+from schema_mechanism.strategies.trace import AccumulatingTrace
+from schema_mechanism.strategies.trace import ReplacingTrace
 from schema_mechanism.util import pairwise
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSymbolicItem
@@ -23,7 +29,18 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         self.item_a = sym_item('A', primitive_value=0.0)
         self.item_b = sym_item('B', primitive_value=0.0)
 
-        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=0.5, trace_decay=0.5)
+        self.discount_factor = 0.5
+        self.eligibility_trace = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0
+        )
+
+        self.no_decay_eligibility_trace = ReplacingTrace(active_value=1.0, decay_strategy=NoDecayStrategy())
+
+        self.dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=self.discount_factor,
+            eligibility_trace=self.eligibility_trace
+        )
 
         # mocks
         self.i_no_pv_no_dv = sym_item('1', item_type=MockSymbolicItem, primitive_value=0.0, delegated_value=0.0)
@@ -42,21 +59,22 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         # noinspection PyBroadException
         try:
             # test: discount factors and trace decays between 0.0 and 1.0 (inclusive) should be allowed
-            _ = EligibilityTraceDelegatedValueHelper(discount_factor=0.0, trace_decay=0.0)
-            _ = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, trace_decay=1.0)
+            _ = EligibilityTraceDelegatedValueHelper(discount_factor=0.0, eligibility_trace=self.eligibility_trace)
+            _ = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, eligibility_trace=self.eligibility_trace)
 
             discount_factor = 0.5
-            trace_decay = 0.5
+            eligibility_trace = AccumulatingTrace(decay_strategy=LinearDecayStrategy(rate=0.1, minimum=0.0))
 
-            dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=discount_factor, trace_decay=trace_decay)
+            dv_helper = EligibilityTraceDelegatedValueHelper(
+                discount_factor=discount_factor,
+                eligibility_trace=eligibility_trace
+            )
 
-            self.assertIsNotNone(dv_helper.eligibility_trace)
+            # test: discount factor should equal the value passed to initializer
+            self.assertEqual(discount_factor, dv_helper.discount_factor)
 
-            # test: discount factor should have been set to the value passed to initializer
-            self.assertTrue(dv_helper.discount_factor, discount_factor)
-
-            # test: trace decay should have been set in eligibility trace to the value passed to initializer
-            self.assertTrue(dv_helper.eligibility_trace.decay_rate, trace_decay)
+            # test: eligibility trace should be the trace passed to the initializer
+            self.assertIs(eligibility_trace, dv_helper.eligibility_trace)
 
             # test: delegated values should be initialized to zero
             for item in [sym_item(str(v)) for v in range(100)]:
@@ -67,19 +85,13 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
 
         # test: discount factors less than 0.0 should raise a ValueError
         self.assertRaises(ValueError,
-                          lambda: EligibilityTraceDelegatedValueHelper(discount_factor=-0.1, trace_decay=0.5))
+                          lambda: EligibilityTraceDelegatedValueHelper(discount_factor=-0.1,
+                                                                       eligibility_trace=self.eligibility_trace))
 
         # test: discount factors greater than 1.0 should raise a ValueError
         self.assertRaises(ValueError,
-                          lambda: EligibilityTraceDelegatedValueHelper(discount_factor=1.1, trace_decay=0.5))
-
-        # test: trace decay less than 0.0 should raise a ValueError
-        self.assertRaises(ValueError,
-                          lambda: EligibilityTraceDelegatedValueHelper(discount_factor=0.5, trace_decay=-0.1))
-
-        # test: trace decay greater than 1.0 should raise a ValueError
-        self.assertRaises(ValueError,
-                          lambda: EligibilityTraceDelegatedValueHelper(discount_factor=0.5, trace_decay=1.1))
+                          lambda: EligibilityTraceDelegatedValueHelper(discount_factor=1.1,
+                                                                       eligibility_trace=self.eligibility_trace))
 
     def test_item_never_on(self):
         # test: delegated value of On item in previous state should be updated towards target
@@ -116,7 +128,10 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
 
     def test_item_maximum_undiscounted_delegated_value(self):
         # undiscounted dv helper
-        dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, trace_decay=0.5)
+        dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=1.0,
+            eligibility_trace=self.eligibility_trace
+        )
 
         GlobalParams().set('learning_rate', 0.1)
 
@@ -206,7 +221,15 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
 
     def test_effective_state_value_with_no_discount(self):
         # simplifying this test by making discount factor and trace decay 1.0. (Only testing basic value calculations.)
-        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, trace_decay=1.0)
+        self.dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=1.0,
+            eligibility_trace=ReplacingTrace(
+                active_value=1.0,
+
+                # minimum is set the same as the active value to emulate no decay
+                decay_strategy=LinearDecayStrategy(rate=0.1, minimum=1.0)
+            )
+        )
 
         # test: result state with primitive and delegated value of 0.0 SHOULD result in eff. value of 1.0
         eff_value = self.dv_helper.effective_state_value(selection_state=sym_state('2'), result_state=sym_state('1'))
@@ -238,7 +261,10 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
 
     def test_effective_state_value_multiple_state_elements(self):
         # simplifying this test by making discount factor and trace decay 1.0. (Only testing basic value calculations.)
-        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, trace_decay=1.0)
+        self.dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=1.0,
+            eligibility_trace=self.no_decay_eligibility_trace
+        )
 
         _ = sym_item('P1', item_type=MockSymbolicItem, primitive_value=1.0, delegated_value=1.0)
         _ = sym_item('P2', item_type=MockSymbolicItem, primitive_value=-1.0, delegated_value=1.0)
@@ -271,7 +297,10 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
 
     def test_effective_state_value_with_discount(self):
         discount_factor = 0.5
-        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=discount_factor, trace_decay=1.0)
+        self.dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=discount_factor,
+            eligibility_trace=self.no_decay_eligibility_trace
+        )
 
         # test: state SHOULD have zero value if no new elements between selection and result states
         eff_value = self.dv_helper.effective_state_value(selection_state=sym_state('2'), result_state=sym_state('1'))
@@ -303,7 +332,10 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
 
     def test_effective_state_value_with_zero_discount_factor(self):
         # zero discount factor means that the agent only values the present
-        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=0.0, trace_decay=1.0)
+        self.dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=0.0,
+            eligibility_trace=self.no_decay_eligibility_trace
+        )
 
         # test: all result states should have zero value due to 0.0 discount factor
         eff_value = self.dv_helper.effective_state_value(selection_state=sym_state('2'), result_state=sym_state('1'))
@@ -347,7 +379,10 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         # these test cases feature states corresponding to composite and non-composite items that share elements
 
         # simplifying this test by making discount factor and trace decay 1.0. (Only testing basic value calculations.)
-        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, trace_decay=1.0)
+        self.dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=1.0,
+            eligibility_trace=self.no_decay_eligibility_trace
+        )
 
         _ = sym_item('P1', item_type=MockSymbolicItem, primitive_value=1.0, delegated_value=1.0)
         _ = sym_item('P2', item_type=MockSymbolicItem, primitive_value=-1.0, delegated_value=1.0)
@@ -394,7 +429,13 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         # simplifying this test. discount factor = 1.0 => present and future values equal;
         #                        trace decay = 0.0 => full trace decay between updates;
         #                        learning rate = 1.0 => new value replaces old values
-        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, trace_decay=0.0)
+        self.dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=1.0,
+            eligibility_trace=ReplacingTrace(
+                decay_strategy=ImmediateDecayStrategy(minimum=0.0),
+                active_value=1.0
+            )
+        )
         GlobalParams().set('learning_rate', 1.0)
 
         # sanity check: item should have no delegated value initially
@@ -426,7 +467,13 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
     def test_update_discounted_full_trace_decay(self):
         # simplifying this test. trace decay = 0.0 => full trace decay between updates;
         #                        learning rate = 1.0 => new value replaces old values
-        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=0.5, trace_decay=0.0)
+        self.dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=0.5,
+            eligibility_trace=ReplacingTrace(
+                active_value=1.0,
+                decay_strategy=ImmediateDecayStrategy(minimum=0.0)
+            )
+        )
         GlobalParams().set('learning_rate', 1.0)
 
         # sanity check: item should have no delegated value initially
@@ -456,9 +503,15 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         self.assertEqual(eff_value, self.dv_helper.delegated_value(self.item_b))
 
     def test_update_undiscounted_partial_trace_decay(self):
-        # simplifying this test. trace decay = 0.5 => full trace decay between updates;
+        # simplifying this test. trace decay = 0.5 => 1/2 value decays away each call
         #                        learning rate = 1.0 => new value replaces old values
-        self.dv_helper = EligibilityTraceDelegatedValueHelper(discount_factor=1.0, trace_decay=0.5)
+        self.dv_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=1.0,
+            eligibility_trace=ReplacingTrace(
+                active_value=1.0,
+                decay_strategy=GeometricDecayStrategy(rate=0.5)
+            )
+        )
         GlobalParams().set('learning_rate', 1.0)
 
         # sanity check: item should have no delegated value initially
