@@ -8,6 +8,7 @@ from unittest.mock import call
 
 import numpy as np
 
+from schema_mechanism.core import Action
 from schema_mechanism.core import Chain
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import Item
@@ -21,6 +22,7 @@ from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
+from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
 from schema_mechanism.strategies.evaluation import InstrumentalValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import MaxDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
@@ -28,6 +30,9 @@ from schema_mechanism.strategies.evaluation import PendingFocusEvaluationStrateg
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
+from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
+from schema_mechanism.strategies.trace import AccumulatingTrace
+from schema_mechanism.strategies.trace import Trace
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSchema
 from test_share.test_classes import MockSymbolicItem
@@ -822,112 +827,98 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
             self.assertNotEqual(0, counter[index], msg=f'Component schema {all_schemas[index]} was never selected')
 
 
-# class TestHabituationEvaluationStrategy(TestCase):
-#     def setUp(self) -> None:
-#         common_test_setup()
-#
-#         self.actions = [Action(f'A{i}') for i in range(11)]
-#         self.schemas = [sym_schema(f'/A{i}/') for i in range(11)]
-#
-#         self.tr: AccumulatingTrace[Action] = AccumulatingTrace()
-#
-#         # elements 0-4 should have value of 0.25
-#         self.tr.update(self.actions)
-#
-#         # element 5 should have value value of 0.75
-#         self.tr.update(self.actions[5:])
-#
-#         # elements 6-10 should have value of 1.75
-#         self.tr.update(self.actions[6:])
-#
-#         # sanity checks
-#         expected = 0.25 * np.ones_like(self.actions[0:5])
-#         actual = self.tr.values[self.tr.indexes(self.actions[0:5])]
-#
-#         self.assertTrue(np.array_equal(expected, actual))
-#
-#         expected = np.array([0.75])
-#         actual = self.tr.values[self.tr.indexes([self.actions[5]])]
-#
-#         self.assertTrue(np.array_equal(expected, actual))
-#
-#         expected = 1.75 * np.ones_like(self.actions[6:])
-#         actual = self.tr.values[self.tr.indexes(self.actions[6:])]
-#
-#         self.assertTrue(np.array_equal(expected, actual))
-#
-#         self.habituation_strategy = HabituationEvaluationStrategy(trace=self.tr)
-#
-#     def test_no_trace(self):
-#         # test: no trace or trace with
-#         self.assertRaises(ValueError, lambda: HabituationEvaluationStrategy(trace=None, multiplier=1.0))
-#
-#     def test_empty_schemas_list(self):
-#         # test: empty schemas list should return empty numpy array
-#         expected = np.array([])
-#         actual = self.habituation_strategy.values(schemas=[])
-#
-#         self.assertTrue(np.array_equal(expected, actual))
-#
-#     def test_single_action(self):
-#         # test: single action should have zero value
-#         expected = np.zeros(1)
-#         actual = self.habituation_strategy.values(schemas=[self.schemas[0]])
-#
-#         self.assertTrue(np.array_equal(expected, actual))
-#
-#     def test_multiple_actions_same_value(self):
-#         # test: multiple actions with same trace value should return zeros
-#
-#         schemas = self.schemas[:5]
-#
-#         expected = np.zeros_like(schemas)
-#         actual = self.habituation_strategy.values(schemas=schemas)
-#
-#         self.assertTrue(np.array_equal(expected, actual))
-#
-#     def test_multiple_actions_different_values_contains_median(self):
-#         values = self.habituation_strategy.values(schemas=self.schemas)
-#
-#         # sanity check
-#         self.assertTrue(np.median(values) in values)
-#
-#         # test: actions with trace values equal to median should have zero value
-#         self.assertEqual(np.zeros(1), values[5])
-#
-#         # test: actions with trace values below median should have positive value
-#         self.assertTrue(np.alltrue(values[:5] > 0.0))
-#
-#         # test: actions with trace values above median should have negative value
-#         self.assertTrue(np.alltrue(values[6:] < 0.0))
-#
-#     def test_multiple_actions_different_values_does_not_contain_median(self):
-#         values = self.habituation_strategy.values(schemas=self.schemas[1:])
-#
-#         # sanity check
-#         self.assertTrue(np.median(values) not in values)
-#
-#         # test: actions with trace values below median should have positive value
-#         self.assertTrue(np.alltrue(values[:5] > 0.0))
-#
-#         # test: actions with trace values above median should have negative value
-#         self.assertTrue(np.alltrue(values[5:] < 0.0))
-#
-#     def test_unknown_values(self):
-#         # test: schemas with unknown actions should raise ValueError
-#         schemas = [*self.schemas, sym_schema('/UNK/')]
-#         self.assertRaises(ValueError, lambda: self.habituation_strategy.values(schemas=schemas))
-#
-#     def test_multiplier(self):
-#         multiplier = 8.0
-#
-#         habituation_with_default_multiplier = HabituationEvaluationStrategy(trace=self.tr)
-#         habituation_with_non_default_multiplier = HabituationEvaluationStrategy(trace=self.tr, multiplier=multiplier)
-#
-#         values = habituation_with_default_multiplier(schemas=self.schemas)
-#         values_with_mult = habituation_with_non_default_multiplier(schemas=self.schemas)
-#
-#         self.assertTrue(np.array_equal(values * multiplier, values_with_mult))
+class TestHabituationEvaluationStrategy(TestCommon):
+    def setUp(self) -> None:
+        super().setUp()
+
+        self.actions = [Action(f'A{i}') for i in range(11)]
+        self.schemas = [sym_schema(f'/A{i}/') for i in range(11)]
+
+        self.trace: Trace[Action] = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0
+        )
+
+        # elements 0-4 should have value of 0.25
+        self.trace.update(self.actions)
+
+        # element 5 should have value value of 0.75
+        self.trace.update(self.actions[5:])
+
+        # elements 6-10 should have value of 1.75
+        self.trace.update(self.actions[6:])
+
+        # sanity checks
+        expected = 0.25 * np.ones_like(self.actions[0:5])
+        actual = self.trace.values[self.trace.indexes(self.actions[0:5])]
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+        expected = np.array([0.75])
+        actual = self.trace.values[self.trace.indexes([self.actions[5]])]
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+        expected = 1.75 * np.ones_like(self.actions[6:])
+        actual = self.trace.values[self.trace.indexes(self.actions[6:])]
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+        self.habituation_strategy = HabituationEvaluationStrategy(
+            trace=self.trace,
+            scaling_strategy=SigmoidScalingStrategy()
+        )
+
+    def test_common(self):
+        self.assert_all_common_functionality(self.habituation_strategy)
+
+    def test_single_action(self):
+        # test: single action should have zero value
+        expected = np.zeros(1)
+        actual = self.habituation_strategy.values(schemas=[self.schemas[0]])
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+    def test_multiple_actions_same_value(self):
+        # test: multiple actions with same trace value should return zeros
+        schemas = self.schemas[:5]
+
+        expected = np.zeros_like(schemas)
+        actual = self.habituation_strategy.values(schemas=schemas)
+
+        self.assertTrue(np.array_equal(expected, actual))
+
+    def test_multiple_actions_different_values_contains_median(self):
+        values = self.habituation_strategy.values(schemas=self.schemas)
+
+        # sanity check
+        self.assertTrue(np.median(values) in values)
+
+        # test: actions with trace values equal to median should have zero value
+        self.assertEqual(np.zeros(1), values[5])
+
+        # test: actions with trace values below median should have positive value
+        self.assertTrue(np.alltrue(values[:5] > 0.0))
+
+        # test: actions with trace values above median should have negative value
+        self.assertTrue(np.alltrue(values[6:] < 0.0))
+
+    def test_multiple_actions_different_values_does_not_contain_median(self):
+        values = self.habituation_strategy.values(schemas=self.schemas[1:])
+
+        # sanity check
+        self.assertTrue(np.median(values) not in values)
+
+        # test: actions with trace values below median should have positive value
+        self.assertTrue(np.alltrue(values[:5] > 0.0))
+
+        # test: actions with trace values above median should have negative value
+        self.assertTrue(np.alltrue(values[5:] < 0.0))
+
+    def test_unknown_values(self):
+        # test: schemas with unknown actions should raise ValueError
+        schemas = [*self.schemas, sym_schema('/UNK/')]
+        self.assertRaises(ValueError, lambda: self.habituation_strategy.values(schemas=schemas))
 
 
 class TestCompositeEvaluationStrategy(TestCase):

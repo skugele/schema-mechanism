@@ -45,11 +45,6 @@ class TestSymbolicItem(TestCase):
     def test_state_elements(self):
         self.assertSetEqual({'1234'}, self.item.state_elements)
 
-    def test_primitive_value(self):
-        # an item's primitive value should be settable
-        self.item.primitive_value = -2.0
-        self.assertEqual(-2.0, self.item.primitive_value)
-
     def test_is_on(self):
         # item expected to be ON for these states
         self.assertTrue(self.item.is_on(sym_state('1234')))

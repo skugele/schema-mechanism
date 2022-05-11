@@ -12,9 +12,11 @@ from enum import auto
 from typing import Any
 from typing import Optional
 
+from schema_mechanism.core import Action
 from schema_mechanism.core import Chain
 from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import CompositeItem
+from schema_mechanism.core import DelegatedValueHelper
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Item
 from schema_mechanism.core import ItemPool
@@ -26,9 +28,18 @@ from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import calc_primitive_value
+from schema_mechanism.core import default_action_trace
+from schema_mechanism.core import default_delegated_value_helper
+from schema_mechanism.core import default_global_params
+from schema_mechanism.core import default_global_stats
+from schema_mechanism.core import get_action_trace
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
+from schema_mechanism.core import set_action_trace
+from schema_mechanism.core import set_delegated_value_helper
+from schema_mechanism.core import set_global_params
+from schema_mechanism.core import set_global_stats
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import debug
@@ -39,6 +50,7 @@ from schema_mechanism.strategies.evaluation import EvaluationStrategy
 from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.selection import SelectionStrategy
+from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import Observer
 
 
@@ -296,7 +308,8 @@ class SchemaMemory(Observer):
                 ca = CompositeAction(goal_state=spin_off.result)
                 ca.controller.update(self.backward_chains(ca.goal_state))
 
-                GlobalStats().action_trace.add([ca])
+                action_trace: Trace[Action] = get_action_trace()
+                action_trace.add([ca])
 
                 # adds a new bare schema for the new composite action
                 ca_schema = SchemaPool().get(SchemaUniqueKey(action=ca))
@@ -547,18 +560,46 @@ class SchemaMechanism:
                  schema_memory: SchemaMemory,
                  schema_selection: SchemaSelection,
                  global_params: GlobalParams = None,
-                 global_stats: GlobalStats = None):
+                 global_stats: GlobalStats = None,
+                 delegated_value_helper: DelegatedValueHelper = None,
+                 action_trace: Trace[Action] = None):
         super().__init__()
 
         self._schema_memory: SchemaMemory = schema_memory
         self._schema_selection: SchemaSelection = schema_selection
-        self._params: GlobalParams = global_params or GlobalParams()
-        self._stats: GlobalStats = global_stats or GlobalStats()
+
+        self._params: GlobalParams = (
+            default_global_params
+            if global_params is None
+            else global_params
+        )
+        set_global_params(self._params)
+
+        self._stats: GlobalStats = (
+            default_global_stats
+            if global_stats is None
+            else global_stats
+        )
+        set_global_stats(self._stats)
+
+        self._delegated_value_helper: DelegatedValueHelper = (
+            default_delegated_value_helper
+            if delegated_value_helper is None
+            else delegated_value_helper
+        )
+        set_delegated_value_helper(self._delegated_value_helper)
+
+        self._action_trace: Trace[Action] = (
+            default_action_trace
+            if action_trace is None
+            else action_trace
+        )
+        set_action_trace(self._action_trace)
 
         # initialize traces
-        # TODO: Move this initialization outside of SchemaMechanism
+        # TODO: Is this needed? What happens if I don't do this???
         built_in_actions = {schema.action for schema in self.schema_memory}
-        self._stats.action_trace.add(built_in_actions)
+        self._action_trace.add(built_in_actions)
 
         # pool references (used primarily for serialization)
         self._item_pool: ItemPool = ItemPool()
@@ -575,6 +616,14 @@ class SchemaMechanism:
     @property
     def schema_selection(self) -> SchemaSelection:
         return self._schema_selection
+
+    @property
+    def delegated_value_helper(self) -> DelegatedValueHelper:
+        return self._delegated_value_helper
+
+    @property
+    def action_trace(self) -> Trace[Action]:
+        return self._action_trace
 
     @property
     def params(self) -> GlobalParams:
@@ -609,8 +658,8 @@ class SchemaMechanism:
         actions = [pending_details.schema.action for pending_details in terminated_pending_details]
         actions.append(selected_schema.action)
 
-        self._stats.action_trace.update(actions)
-        self._stats.delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
+        self._action_trace.update(actions)
+        self._delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
 
         # updates unconditional state value average
         self._stats.n += 1

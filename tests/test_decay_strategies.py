@@ -9,6 +9,7 @@ from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.decay import ImmediateDecayStrategy
 from schema_mechanism.strategies.decay import LinearDecayStrategy
 from schema_mechanism.strategies.decay import NoDecayStrategy
+from test_share import disable_test
 from test_share.test_func import common_test_setup
 
 
@@ -21,8 +22,8 @@ class TestCommon(TestCase):
         self.ZEROS = np.zeros(self.DEFAULT_ARRAY_SIZE)
         self.NEG_INFINITY = -np.inf * self.ONES
 
-    def assert_implements_decay_strategy_protocol(self, strategy: DecayStrategy):
-        # test: strategy should implement the DecayStrategy protocol
+    def assert_implements_decay_strategy_interface(self, strategy: DecayStrategy):
+        # test: strategy should implement the DecayStrategy interface
         self.assertTrue(isinstance(strategy, DecayStrategy))
 
     def assert_returns_array_of_correct_length(self, strategy: DecayStrategy):
@@ -90,7 +91,7 @@ class TestCommon(TestCase):
         self.assertTrue(np.alltrue(values <= termination_values))
 
     def assert_all_common_functionality(self, strategy: DecayStrategy) -> None:
-        self.assert_implements_decay_strategy_protocol(strategy)
+        self.assert_implements_decay_strategy_interface(strategy)
         self.assert_returns_array_of_correct_length(strategy)
         self.assert_expected_general_behavior_from_decay_step_size(strategy)
         self.assert_decay_of_negative_infinity_input_produces_negative_infinity_output(strategy)
@@ -178,6 +179,20 @@ class TestGeometricDecayStrategy(TestCommon):
     def test_decay_to_zero(self):
         self.assert_decay_continues_to_limit(self.strategy, limit=0.0)
 
+    # noinspection PyUnboundLocalVariable
+    @disable_test
+    def test_playground(self):
+        strategy = GeometricDecayStrategy(rate=0.999)
+
+        values = np.ones(10)
+        for i in range(100000):
+            print(values)
+            values = strategy.decay(values)
+            if np.allclose(np.zeros_like(values), values):
+                break
+
+        print(i)
+
 
 class TestExponentialDecayStrategy(TestCommon):
     def setUp(self) -> None:
@@ -253,13 +268,19 @@ class TestExponentialDecayStrategy(TestCommon):
             self.assert_decay_continues_to_limit(
                 ExponentialDecayStrategy(rate=2.0, initial=1.0, minimum=minimum), limit=minimum)
 
+    # noinspection PyUnboundLocalVariable
+    @disable_test
     def test_playground(self):
-        strategy = ExponentialDecayStrategy(rate=0.0001, initial=1.0, minimum=0.0)
+        strategy = ExponentialDecayStrategy(rate=0.1, initial=1.0, minimum=0.0)
 
         values = np.ones(10)
-        for _ in range(10000):
+        for i in range(1000):
             print(values)
             values = strategy.decay(values)
+            if np.allclose(np.zeros_like(values), values):
+                break
+
+        print(i)
 
 
 class TestNoDecayStrategy(TestCommon):
@@ -269,7 +290,7 @@ class TestNoDecayStrategy(TestCommon):
         self.strategy = NoDecayStrategy()
 
     def test_common(self):
-        self.assert_implements_decay_strategy_protocol(self.strategy)
+        self.assert_implements_decay_strategy_interface(self.strategy)
         self.assert_returns_array_of_correct_length(self.strategy)
         self.assert_decay_of_negative_infinity_input_produces_negative_infinity_output(self.strategy)
         self.assert_decay_default_step_size_is_one(self.strategy)
@@ -301,7 +322,7 @@ class TestImmediateDecayStrategy(TestCommon):
         self.assertEqual(-np.inf, strategy.minimum)
 
     def test_common(self):
-        self.assert_implements_decay_strategy_protocol(self.strategy)
+        self.assert_implements_decay_strategy_interface(self.strategy)
         self.assert_returns_array_of_correct_length(self.strategy)
         self.assert_expected_general_behavior_from_decay_step_size(self.strategy)
         self.assert_decay_of_negative_infinity_input_produces_negative_infinity_output(self.strategy)

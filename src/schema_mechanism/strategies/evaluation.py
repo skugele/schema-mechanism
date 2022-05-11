@@ -12,11 +12,13 @@ from schema_mechanism.core import Action
 from schema_mechanism.core import Schema
 from schema_mechanism.core import calc_delegated_value
 from schema_mechanism.core import calc_primitive_value
+from schema_mechanism.core import get_action_trace
 from schema_mechanism.share import debug
 from schema_mechanism.share import rng
 from schema_mechanism.strategies.decay import DecayStrategy
-from schema_mechanism.strategies.decay import ExponentialDecayStrategy
-from schema_mechanism.strategies.trace import AccumulatingTrace
+from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.scaling import ScalingStrategy
+from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import equal_weights
 
@@ -72,14 +74,14 @@ class EvaluationStrategy(ABC):
 
 
 class NoOpEvaluationStrategy(EvaluationStrategy):
-    """ An no-op implementation of the evaluation strategy protocol. Always returns zeros."""
+    """ An EvaluationStrategy that always returns zero value. Intended to function as a NO-OP. """
 
     def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         return np.zeros_like(schemas)
 
 
 class TotalPrimitiveValueEvaluationStrategy(EvaluationStrategy):
-    """ An implementation of the evaluation strategy protocol based solely on the primitive values of schemas."""
+    """ An EvaluationStrategy based solely on the total primitive value over schemas' items. """
 
     def __init__(self) -> None:
         self.calc_schema_values = np.vectorize(self._calc_schema_value, otypes=[float])
@@ -96,7 +98,7 @@ class TotalPrimitiveValueEvaluationStrategy(EvaluationStrategy):
 
 
 class TotalDelegatedValueEvaluationStrategy(EvaluationStrategy):
-    """ An implementation of the evaluation strategy protocol based solely on the delegated values of schemas. """
+    """ An EvaluationStrategy based solely on the total delegated value over schemas' items. """
 
     def __init__(self) -> None:
         self.calc_schema_values = np.vectorize(self._calc_schema_value, otypes=[float])
@@ -113,7 +115,7 @@ class TotalDelegatedValueEvaluationStrategy(EvaluationStrategy):
 
 
 class MaxDelegatedValueEvaluationStrategy(EvaluationStrategy):
-    """ An implementation of the evaluation strategy protocol based solely on the delegated values of schemas. """
+    """ An EvaluationStrategy based solely on the maximum delegated value over schemas' items. """
 
     def __init__(self) -> None:
         self.calc_schema_values = np.vectorize(self._calc_schema_value, otypes=[float])
@@ -130,7 +132,7 @@ class MaxDelegatedValueEvaluationStrategy(EvaluationStrategy):
 
 
 class InstrumentalValueEvaluationStrategy(EvaluationStrategy):
-    """ An implementation of the evaluation strategy protocol based solely on the instrumental values of schemas.
+    """ An EvaluationStrategy based solely on the instrumental values of schemas.
 
     Drescher on instrumental value:
 
@@ -175,11 +177,9 @@ class InstrumentalValueEvaluationStrategy(EvaluationStrategy):
 
 
 class PendingFocusEvaluationStrategy(EvaluationStrategy):
-    """ An implementation of the EvaluationStrategy protocol.
-
-     This implementation initially returns higher values for component schemas of the currently selected pending
-     (composite action) schema. However, this value advantage quickly vanishes and becomes aversion if the pending
-     schema's goal state fails to obtain after repeated, consecutive selection.
+    """ An EvaluationStrategy that initially returns higher values for component schemas of the currently selected
+    pending (composite action) schema. However, this value advantage quickly vanishes and becomes aversion if the
+    pending schema's goal state fails to obtain after repeated, consecutive selection.
     """
 
     def __init__(self,
@@ -236,7 +236,7 @@ class PendingFocusEvaluationStrategy(EvaluationStrategy):
 
 
 class ReliabilityEvaluationStrategy(EvaluationStrategy):
-    """ An implementation of the EvaluationStrategy protocol that penalizes unreliable schemas.
+    """ An EvaluationStrategy that penalizes unreliable schemas.
 
     The values returned will be in the range [0.0, -MAX_PENALTY].
 
@@ -280,9 +280,8 @@ class ReliabilityEvaluationStrategy(EvaluationStrategy):
         )
 
 
-# TODO: externalize the decay strategy and remove min/initial parameters
 class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
-    """ An implementation of the EvaluationStrategy protocol based on an epsilon-greedy mechanism.
+    """ An EvaluationStrategy based on an epsilon-greedy mechanism.
 
     The values returned by this strategy will either be 0.0 or np.inf.
     * np.inf is given to schemas chosen at random. All other values returned will be 0.0.
@@ -375,9 +374,14 @@ class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
 
 
 class HabituationEvaluationStrategy(EvaluationStrategy):
-    """ An implementation of the EvaluationStrategy protocol.
+    """ An EvaluationStrategy that modulates the selection value of schemas based on the recency and frequency of their
+    action's selection.
 
-     This implementation modulates the selection value of actions based on the recency and frequency of their selection.
+     By default, it uses the global action trace that is accessible by the get/set_action_trace functions in the
+     core package. If this default behavior is overridden, then it is critical that the action trace used by this class
+     is the same action trace that is supplied to the SchemaMechanism, so that the actions encountered are properly
+     updated.
+
 
      The value of schemas with actions that have been chosen many times recently and/or frequently is decreased. This
      implements a form of "habituation" (see Drescher, 1991, Section 3.4.2). The intent of this strategy is to boost
@@ -393,23 +397,19 @@ class HabituationEvaluationStrategy(EvaluationStrategy):
 
     """
 
-    def __init__(self, trace: Trace[Action] = None, multiplier: float = 1.0) -> None:
-        self.trace = trace
-        self.multiplier = multiplier
+    def __init__(self,
+                 scaling_strategy: ScalingStrategy,
+                 trace: Trace[Action] = None) -> None:
+        self.trace = (
+            get_action_trace()
+            if trace is None
+            else trace
+        )
 
         if self.trace is None:
             raise ValueError('Trace cannot be None.')
 
-    @property
-    def multiplier(self) -> float:
-        return self._multiplier
-
-    @multiplier.setter
-    def multiplier(self, value: float) -> None:
-        if value <= 0.0:
-            raise ValueError('Multiplier must be a positive number.')
-
-        self._multiplier = value
+        self.scaling_strategy: ScalingStrategy = scaling_strategy
 
     def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         if not schemas:
@@ -419,12 +419,13 @@ class HabituationEvaluationStrategy(EvaluationStrategy):
         trace_values = self.trace.values[self.trace.indexes(actions)]
         median_trace_value = np.median(trace_values)
 
-        return -self.multiplier * (trace_values - median_trace_value)
+        values = self.scaling_strategy.scale(trace_values - median_trace_value)
+        return values
 
 
 class CompositeEvaluationStrategy(EvaluationStrategy):
-    """ An implementation of the EvaluationStrategy protocol based on a weighted-sum over other evaluation strategies.
-    """
+    """ An implementation of the EvaluationStrategy protocol based on a weighted-sum over a collection of evaluation
+    strategies. """
 
     def __init__(self,
                  strategies: Collection[EvaluationStrategy],
@@ -472,7 +473,6 @@ class DefaultExploratoryEvaluationStrategy(EvaluationStrategy):
 
     def __init__(self,
                  habituation_trace: Trace[Action] = None,
-                 habituation_multiplier: float = 1.0,
                  epsilon_initial: float = 0.99,
                  epsilon_min: float = 0.2,
                  epsilon_decay_strategy: DecayStrategy = None
@@ -480,7 +480,6 @@ class DefaultExploratoryEvaluationStrategy(EvaluationStrategy):
         """
 
         :param habituation_trace:
-        :param habituation_multiplier:
         :param epsilon_initial:
         :param epsilon_min:
         :param epsilon_decay_strategy:
@@ -490,31 +489,20 @@ class DefaultExploratoryEvaluationStrategy(EvaluationStrategy):
         # defined as follows: primitive items and actions are of level zero; any structure defined in terms of other
         # structures is of one greater level than the maximum of those structures' levels." (See Drescher, 1991, p. 67)
 
-        default_habituation_trace = (
-            AccumulatingTrace(
-                active_increment=0.1,
-                decay_strategy=ExponentialDecayStrategy(
-                    rate=0.5,
-                    initial=0.1,
-                    minimum=0.0
-                )
-            )
-        ) if not habituation_trace else None
-
         self.habituation_value_strategy = (
             HabituationEvaluationStrategy(
-                trace=habituation_trace or default_habituation_trace,
-                multiplier=habituation_multiplier
+                scaling_strategy=SigmoidScalingStrategy()
             ),
         )
 
         default_epsilon_decay = (
-            ExponentialDecayStrategy(rate=0.9999, minimum=epsilon_min)
+            GeometricDecayStrategy(rate=0.9999)
         )
 
         self.epsilon_greedy_value_strategy = (
             EpsilonGreedyEvaluationStrategy(
                 epsilon=epsilon_initial,
+                epsilon_min=epsilon_min,
                 decay_strategy=epsilon_decay_strategy or default_epsilon_decay
             )
         )
@@ -550,11 +538,7 @@ class DefaultGoalPursuitEvaluationStrategy(EvaluationStrategy):
             max_penalty=reliability_max_penalty,
             severity=reliability_severity)
 
-        default_pending_focus_decay_strategy = ExponentialDecayStrategy(
-            rate=0.5,
-            initial=1.0,
-            minimum=0.0
-        )
+        default_pending_focus_decay_strategy = GeometricDecayStrategy(rate=0.5)
 
         self.pending_focus_value_strategy = PendingFocusEvaluationStrategy(
             max_value=pending_focus_max_value,
@@ -562,12 +546,6 @@ class DefaultGoalPursuitEvaluationStrategy(EvaluationStrategy):
                     pending_focus_decay_strategy or
                     default_pending_focus_decay_strategy
             )
-        )
-
-        default_pending_focus_decay_strategy = ExponentialDecayStrategy(
-            rate=0.5,
-            initial=1.0,
-            minimum=0.0
         )
 
         self.value_strategy = CompositeEvaluationStrategy(

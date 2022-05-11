@@ -35,11 +35,9 @@ from schema_mechanism.share import SupportedFeature
 from schema_mechanism.share import debug
 from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import trace
-from schema_mechanism.share import warn
-from schema_mechanism.stats import CorrelationTable
-from schema_mechanism.stats import FisherExactCorrelationTest
-from schema_mechanism.stats import ItemCorrelationTest
-from schema_mechanism.strategies.decay import ExponentialDecayStrategy
+from schema_mechanism.strategies.correlation_test import CorrelationTable
+from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
+from schema_mechanism.strategies.correlation_test import ItemCorrelationTest
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.trace import AccumulatingTrace
 from schema_mechanism.strategies.trace import ReplacingTrace
@@ -272,7 +270,7 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         active_items = [item for item in ReadOnlyItemPool() if item.is_on(state=selection_state, **kwargs)]
 
         # updating eligibility trace (decay all items, increase active items)
-        self._eligibility_trace.update(active_items)
+        self.eligibility_trace.update(active_items)
 
         # the value accessible from the current state
         target = self.effective_state_value(selection_state, result_state)
@@ -280,7 +278,7 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         # incremental update of delegated values towards target
         lr = GlobalParams().get('learning_rate')
         for item in ReadOnlyItemPool():
-            tv = self._eligibility_trace[item]
+            tv = self.eligibility_trace[item]
             if tv > 0.0:
                 err = target - self._delegated_values[item]
                 self._delegated_values[item] = self._delegated_values[item] + lr * err * tv
@@ -307,20 +305,21 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         return self.discount_factor * (pv + self.discount_factor * dv)
 
     def reset(self) -> None:
-        self._eligibility_trace.clear()
+        self.eligibility_trace.clear()
         self._delegated_values.clear()
 
 
 class Item(ABC):
-
-    def __init__(self, source: Any, primitive_value: float = None, **kwargs) -> None:
+    def __init__(self,
+                 source: Any,
+                 primitive_value: Optional[float] = 0.0,
+                 delegated_value_helper: DelegatedValueHelper = None,
+                 **kwargs) -> None:
         super().__init__()
 
         self._source = source
-        self._primitive_value = primitive_value or 0.0
-
-        # TODO: let this be set by argument to __init__
-        self._delegated_value_helper: DelegatedValueHelper = GlobalStats().delegated_value_helper
+        self._primitive_value: float = primitive_value
+        self._delegated_value_helper: DelegatedValueHelper = delegated_value_helper
 
     @abstractmethod
     def __hash__(self) -> int:
@@ -345,25 +344,20 @@ class Item(ABC):
 
     @property
     def primitive_value(self) -> float:
-        return 0.0 if self._primitive_value is None else self._primitive_value
-
-    @primitive_value.setter
-    def primitive_value(self, value: float) -> None:
-        """ Sets the primitive value for this item.
+        """ The primitive value for this item.
 
             “The schema mechanism explicitly designates an item as corresponding to a top-level goal by assigning the
              item a positive value; an item can also take on a negative value, indicating a state to be avoided.”
             (see Drescher, 1991, p. 61)
             (see also, Drescher, 1991, Section 3.4.1)
 
-        :param value: a positive or negative float
-        :return: None
+        :return: the primitive value as a float
         """
-        self._primitive_value = value
+        return 0.0 if self._primitive_value is None else self._primitive_value
 
     @property
     def delegated_value(self) -> float:
-        return self._delegated_value_helper.delegated_value(self)
+        return self._delegated_value_helper.delegated_value(self) if self._delegated_value_helper else 0.0
 
     @abstractmethod
     def is_on(self, state: State, **kwargs) -> bool:
@@ -376,11 +370,20 @@ class Item(ABC):
 class SymbolicItem(Item):
     """ A state element that can be thought as a proposition/feature. """
 
-    def __init__(self, source: str, primitive_value: float = None, **kwargs):
+    def __init__(self,
+                 source: str,
+                 primitive_value: float = None,
+                 delegated_value_helper: DelegatedValueHelper = None,
+                 **kwargs):
         if not isinstance(source, str):
             raise ValueError(f'Source for symbolic item must be a str, not {type(source)}')
 
-        super().__init__(source=source, primitive_value=primitive_value, **kwargs)
+        super().__init__(
+            source=source,
+            primitive_value=primitive_value,
+            delegated_value_helper=delegated_value_helper,
+            **kwargs
+        )
 
     def __eq__(self, other: Any) -> bool:
         # ItemPool should be used for all item creation, so this should be an optimization
@@ -442,32 +445,7 @@ def reduce_to_most_specific_items(items: Optional[Collection[Item]]) -> Collecti
 
 
 class GlobalStats(metaclass=Singleton):
-    def __init__(self,
-                 action_trace: Trace[Action] = None,
-                 delegated_value_helper: DelegatedValueHelper = None,
-                 initial_baseline_value: float = 0.0):
-
-        default_delegated_value_helper: DelegatedValueHelper = (
-            EligibilityTraceDelegatedValueHelper(
-                discount_factor=0.5,
-                eligibility_trace=ReplacingTrace(
-                    decay_strategy=ExponentialDecayStrategy(rate=0.5, initial=1.0, minimum=0.0),
-                    active_value=1.0)
-            )
-        )
-
-        default_action_trace: Trace[Action] = AccumulatingTrace(
-            decay_strategy=GeometricDecayStrategy(rate=0.1)
-        )
-
-        if not delegated_value_helper:
-            warn(f'Using default delegated value helper: {default_delegated_value_helper}')
-
-        if not default_action_trace:
-            warn(f'Using default action trace: {default_action_trace}')
-
-        self.action_trace: Trace[Action] = action_trace or default_action_trace
-        self.delegated_value_helper: DelegatedValueHelper = delegated_value_helper or default_delegated_value_helper
+    def __init__(self, initial_baseline_value: float = 0.0):
         self.baseline_value: float = initial_baseline_value
         self.n: int = 0
 
@@ -487,9 +465,6 @@ class GlobalStats(metaclass=Singleton):
     def clear(self):
         self.baseline_value = 0.0
         self.n = 0
-
-        self.action_trace.clear()
-        self.delegated_value_helper.reset()
 
 
 class SchemaStats:
@@ -878,7 +853,11 @@ NULL_ER_ITEM_STATS = ReadOnlyERItemStats()
 class CompositeItem(Item):
     """ An Item whose source is a collection of state elements. """
 
-    def __init__(self, source: Collection[StateElement], primitive_value: float = None, **kwargs) -> None:
+    def __init__(self,
+                 source: Collection[StateElement],
+                 primitive_value: float = None,
+                 delegated_value_helper: DelegatedValueHelper = None,
+                 **kwargs) -> None:
         if len(source) < 2:
             raise ValueError('CompositeItems must have at least two elements in their source.')
 
@@ -891,10 +870,12 @@ class CompositeItem(Item):
             else primitive_value
         )
 
-        super().__init__(source=frozenset(source), primitive_value=primitive_value)
+        super().__init__(
+            source=frozenset(source),
+            delegated_value_helper=delegated_value_helper,
+            primitive_value=primitive_value
+        )
 
-    # TODO: once I move CompositeItem and Item into a single class, the class can be changed to inherit from frozenset
-    # TODO: and this property can be removed!
     @property
     def state_elements(self) -> set[StateElement]:
         return self.source
@@ -2316,7 +2297,11 @@ class ItemPool(metaclass=Singleton):
 
         # create new item and add to pool if not found and not read_only
         if not obj and not read_only:
-            obj = ItemPool._items[source] = item_type(source, **kwargs)
+            # inject the DelegatedValueHelper dependency into Item initializer if not set directly by caller
+            if 'delegated_value_helper' not in kwargs:
+                kwargs['delegated_value_helper'] = get_delegated_value_helper()
+
+            obj = ItemPool._items[source] = item_type(source=source, **kwargs)
 
         return obj
 
@@ -2333,7 +2318,11 @@ class ItemPool(metaclass=Singleton):
 
         # create new item and add to pool if not found and not read_only
         if not obj and not read_only:
-            obj = ItemPool._composite_items[key] = item_type(key, **kwargs)
+            # inject the DelegatedValueHelper dependency into Item initializer if not set directly by caller
+            if 'delegated_value_helper' not in kwargs:
+                kwargs['delegated_value_helper'] = get_delegated_value_helper()
+
+            obj = ItemPool._composite_items[key] = item_type(source=key, **kwargs)
 
         return obj
 
@@ -2450,3 +2439,61 @@ def _(item: CompositeItem) -> float:
 
 def calc_value(o: Any) -> float:
     return calc_primitive_value(o) + calc_delegated_value(o)
+
+
+default_delegated_value_helper = EligibilityTraceDelegatedValueHelper(
+    discount_factor=0.5,
+    eligibility_trace=ReplacingTrace(
+        decay_strategy=GeometricDecayStrategy(rate=0.5),
+        active_value=1.0
+    )
+)
+
+default_action_trace = AccumulatingTrace(
+    decay_strategy=GeometricDecayStrategy(rate=0.75),
+    active_increment=0.25
+)
+
+default_global_stats = GlobalStats()
+default_global_params = GlobalParams()
+
+_delegated_value_helper: Optional[DelegatedValueHelper] = default_delegated_value_helper
+_action_trace: Optional[Trace[Action]] = default_action_trace
+_global_stats: GlobalStats = default_global_stats
+_global_params: GlobalParams = default_global_params
+
+
+def set_delegated_value_helper(delegated_value_helper: DelegatedValueHelper) -> None:
+    global _delegated_value_helper
+    _delegated_value_helper = delegated_value_helper
+
+
+def get_delegated_value_helper() -> DelegatedValueHelper:
+    return _delegated_value_helper
+
+
+def set_action_trace(action_trace: Trace[Action]) -> None:
+    global _action_trace
+    _action_trace = action_trace
+
+
+def get_action_trace() -> Trace[Action]:
+    return _action_trace
+
+
+def set_global_params(global_params: GlobalParams) -> None:
+    global _global_params
+    _global_params = global_params
+
+
+def get_global_params() -> GlobalParams:
+    return _global_params
+
+
+def set_global_stats(global_params: GlobalStats) -> None:
+    global _global_stats
+    _global_stats = global_params
+
+
+def get_global_stats() -> GlobalStats:
+    return _global_stats

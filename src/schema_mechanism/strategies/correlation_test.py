@@ -153,6 +153,8 @@ class FisherExactCorrelationTest:
 
 
 class CorrelationOnEncounter:
+    event_threshold: int = 1
+
     @classmethod
     def positive_corr_statistic(cls, table: CorrelationTable) -> float:
         """ Returns the part-to-part ratio Pr(A | X) : Pr(A | not X)
@@ -162,7 +164,7 @@ class CorrelationOnEncounter:
 
         :return: the ratio as a float, or numpy.NAN if division by zero
         """
-        return 1.0 if table[0] > 1 else 0.0
+        return 1.0 if table[0] >= cls.event_threshold else 0.0
 
     @classmethod
     def negative_corr_statistic(cls, table: CorrelationTable) -> float:
@@ -173,7 +175,7 @@ class CorrelationOnEncounter:
 
         :return: the ratio as a float, or numpy.NAN if division by zero
         """
-        return 1.0 if table[1] > 1 else 0.0
+        return 1.0 if table[1] >= cls.event_threshold else 0.0
 
 
 ####################

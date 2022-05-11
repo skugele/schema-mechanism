@@ -1,36 +1,42 @@
+import itertools
 import time
 import unittest
-from typing import Iterable
 
 import test_share
-from schema_mechanism.core import ItemCorrelationTest
-from schema_mechanism.stats import BarnardExactCorrelationTest
-from schema_mechanism.stats import DrescherCorrelationTest
-from schema_mechanism.stats import FisherExactCorrelationTest
+from schema_mechanism.strategies.correlation_test import BarnardExactCorrelationTest
+from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
+from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
+from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from test_share.test_func import common_test_setup
 
 
-class TestItemCorrelationTest(unittest.TestCase):
+class TestCorrelationOnEncounter(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        class TestItemCorrelation(ItemCorrelationTest):
-            def __init__(self, pcs: float, ncs: float):
-                self._pcs = pcs
-                self._ncs = ncs
+        self.correlation_test = CorrelationOnEncounter()
 
-            def positive_corr_statistic(self, table: Iterable) -> float:
-                return self._pcs
+    def test_positive_corr_statistic(self):
+        """ Input data has the form [[N(A,X), N(not A,X)], [N(A,not X), N(not A,not X)]],"""
+        # test: positive correlation statistic should be 1.0 if positive value in top-left table cell N(A,X)
+        for a_x, not_a_x, a_not_x, not_a_not_x in itertools.product(range(0, 5), range(0, 5), range(0, 5), range(0, 5)):
+            table = (a_x, not_a_x, a_not_x, not_a_not_x)
 
-            def negative_corr_statistic(self, table: Iterable) -> float:
-                return self._ncs
+            if a_x >= 1:
+                self.assertEqual(1.0, self.correlation_test.positive_corr_statistic(table))
+            else:
+                self.assertEqual(0.0, self.correlation_test.positive_corr_statistic(table))
 
-        self.TestClass = TestItemCorrelation
+    def test_negative_corr_statistic(self):
+        """ Input data has the form [[N(A,X), N(not A,X)], [N(A,not X), N(not A,not X)]],"""
+        # test: negative correlation statistic should be 1.0 if positive value in top-left table cell N(not A,X)
+        for a_x, not_a_x, a_not_x, not_a_not_x in itertools.product(range(0, 5), range(0, 5), range(0, 5), range(0, 5)):
+            table = (a_x, not_a_x, a_not_x, not_a_not_x)
 
-        self.pcs = 0.95
-        self.ncs = 0.95
-
-        self.test_instance = self.TestClass(pcs=self.pcs, ncs=self.ncs)
+            if not_a_x >= 1:
+                self.assertEqual(1.0, self.correlation_test.negative_corr_statistic(table))
+            else:
+                self.assertEqual(0.0, self.correlation_test.negative_corr_statistic(table))
 
 
 class TestDrescherCorrelationTest(unittest.TestCase):

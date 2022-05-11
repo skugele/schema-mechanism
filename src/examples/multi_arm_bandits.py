@@ -20,8 +20,8 @@ from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import display_params
 from schema_mechanism.share import info
 from schema_mechanism.share import rng
-from schema_mechanism.stats import CorrelationOnEncounter
-from schema_mechanism.stats import FisherExactCorrelationTest
+from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
+from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy

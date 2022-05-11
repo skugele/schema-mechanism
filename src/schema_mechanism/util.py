@@ -168,6 +168,10 @@ class AssociativeArrayList(Generic[T]):
         self._values = np.append(self._values[:index], self._values[index + 1:])
         self._last_index -= 1
 
+    # overrides the default behavior of using __len__ to determine truthiness
+    def __bool__(self) -> bool:
+        return True
+
     @property
     def block_size(self) -> int:
         return self._block_size
@@ -227,11 +231,6 @@ class AssociativeArrayList(Generic[T]):
 
         self._last_index = 0
 
-    def _missing_index(self) -> int:
-        next_index = self._last_index
-        self._last_index += 1
-        return next_index
-
     def indexes(self, keys: Collection[T], add_missing: bool = False) -> np.ndarray:
         if keys is None:
             return np.array([])
@@ -245,6 +244,11 @@ class AssociativeArrayList(Generic[T]):
 
         indexes = np.array([self._indexes[k] for k in keys if k in self._indexes])
         return indexes
+
+    def _missing_index(self) -> int:
+        next_index = self._last_index
+        self._last_index += 1
+        return next_index
 
 
 class DefaultDictWithKeyFactory(defaultdict):

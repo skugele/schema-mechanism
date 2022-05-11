@@ -11,8 +11,8 @@ from schema_mechanism.core import ReadOnlyECItemStats
 from schema_mechanism.core import ReadOnlyERItemStats
 from schema_mechanism.core import SchemaStats
 from schema_mechanism.share import GlobalParams
-from schema_mechanism.stats import BarnardExactCorrelationTest
-from schema_mechanism.stats import DrescherCorrelationTest
+from schema_mechanism.strategies.correlation_test import BarnardExactCorrelationTest
+from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_func import common_test_setup
 from test_share.test_func import satisfies_equality_checks
 from test_share.test_func import satisfies_hash_checks

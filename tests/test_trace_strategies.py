@@ -3,11 +3,11 @@ from unittest import TestCase
 import numpy as np
 
 from schema_mechanism.core import Action
-from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.trace import AccumulatingTrace
 from schema_mechanism.strategies.trace import ReplacingTrace
 from schema_mechanism.strategies.trace import Trace
+from test_share import disable_test
 from test_share.test_func import common_test_setup
 
 
@@ -161,7 +161,7 @@ class TestAccumulatingTrace(TestCommon):
         block_size = 25
 
         # parameters for trace
-        decay_strategy = ExponentialDecayStrategy(rate=0.2, minimum=0.0)
+        decay_strategy = GeometricDecayStrategy(rate=0.2)
         active_increment = 0.234
 
         trace = AccumulatingTrace(
@@ -268,6 +268,22 @@ class TestAccumulatingTrace(TestCommon):
 
         np.testing.assert_allclose(np.zeros_like(self.elements, dtype=np.float64), differences, atol=1e-9)
 
+    @disable_test
+    def test_playground(self):
+        trace = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.75),
+            active_increment=0.25
+        )
+
+        elements = [i for i in range(3)]
+        trace.add(elements)
+
+        for _ in range(100):
+            # active_set = random.choice(elements)
+            active_set = 1
+            trace.update([active_set])
+            print(trace.values)
+
 
 class TestReplacingTrace(TestCommon):
     def setUp(self) -> None:
@@ -286,7 +302,7 @@ class TestReplacingTrace(TestCommon):
         block_size = 25
 
         # parameters for trace
-        decay_strategy = ExponentialDecayStrategy(rate=0.2, minimum=0.0)
+        decay_strategy = GeometricDecayStrategy(rate=0.2)
         active_value = 0.234
 
         trace = ReplacingTrace(

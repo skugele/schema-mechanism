@@ -2,6 +2,9 @@ import argparse
 from statistics import mean
 from time import sleep
 from typing import Iterable
+from typing import Sequence
+
+import numpy as np
 
 from examples import display_item_values
 from examples import display_known_schemas
@@ -12,7 +15,7 @@ from examples import is_running
 from examples import run_decorator
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
-from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.func_api import sym_item
@@ -22,18 +25,26 @@ from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import display_params
 from schema_mechanism.share import info
-from schema_mechanism.stats import CorrelationOnEncounter
-from schema_mechanism.stats import FisherExactCorrelationTest
+from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
+from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
+from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 
 MAX_EPISODES = 5000
 MAX_STEPS = 500
+
+
+def post_process(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
+    if np.nan in values:
+        print('FUCK!')
+
+    return values
 
 
 def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
@@ -47,11 +58,9 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
         evaluation_strategy=CompositeEvaluationStrategy(
             strategies=[
                 TotalDelegatedValueEvaluationStrategy(),
-                HabituationEvaluationStrategy(
-                    trace=GlobalStats().action_trace,
-                    multiplier=1.0),
+                HabituationEvaluationStrategy(scaling_strategy=SigmoidScalingStrategy()),
                 ReliabilityEvaluationStrategy(max_penalty=0.1),
-                EpsilonGreedyEvaluationStrategy(epsilon=0.9999,
+                EpsilonGreedyEvaluationStrategy(epsilon=0.999,
                                                 epsilon_min=0.05,
                                                 decay_strategy=ExponentialDecayStrategy(
                                                     rate=1e-4,

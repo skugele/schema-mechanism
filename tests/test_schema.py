@@ -28,7 +28,7 @@ from schema_mechanism.func_api import update_schema
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
-from schema_mechanism.stats import DrescherCorrelationTest
+from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
