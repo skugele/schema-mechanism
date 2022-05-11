@@ -56,7 +56,15 @@ class EvaluationStrategy(ABC):
         values = self.values(schemas=schemas, pending=pending, **kwargs)
 
         if post_process:
-            for operation in post_process:
+            class_name = self.__class__.__name__
+            debug(f'*** {class_name} Post Process Results ***')
+            for i, operation in enumerate(post_process, start=1):
+                operation_name = (
+                    operation.__name__ or operation.__class__.__name__
+                    if hasattr(operation, '__name__') or hasattr(operation.__class__, '__name')
+                    else ''
+                ).upper()
+                debug(f'Post-Process Callable {i} "{operation_name}":')
                 values = operation(schemas=schemas, values=values)
 
         return values
@@ -428,11 +436,21 @@ class CompositeEvaluationStrategy(EvaluationStrategy):
     strategies. """
 
     def __init__(self,
-                 strategies: Collection[EvaluationStrategy],
-                 weights: Collection[float] = None,
+                 strategies: Sequence[EvaluationStrategy],
+                 weights: Sequence[float] = None,
+                 post_process: Sequence[EvaluationPostProcess] = None,
                  strategy_alias: str = None) -> None:
-        self.strategies = strategies
-        self.weights = np.array(weights) if weights else equal_weights(len(self.strategies))
+        self.strategies: Sequence[EvaluationStrategy] = strategies
+        self.weights: Sequence[float] = (
+            np.array(weights)
+            if weights is not None
+            else equal_weights(len(self.strategies))
+        )
+        self.post_process: Sequence[EvaluationPostProcess] = (
+            post_process
+            if post_process
+            else []
+        )
         self.strategy_alias = strategy_alias or ''
 
     @property
@@ -458,8 +476,11 @@ class CompositeEvaluationStrategy(EvaluationStrategy):
 
         self._weights = values
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
-        return sum(weight * strategy(schemas=schemas, pending=pending)
+    def values(self,
+               schemas: Sequence[Schema],
+               pending: Optional[Schema] = None,
+               **kwargs) -> np.ndarray:
+        return sum(weight * strategy(schemas=schemas, pending=pending, post_process=self.post_process)
                    for weight, strategy in zip(self.weights, self.strategies))
 
 
@@ -578,7 +599,7 @@ def display_minmax(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
     min_value = np.min(values)
     min_value_schema = schemas[np.flatnonzero(values == min_value)[0]]
 
-    debug(f'MAX: {max_value_schema} [{max_value}]')
-    debug(f'MIN: {min_value_schema} [{min_value}]')
+    debug(f'Schema with Maximum Value: {max_value_schema} [{max_value}]')
+    debug(f'Schema with Minimum Value: {min_value_schema} [{min_value}]')
 
     return values

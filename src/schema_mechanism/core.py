@@ -326,7 +326,7 @@ class Item(ABC):
         pass
 
     def __str__(self) -> str:
-        return str(self.source)
+        return ','.join(sorted([str(element) for element in self.state_elements])) if self.source else ''
 
     def __repr__(self) -> str:
         return repr_str(self, {'source': str(self.source),
@@ -876,13 +876,6 @@ class CompositeItem(Item):
             primitive_value=primitive_value
         )
 
-    @property
-    def state_elements(self) -> set[StateElement]:
-        return self.source
-
-    def is_on(self, state: State, **kwargs) -> bool:
-        return all((item.is_on(state) for item in self._items))
-
     def __contains__(self, element: StateElement) -> bool:
         if isinstance(element, StateElement):
             return element in self.source
@@ -895,6 +888,15 @@ class CompositeItem(Item):
 
     def __hash__(self) -> int:
         return hash(self.source)
+
+    @property
+    def state_elements(self) -> set[StateElement]:
+        return self.source
+
+    def is_on(self, state: State, **kwargs) -> bool:
+        return all((item.is_on(state) for item in self._items))
+
+
 
 
 class StateAssertion:

@@ -1,4 +1,5 @@
 import itertools
+import random
 from collections import Counter
 from typing import Sequence
 from unittest import TestCase
@@ -12,14 +13,17 @@ from schema_mechanism.core import Action
 from schema_mechanism.core import Chain
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import Item
+from schema_mechanism.core import ItemPool
 from schema_mechanism.core import Schema
 from schema_mechanism.core import calc_delegated_value
 from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.share import GlobalParams
+from schema_mechanism.share import Verbosity
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
 from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
@@ -30,9 +34,12 @@ from schema_mechanism.strategies.evaluation import PendingFocusEvaluationStrateg
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
+from schema_mechanism.strategies.evaluation import display_minmax
+from schema_mechanism.strategies.evaluation import display_values
 from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.strategies.trace import AccumulatingTrace
 from schema_mechanism.strategies.trace import Trace
+from schema_mechanism.util import equal_weights
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSchema
 from test_share.test_classes import MockSymbolicItem
@@ -921,96 +928,131 @@ class TestHabituationEvaluationStrategy(TestCommon):
         self.assertRaises(ValueError, lambda: self.habituation_strategy.values(schemas=schemas))
 
 
-class TestCompositeEvaluationStrategy(TestCase):
+class TestCompositeEvaluationStrategy(TestCommon):
     def setUp(self) -> None:
-        common_test_setup()
+        super().setUp()
 
-    # def test_weights(self):
-    #     ss = SchemaSelection(
-    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-    #         value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
-    #     )
-    #
-    #     # test: initializer should set weights to the requested values
-    #     weights = [0.4, 0.6]
-    #     ss.weights = weights
-    #     self.assertListEqual(weights, list(ss.weights))
-    #
-    #     # test: should raise a ValueError if initializer given an invalid number of weights
-    #     with self.assertRaises(ValueError):
-    #         ss.weights = [1.0]
-    #
-    #     # test: should raise a ValueError if the weights do not sum to 1.0
-    #     with self.assertRaises(ValueError):
-    #         ss.weights = [0.1, 0.2]
-    #
-    #     # test: should raise a ValueError if any of the weights are non-positive
-    #     with self.assertRaises(ValueError):
-    #         ss.weights = [1.8, -0.8]
-    #
-    #     # test: weights of 0.0 and 1.0 should be allowed
-    #     try:
-    #         ss.weights = [0.0, 1.0]
-    #     except ValueError as e:
-    #         self.fail(f'Unexpected ValueError occurred: {str(e)}')
+        self.strategy = CompositeEvaluationStrategy(
+            strategies=[
+                TotalPrimitiveValueEvaluationStrategy(),
+                TotalDelegatedValueEvaluationStrategy(),
+            ],
+        )
 
-    # def test_call(self):
-    #     s1 = sym_schema('/A1/1,')  # pv = 0.0
-    #     s2 = sym_schema('/A2/2,')  # pv = 0.0
-    #     s3 = sym_schema('/A1/3,')  # pv = 0.95
-    #     s4 = sym_schema('/A3/4,')  # pv = -1.0
-    #     s5 = sym_schema('/A1/5,')  # pv = 2.0
-    #     s6 = sym_schema('/A2/6,')  # pv = -3.0
-    #
-    #     self.s1_c12_r34 = sym_schema('1,2/A1/(3,4),', reliability=1.0)  # total pv = -0.05; total dv = 0.0
-    #     self.s1_c12_r345 = sym_schema('1,2/A1/(3,4,5),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
-    #     self.s1_c12_r3456 = sym_schema('1,2/A1/(3,4,5,6),', reliability=1.0)  # total pv = -1.05; total dv = 0.0
-    #     self.s1_c12_r345_not6 = sym_schema('1,2/A1/(3,4,5,~6),', reliability=1.0)  # total pv = 1.95; total dv = 0.0
-    #
-    #     schemas = [s1, s2, s3, s4, s5, s6, self.s1_c12_r34, self.s1_c12_r345, self.s1_c12_r3456, self.s1_c12_r345_not6]
-    #
-    #     # testing with no evaluation strategies
-    #     ss = SchemaSelection(
-    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-    #         value_strategies=[],
-    #     )
-    #
-    #     # test: should returns array of zeros if no value strategies specified
-    #     self.assertTrue(np.array_equal(np.zeros_like(schemas), ss.calc_effective_values(schemas)))
-    #
-    #     # testing single evaluation strategy
-    #     ss = SchemaSelection(
-    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-    #         value_strategies=[primitive_value_evaluation_strategy],
-    #     )
-    #
-    #     expected_values = primitive_value_evaluation_strategy.values(schemas)
-    #
-    #     # test: primitive-only value strategy should return primitive values for each schema
-    #     self.assertTrue(np.array_equal(expected_values, ss.calc_effective_values(schemas, pending=None)))
-    #
-    #     # testing multiple evaluation strategies (equal weighting)
-    #     ss = SchemaSelection(
-    #         select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1)),
-    #         value_strategies=[primitive_value_evaluation_strategy, delegated_value_evaluation_strategy],
-    #     )
-    #
-    #     pvs = primitive_value_evaluation_strategy.values(schemas)
-    #     dvs = delegated_value_evaluation_strategy.values(schemas)
-    #     expected_values = (pvs + dvs) / 2.0
-    #     actual_values = ss.calc_effective_values(schemas, pending=None)
-    #
-    #     # test: should return weighted sum of evaluation strategy values
-    #     self.assertTrue(np.array_equal(expected_values, actual_values))
-    #
-    #     # testing multiple evaluation strategies (uneven weighting)
-    #     ss.weights = np.array([0.95, 0.05])
-    #
-    #     expected_values = 0.95 * pvs + 0.05 * dvs
-    #     actual_values = ss.calc_effective_values(schemas, pending=None)
-    #
-    #     # test: should return weighted sum of evaluation strategy values
-    #     self.assertTrue(np.array_equal(expected_values, actual_values))
+    def test_init(self):
+        strategies = [
+            TotalPrimitiveValueEvaluationStrategy(),
+            TotalDelegatedValueEvaluationStrategy(),
+            NoOpEvaluationStrategy()
+        ]
+        weights = [0.7, 0.2, 0.1]
+        post_process = [
+            display_minmax,
+            display_values
+        ]
+        strategy_alias = 'test_strategy'
+
+        # test: attributes should be set to given values when provided to initializer
+        strategy = CompositeEvaluationStrategy(
+            strategies=strategies,
+            weights=weights,
+            post_process=post_process,
+            strategy_alias=strategy_alias
+        )
+
+        self.assertListEqual(strategies, list(strategy.strategies))
+        self.assertListEqual(weights, list(strategy.weights))
+        self.assertListEqual(post_process, list(strategy.post_process))
+        self.assertEqual(strategy_alias, strategy.strategy_alias)
+
+        # test: weights should be equal by default
+        strategy = CompositeEvaluationStrategy(
+            strategies=strategies,
+        )
+        np.testing.assert_array_equal(equal_weights(len(strategies)), strategy.weights)
+
+        # test: the number of weights should equal the number of strategies
+        self.assertRaises(ValueError, lambda: CompositeEvaluationStrategy(strategies=strategies, weights=[]))
+        self.assertRaises(ValueError, lambda: CompositeEvaluationStrategy(strategies=strategies, weights=[1.0]))
+        self.assertRaises(ValueError, lambda: CompositeEvaluationStrategy(strategies=strategies, weights=[0.5, 0.5]))
+
+        # test: weights should sum to 1.0
+        self.assertRaises(ValueError, lambda: CompositeEvaluationStrategy(strategies=strategies,
+                                                                          weights=[0.1, 0.1, 0.1]))
+        self.assertRaises(ValueError, lambda: CompositeEvaluationStrategy(strategies=strategies,
+                                                                          weights=[0.8, 0.2, 0.1]))
+
+        # test: individual weights should be between between 0.0 and 1.0 (inclusive)
+        self.assertRaises(ValueError, lambda: CompositeEvaluationStrategy(strategies=strategies,
+                                                                          weights=[1.1, -0.2, 0.1]))
+
+    def test_common(self):
+        self.assert_all_common_functionality(self.strategy)
+
+    def test_post_process(self):
+        post_process = [
+            MagicMock(return_value=np.zeros_like(self.schemas)),
+            MagicMock(return_value=np.zeros_like(self.schemas)),
+            MagicMock(return_value=np.zeros_like(self.schemas)),
+        ]
+
+        strategy = CompositeEvaluationStrategy(
+            strategies=[NoOpEvaluationStrategy()],
+            post_process=post_process,
+        )
+
+        values = strategy(self.schemas)
+        for mock in post_process:
+            mock.assert_called_once()
+            kwargs_to_mock = mock.call_args.kwargs
+
+            self.assertEqual(2, len(kwargs_to_mock))
+            self.assertListEqual(self.schemas, kwargs_to_mock['schemas'])
+            np.testing.assert_array_equal(values, kwargs_to_mock['values'])
+
+    def test_values(self):
+        schemas: list[Schema] = []
+
+        for source in range(1, 11):
+            _ = ItemPool().get(
+                str(source),
+                item_type=MockSymbolicItem,
+                primitive_value=random.uniform(-1.0, 1.0),
+                delegated_value=random.uniform(-1.0, 1.0),
+            )
+
+            schemas.append(sym_schema(f'/A1/{source},'))
+
+        strategy = CompositeEvaluationStrategy(
+            strategies=[
+                TotalPrimitiveValueEvaluationStrategy(),
+                TotalDelegatedValueEvaluationStrategy()
+            ],
+            weights=[0.1, 0.9]
+        )
+
+        values = strategy.values(schemas)
+        expected_values = sum(weight * strategy.values(schemas)
+                              for weight, strategy in zip(strategy.weights, strategy.strategies))
+
+        np.testing.assert_array_equal(expected_values, values)
+
+    def test_playground(self):
+        GlobalParams().set('verbosity', Verbosity.DEBUG)
+
+        strategy = CompositeEvaluationStrategy(
+            strategies=[
+                TotalPrimitiveValueEvaluationStrategy(),
+                TotalDelegatedValueEvaluationStrategy()
+            ],
+            weights=[0.1, 0.9],
+            post_process=[
+                display_values,
+                display_minmax
+            ]
+        )
+
+        strategy(self.schemas)
 
 # class TestDefaultExploratoryEvaluationStrategy(TestCase):
 #     def setUp(self) -> None:

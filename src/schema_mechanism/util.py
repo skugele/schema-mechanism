@@ -284,7 +284,7 @@ def dynamic_type(module_name: str, class_name: str) -> Type[Any]:
     return getattr(module, class_name)
 
 
-def equal_weights(n: int) -> np.array:
+def equal_weights(n: int) -> np.ndarray:
     if n < 0:
         raise ValueError('n must be a positive integer')
 

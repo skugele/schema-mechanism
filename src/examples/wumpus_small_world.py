@@ -2,9 +2,6 @@ import argparse
 from statistics import mean
 from time import sleep
 from typing import Iterable
-from typing import Sequence
-
-import numpy as np
 
 from examples import display_item_values
 from examples import display_known_schemas
@@ -15,7 +12,7 @@ from examples import is_running
 from examples import run_decorator
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
-from schema_mechanism.core import Schema
+from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.func_api import sym_item
@@ -28,23 +25,19 @@ from schema_mechanism.share import info
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
+from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
+from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
 from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
+from schema_mechanism.strategies.trace import ReplacingTrace
 
 MAX_EPISODES = 5000
 MAX_STEPS = 500
-
-
-def post_process(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
-    if np.nan in values:
-        print('FUCK!')
-
-    return values
 
 
 def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
@@ -57,9 +50,10 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
         select_strategy=RandomizeBestSelectionStrategy(),
         evaluation_strategy=CompositeEvaluationStrategy(
             strategies=[
+                TotalPrimitiveValueEvaluationStrategy(),
                 TotalDelegatedValueEvaluationStrategy(),
                 HabituationEvaluationStrategy(scaling_strategy=SigmoidScalingStrategy()),
-                ReliabilityEvaluationStrategy(max_penalty=0.1),
+                ReliabilityEvaluationStrategy(max_penalty=1.0),
                 EpsilonGreedyEvaluationStrategy(epsilon=0.999,
                                                 epsilon_min=0.05,
                                                 decay_strategy=ExponentialDecayStrategy(
@@ -70,16 +64,24 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
         )
     )
 
+    delegated_value_helper = EligibilityTraceDelegatedValueHelper(
+        discount_factor=1.0,
+        eligibility_trace=ReplacingTrace(
+            active_value=1.0,
+            decay_strategy=GeometricDecayStrategy(rate=0.1)
+        )
+    )
+
     sm: SchemaMechanism = SchemaMechanism(
         items=primitive_items,
         schema_memory=schema_memory,
-        schema_selection=schema_selection)
+        schema_selection=schema_selection,
+        delegated_value_helper=delegated_value_helper
+    )
 
     sm.params.set('backward_chains.max_len', 5)
     sm.params.set('backward_chains.update_frequency', 0.01)
     sm.params.set('composite_actions.learn.min_baseline_advantage', 0.001)
-    sm.params.set('delegated_value_helper.decay_rate', 0.1)
-    sm.params.set('delegated_value_helper.discount_factor', 0.5)
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
     sm.params.set('ext_context.positive_correlation_threshold', 0.95)
     sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
