@@ -1,4 +1,5 @@
 import argparse
+import logging.config
 from statistics import mean
 from time import sleep
 from typing import Iterable
@@ -21,7 +22,6 @@ from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import display_params
-from schema_mechanism.share import info
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
@@ -32,9 +32,12 @@ from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
+from schema_mechanism.strategies.evaluation import display_minmax
 from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.trace import ReplacingTrace
+
+logger = logging.getLogger('examples.environments.wumpus_small_world')
 
 MAX_EPISODES = 5000
 MAX_STEPS = 500
@@ -61,6 +64,9 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
                                                     initial=1.0,
                                                     minimum=0.0))
             ],
+            post_process=[
+                display_minmax
+            ]
         )
     )
 
@@ -150,6 +156,8 @@ def run() -> None:
     env = create_world()
     sm = create_schema_mechanism(env)
 
+    render_env = True
+
     steps_in_episode = []
     for episode in range(1, max_episodes + 1):
 
@@ -163,29 +171,30 @@ def run() -> None:
 
             progress_id = f'{episode}:{step}'
 
-            info(f'\n{env.render()}\n')
+            if render_env:
+                logger.info(f'\n{env.render()}\n')
 
-            info(f'state [{progress_id}]: {selection_state}')
+            logger.info(f'state [{progress_id}]: {selection_state}')
             selection_details = sm.select(selection_state)
 
             current_composite_schema = sm.schema_selection.pending_schema
             if current_composite_schema:
-                info(f'active composite action schema [{progress_id}]: {current_composite_schema} ')
+                logger.info(f'active composite action schema [{progress_id}]: {current_composite_schema} ')
 
             terminated_composite_schemas = selection_details.terminated_pending
             if terminated_composite_schemas:
-                info(f'terminated schemas:')
+                logger.info(f'terminated schemas:')
                 for i, pending_details in enumerate(terminated_composite_schemas):
-                    info(f'schema [{i}]: {pending_details.schema}')
-                    info(f'selection state [{i}]: {pending_details.selection_state}')
-                    info(f'status [{i}]: {pending_details.status}')
-                    info(f'duration [{i}]: {pending_details.duration}')
+                    logger.info(f'schema [{i}]: {pending_details.schema}')
+                    logger.info(f'selection state [{i}]: {pending_details.selection_state}')
+                    logger.info(f'status [{i}]: {pending_details.status}')
+                    logger.info(f'duration [{i}]: {pending_details.duration}')
 
             schema = selection_details.selected
             action = schema.action
             effective_value = selection_details.effective_value
 
-            info(f'selected schema [{progress_id}]: {schema} [eff. value: {effective_value}]')
+            logger.info(f'selected schema [{progress_id}]: {schema} [eff. value: {effective_value}]')
 
             result_state, is_terminal = env.step(action)
 
@@ -227,17 +236,19 @@ def display_performance_summary(max_steps: int, steps_in_episode: Iterable[int])
     max_steps_per_episode = max(steps_in_episode)
     total_steps = sum(steps_in_episode)
 
-    info(f'**** EPISODE {n_episodes} SUMMARY ****')
-    info(f'\tepisodes: {n_episodes}')
-    info(f'\tepisodes in which agent escaped: {n_episodes_agent_escaped}')
-    info(f'\tcumulative steps: {total_steps}')
-    info(f'\tsteps in last episode: {steps_in_last_episode}')
-    info(f'\taverage steps per episode: {avg_steps_per_episode}')
-    info(f'\tminimum steps per episode: {min_steps_per_episode}')
-    info(f'\tmaximum steps per episode: {max_steps_per_episode}')
+    logger.info(f'**** EPISODE {n_episodes} SUMMARY ****')
+    logger.info(f'\tepisodes: {n_episodes}')
+    logger.info(f'\tepisodes in which agent escaped: {n_episodes_agent_escaped}')
+    logger.info(f'\tcumulative steps: {total_steps}')
+    logger.info(f'\tsteps in last episode: {steps_in_last_episode}')
+    logger.info(f'\taverage steps per episode: {avg_steps_per_episode}')
+    logger.info(f'\tminimum steps per episode: {min_steps_per_episode}')
+    logger.info(f'\tmaximum steps per episode: {max_steps_per_episode}')
 
 
 if __name__ == "__main__":
     # TODO: Add code to load a serialized instance that was saved to disk
+    # configure logger
+    logging.config.fileConfig('../../config/logging.conf')
 
     run()

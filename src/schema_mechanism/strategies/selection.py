@@ -1,3 +1,4 @@
+import logging
 from collections import Sequence
 from typing import Protocol
 from typing import runtime_checkable
@@ -8,6 +9,8 @@ from schema_mechanism.core import Schema
 from schema_mechanism.share import rng
 from schema_mechanism.strategies.match import EqualityMatchStrategy
 from schema_mechanism.strategies.match import MatchStrategy
+
+logger = logging.getLogger('schema_mechanism.strategies.selection')
 
 
 @runtime_checkable

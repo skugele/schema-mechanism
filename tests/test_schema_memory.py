@@ -25,7 +25,6 @@ from schema_mechanism.modules import create_result_spin_off
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
-from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
 from test_share.test_func import file_was_written
 
@@ -33,10 +32,6 @@ from test_share.test_func import file_was_written
 class TestSchemaMemory(TestCase):
     def setUp(self) -> None:
         common_test_setup()
-
-        # allows direct setting of reliability (only reliable schemas are eligible for chaining)
-        # FIXME: this doesn't do anything at present!
-        GlobalParams().set('schema_type', MockSchema)
 
         GlobalParams().set('backward_chains.update_frequency', 1.0)
 

@@ -1,6 +1,8 @@
 import itertools
+import logging
 import random
 from collections import Counter
+from typing import Optional
 from typing import Sequence
 from unittest import TestCase
 from unittest.mock import ANY
@@ -20,7 +22,6 @@ from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.share import GlobalParams
-from schema_mechanism.share import Verbosity
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
@@ -40,6 +41,7 @@ from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.strategies.trace import AccumulatingTrace
 from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import equal_weights
+from test_share import disable_test
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSchema
 from test_share.test_classes import MockSymbolicItem
@@ -1037,8 +1039,34 @@ class TestCompositeEvaluationStrategy(TestCommon):
 
         np.testing.assert_array_equal(expected_values, values)
 
+    def test_value_weighting(self):
+        class AllOnesEvaluationStrategy(EvaluationStrategy):
+            def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+                return np.ones_like(schemas, dtype=np.float64)
+
+        for weights in [(1.0, 0.0, 0.0), (0.6, 0.3, 0.1), (0.4, 0.4, 0.2), (0.1, 0.15, 0.75)]:
+            composite_strategy = CompositeEvaluationStrategy(
+                strategies=[
+                    AllOnesEvaluationStrategy(),
+                    AllOnesEvaluationStrategy(),
+                    AllOnesEvaluationStrategy(),
+                ],
+                weights=weights
+            )
+            values = composite_strategy(self.schemas)
+            np.testing.assert_allclose(np.ones_like(self.schemas, dtype=np.float64), values)
+
+            for component_strategy, weight in zip(composite_strategy.strategies, weights):
+                values = component_strategy(self.schemas)
+
+                scaled_values = weight * values
+                expected_values = weight * np.ones_like(self.schemas, dtype=np.float64)
+
+                np.testing.assert_allclose(expected_values, scaled_values)
+
+    @disable_test
     def test_playground(self):
-        GlobalParams().set('verbosity', Verbosity.DEBUG)
+        logging.getLogger('schema_mechanism.strategies.evaluation').setLevel(logging.DEBUG)
 
         strategy = CompositeEvaluationStrategy(
             strategies=[

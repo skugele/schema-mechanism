@@ -1,3 +1,4 @@
+import logging
 import time
 from abc import ABC
 from collections import deque
@@ -17,6 +18,8 @@ from schema_mechanism.modules import PendingDetails
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.util import Observable
 from schema_mechanism.util import Observer
+
+logger = logging.getLogger('test')
 
 
 class MockObserver(Observer):

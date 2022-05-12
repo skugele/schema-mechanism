@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import logging
 from collections import Iterable
 from collections import deque
 from collections.abc import Collection
@@ -42,16 +43,16 @@ from schema_mechanism.core import set_global_params
 from schema_mechanism.core import set_global_stats
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
-from schema_mechanism.share import debug
 from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import rng
-from schema_mechanism.share import trace
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
 from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.selection import SelectionStrategy
 from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import Observer
+
+logger = logging.getLogger(__name__)
 
 
 class SchemaMemory(Observer):
@@ -269,7 +270,7 @@ class SchemaMemory(Observer):
         for s in spin_offs:
             s.register(self)
 
-        debug(f'creating spin-offs for schema {str(schema)}: {",".join([str(s) for s in spin_offs])}')
+        logger.debug(f'creating spin-offs for schema {str(schema)}: {",".join([str(s) for s in spin_offs])}')
 
         self._schema_tree.add(schema, spin_offs, spin_off_type)
 
@@ -302,7 +303,7 @@ class SchemaMemory(Observer):
                 if calc_primitive_value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
                     continue
 
-                trace(f'Novel result detected: {spin_off.result}. Creating new composite action.')
+                logger.debug(f'Novel result detected: {spin_off.result}. Creating new composite action.')
 
                 # creates and initializes a new composite action
                 ca = CompositeAction(goal_state=spin_off.result)
@@ -500,7 +501,7 @@ class SchemaSelection:
             assert action.is_composite()
 
             if not action.is_enabled(state=selection_state):
-                trace(
+                logger.debug(
                     f'pending schema {details.schema} aborted: no applicable components for state "{selection_state}"')
                 details.status = PendingStatus.ABORTED
                 terminated_list.append(details)
@@ -509,7 +510,7 @@ class SchemaSelection:
                 self._pending_schemas_stack.popleft()
 
             elif details.duration > max_duration:
-                trace(f'pending schema {details.schema} interrupted: max duration {max_duration} exceeded"')
+                logger.debug(f'pending schema {details.schema} interrupted: max duration {max_duration} exceeded"')
                 details.status = PendingStatus.INTERRUPTED
                 terminated_list.append(details)
 
@@ -517,7 +518,7 @@ class SchemaSelection:
                 self._pending_schemas_stack.popleft()
 
             elif goal_state.is_satisfied(state=selection_state):
-                trace(f'pending schema {details.schema} completed: goal state {goal_state} reached')
+                logger.debug(f'pending schema {details.schema} completed: goal state {goal_state} reached')
                 details.status = PendingStatus.COMPLETED
                 terminated_list.append(details)
 

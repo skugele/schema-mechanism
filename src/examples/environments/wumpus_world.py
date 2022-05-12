@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import re
 from random import choice
 from typing import NamedTuple
@@ -10,7 +11,8 @@ import numpy as np
 
 from schema_mechanism.core import Action
 from schema_mechanism.core import State
-from schema_mechanism.share import debug
+
+logger = logging.getLogger(__name__)
 
 DIRECTIONS = 'NSEW'
 
@@ -167,11 +169,11 @@ class WumpusWorld:
 
 def agent_takes_damage(mdp):
     if mdp.agent.position in mdp.env.locations_of(PIT):
-        debug("Agent fell in pit!")
+        logger.debug("Agent fell in pit!")
         return True
 
     elif mdp.wumpus and is_alive(mdp.wumpus) and mdp.agent.position == mdp.wumpus.position:
-        debug("Agent attacked by Wumpus!")
+        logger.debug("Agent attacked by Wumpus!")
         return True
 
     return False
@@ -191,7 +193,7 @@ def move_forward(mdp):
 
 def pickup_gold(mdp):
     if mdp.agent.position in mdp.env.locations_of(GOLD):
-        debug("Gold Found!")
+        logger.debug("Gold Found!")
 
         mdp.agent.n_gold += 1
 
@@ -201,7 +203,7 @@ def pickup_gold(mdp):
 
 def pickup_arrow(mdp):
     if mdp.agent.position in mdp.env.locations_of(ARROW):
-        debug("Arrow Found!")
+        logger.debug("Arrow Found!")
 
         mdp.agent.n_arrows += 1
 
@@ -213,16 +215,16 @@ def fire_arrow(mdp) -> None:
     if mdp.agent.n_arrows <= 0:
         return
 
-    debug("Arrow Fired!")
+    logger.debug("Arrow Fired!")
     mdp.agent.n_arrows -= 1
 
     if pos_in_front_of(mdp.agent) == mdp.wumpus.position and is_alive(mdp.wumpus):
         mdp.wumpus.health -= 1
 
         if is_alive(mdp.wumpus):
-            debug("Wumpus Hit!")
+            logger.debug("Wumpus Hit!")
         else:
-            debug("Wumpus Killed!")
+            logger.debug("Wumpus Killed!")
 
 
 def use_exit(mdp):

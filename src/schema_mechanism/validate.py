@@ -1,3 +1,4 @@
+import logging
 from abc import ABC
 from abc import abstractmethod
 from collections import Callable
@@ -7,6 +8,8 @@ from typing import Optional
 from typing import Type
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class Validator(ABC):

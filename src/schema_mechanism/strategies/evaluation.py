@@ -13,8 +13,8 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import calc_delegated_value
 from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.core import get_action_trace
-from schema_mechanism.share import debug
 from schema_mechanism.share import rng
+from schema_mechanism.strategies import logger
 from schema_mechanism.strategies.decay import DecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.scaling import ScalingStrategy
@@ -57,14 +57,14 @@ class EvaluationStrategy(ABC):
 
         if post_process:
             class_name = self.__class__.__name__
-            debug(f'*** {class_name} Post Process Results ***')
+            logger.debug(f'*** {class_name} Post Process Results ***')
             for i, operation in enumerate(post_process, start=1):
                 operation_name = (
                     operation.__name__ or operation.__class__.__name__
                     if hasattr(operation, '__name__') or hasattr(operation.__class__, '__name')
                     else ''
                 ).upper()
-                debug(f'Post-Process Callable {i} "{operation_name}":')
+                logger.debug(f'Post-Process Callable {i} "{operation_name}":')
                 values = operation(schemas=schemas, values=values)
 
         return values
@@ -493,14 +493,12 @@ class DefaultExploratoryEvaluationStrategy(EvaluationStrategy):
     """
 
     def __init__(self,
-                 habituation_trace: Trace[Action] = None,
                  epsilon_initial: float = 0.99,
                  epsilon_min: float = 0.2,
                  epsilon_decay_strategy: DecayStrategy = None
                  ):
         """
 
-        :param habituation_trace:
         :param epsilon_initial:
         :param epsilon_min:
         :param epsilon_decay_strategy:
@@ -588,7 +586,7 @@ class DefaultGoalPursuitEvaluationStrategy(EvaluationStrategy):
 ####################
 def display_values(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
     for schema, value in zip(schemas, values):
-        debug(f'{schema} [{value}]')
+        logger.debug(f'{schema} [{value}]')
 
     return values
 
@@ -599,7 +597,7 @@ def display_minmax(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
     min_value = np.min(values)
     min_value_schema = schemas[np.flatnonzero(values == min_value)[0]]
 
-    debug(f'Schema with Maximum Value: {max_value_schema} [{max_value}]')
-    debug(f'Schema with Minimum Value: {min_value_schema} [{min_value}]')
+    logger.debug(f'Schema with Maximum Value: {max_value_schema} [{max_value}]')
+    logger.debug(f'Schema with Minimum Value: {min_value_schema} [{min_value}]')
 
     return values

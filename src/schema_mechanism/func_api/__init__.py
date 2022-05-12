@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection
 from typing import Optional
 
@@ -18,6 +19,8 @@ from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
 from schema_mechanism.func_api.parser import parse
+
+logger = logging.getLogger(__name__)
 
 
 def sym_state(str_repr: str) -> State:

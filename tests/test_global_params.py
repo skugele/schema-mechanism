@@ -8,8 +8,6 @@ from schema_mechanism.core import is_feature_enabled
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
-from schema_mechanism.share import Verbosity
-from schema_mechanism.share import display_message
 from test_share.test_func import common_test_setup
 from test_share.test_func import file_was_written
 
@@ -45,25 +43,6 @@ class TestGlobalParams(unittest.TestCase):
             except ValueError:
                 pass
 
-    def test_verbosity(self):
-        key = 'verbosity'
-
-        # test: value should be the default before updates
-        self.assertEqual(self.gp.defaults[key], self.gp.get(key))
-
-        # test: instances of Verbosity enum should be accepted and returned
-        for value in Verbosity:
-            self.gp.set(key, value)
-            self.assertEqual(value, self.gp.get(key))
-
-        # test: values that are not derived from Item class should be rejected
-        for illegal_value in ['DEBUG', 0]:
-            try:
-                self.gp.set(key, illegal_value)
-                self.fail('Did not raise expected ValueError on illegal value')
-            except ValueError:
-                pass
-
     def test_rng_seed(self):
         key = 'rng_seed'
 
@@ -76,34 +55,6 @@ class TestGlobalParams(unittest.TestCase):
 
         # test: values that are not integers should be rejected
         for illegal_value in [0.1, 'str']:
-            try:
-                self.gp.set(key, illegal_value)
-                self.fail('Did not raise expected ValueError on illegal value')
-            except ValueError:
-                pass
-
-    def test_output_format(self):
-        key = 'output_format'
-
-        # test: value should be the default before updates
-        self.assertEqual(self.gp.defaults[key], self.gp.get(key))
-
-        # test: instances of format strings should be accepted and returned
-        expected_format = 'format string: {message} {timestamp}'
-        self.gp.set(key, expected_format)
-        self.assertEqual(expected_format, self.gp.get(key))
-
-        # test: None should be accepted, which has the effect of turning off logging
-        self.gp.set(key, None)
-        self.assertEqual(None, self.gp.get(key))
-
-        try:
-            display_message('test', Verbosity.DEBUG)
-        except RuntimeError as e:
-            self.fail(f'Unexpected exception: {str(e)}')
-
-        # test: any non-string value that is not None should raise a ValueError
-        for illegal_value in [0, -1.1, list(), dict()]:
             try:
                 self.gp.set(key, illegal_value)
                 self.fail('Did not raise expected ValueError on illegal value')
@@ -163,7 +114,6 @@ class TestGlobalParams(unittest.TestCase):
         self.gp.set('learning_rate', 0.00001)
         self.gp.set('ext_context.negative_correlation_threshold', 0.186)
         self.gp.set('features', [SupportedFeature.ER_INCREMENTAL_RESULTS])
-        self.gp.set('output_format', '{message}')
         self.gp.set('ext_result.positive_correlation_threshold', 0.176)
         self.gp.set('reliability_threshold', 0.72)
         self.gp.set('rng_seed', 123456)
@@ -213,7 +163,6 @@ class TestGlobalParams(unittest.TestCase):
                 self.assertFalse(is_feature_enabled(feature))
 
     def test_defaults(self):
-        self.assertEqual('{timestamp} [{severity}]\t{message}', self.gp.defaults['output_format'])
         self.assertEqual(0.01, self.gp.defaults['learning_rate'])
         self.assertEqual(0.95, self.gp.defaults['ext_context.negative_correlation_threshold'])
         self.assertEqual(0.95, self.gp.defaults['ext_context.positive_correlation_threshold'])
@@ -228,7 +177,6 @@ class TestGlobalParams(unittest.TestCase):
             'learning_rate': 0.00001,
             'ext_context.negative_correlation_threshold': 0.186,
             'features': [SupportedFeature.ER_INCREMENTAL_RESULTS],
-            'output_format': '{message}',
             'ext_result.positive_correlation_threshold': 0.176,
             'reliability_threshold': 0.72,
             'rng_seed': 123456,

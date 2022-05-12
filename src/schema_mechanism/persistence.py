@@ -1,9 +1,12 @@
+import logging
 from pathlib import Path
 from pickle import dump
 from pickle import load
 from time import time
 from typing import Any
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SAVE_FILE_FORMAT = '{prefix}{object_name}-{version}-{unique_id}{suffix}'
 

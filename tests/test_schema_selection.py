@@ -11,12 +11,10 @@ from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import PendingDetails
 from schema_mechanism.modules import PendingStatus
 from schema_mechanism.modules import SchemaSelection
-from schema_mechanism.share import GlobalParams
 from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
 from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
-from test_share.test_classes import MockSchema
 from test_share.test_classes import MockSchemaSelection
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
@@ -25,9 +23,6 @@ from test_share.test_func import common_test_setup
 class TestSchemaSelection(TestCase):
     def setUp(self) -> None:
         common_test_setup()
-
-        # allows direct setting of reliability (only reliable schemas are eligible for chaining)
-        GlobalParams().set('schema_type', MockSchema)
 
         pool = ItemPool()
 

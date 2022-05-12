@@ -1,3 +1,4 @@
+import logging
 from collections import Hashable
 from copy import copy
 from pathlib import Path
@@ -8,7 +9,8 @@ from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.share import GlobalParams
-from schema_mechanism.share import Verbosity
+
+logger = logging.getLogger('test')
 
 
 def common_test_setup():
@@ -21,7 +23,6 @@ def common_test_setup():
 
     # reset stats to defaults to remove any parameter changes from previous test cases
     GlobalParams().reset()
-    GlobalParams().set('verbosity', Verbosity.WARN)
 
     # resets the composite action controller
     CompositeAction.reset()

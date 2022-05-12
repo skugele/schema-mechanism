@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import itertools
+import logging
 from abc import ABCMeta
 from collections import Collection
 from collections import defaultdict
@@ -16,6 +17,8 @@ from typing import Union
 
 import numpy as np
 import sklearn.metrics as sk_metrics
+
+logger = logging.getLogger(__name__)
 
 
 class UniqueIdMixin:

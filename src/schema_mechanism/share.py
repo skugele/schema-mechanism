@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-import sys
+import logging
 from collections import Collection
 from collections import ItemsView
 from collections import defaultdict
-from datetime import datetime
 from enum import Enum
-from enum import IntEnum
 from enum import auto
 from time import time
 from typing import Any
 from typing import Optional
-from typing import TextIO
 
 import numpy as np
 
@@ -22,18 +19,7 @@ from schema_mechanism.validate import RangeValidator
 from schema_mechanism.validate import TypeValidator
 from schema_mechanism.validate import Validator
 
-
-class Verbosity(IntEnum):
-    TRACE = 0
-    DEBUG = 1
-    INFO = 2
-    WARN = 3
-    ERROR = 4
-    FATAL = 5
-    NONE = 6
-
-    def __str__(self) -> str:
-        return self.name
+logger = logging.getLogger(__name__)
 
 
 class SupportedFeature(Enum):
@@ -117,7 +103,7 @@ class GlobalParams(metaclass=Singleton):
 
     def set(self, name: str, value: Any) -> None:
         if name not in self._params:
-            warn(f'Parameter "{name}" does not exist. Creating new parameter.')
+            logger.warning(f'Parameter "{name}" does not exist. Creating new parameter.')
 
         # raises ValueError if new value is invalid
         self._validators[name](value)
@@ -125,18 +111,11 @@ class GlobalParams(metaclass=Singleton):
 
     def get(self, name: str) -> Any:
         if name not in self._params:
-            warn(f'Parameter "{name}" does not exist.')
+            logger.warning(f'Parameter "{name}" does not exist.')
 
         return self._params.get(name)
 
     def _set_defaults(self) -> None:
-
-        # verbosity used to determine the active print/warn statements
-        self._defaults['verbosity'] = Verbosity.WARN
-
-        # format string used by output functions (debug, info, warn, error, fatal)
-        self._defaults['output_format'] = '{timestamp} [{severity}]\t{message}'
-
         # default seed for the random number generator
         self._defaults['rng_seed'] = int(time())
 
@@ -163,10 +142,6 @@ class GlobalParams(metaclass=Singleton):
         #     from 0.0 [schema has never succeeded] to 1.0 [schema always succeeds]
         self._defaults['reliability_threshold'] = 0.95
 
-        # used by delegated value helper
-        self._defaults['delegated_value_helper.discount_factor'] = 0.9
-        self._defaults['delegated_value_helper.decay_rate'] = 0.2
-
         # used by backward_chains (supports composite action)
         self._defaults['backward_chains.max_len'] = 5
         self._defaults['backward_chains.update_frequency'] = 0.01
@@ -185,40 +160,18 @@ class GlobalParams(metaclass=Singleton):
             SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED,
         }
 
-        # TODO: this registers the key names to prevent warning messages, but I need to update this with the names
-        # TODO: of default classes or some other indicators later. (NOTE: circular dependency issues will ensue if
-        # TODO: I initialize these with the types from schema_mechanism.core).
-        self._defaults['item_type'] = None
-        self._defaults['composite_item_type'] = None
-        self._defaults['schema_type'] = None
-
     def _set_validators(self):
-        self._validators['strategy.evaluation.epsilon_greedy.epsilon.initial'] = RangeValidator(0.0, 1.0)
-        self._validators['strategy.evaluation.epsilon_greedy.epsilon.min'] = RangeValidator(0.0, 1.0)
-        self._validators['strategy.evaluation.habituation.multiplier'] = RangeValidator(low=1.0)
-        self._validators['strategy.evaluation.pending_focus.max_value'] = RangeValidator(low=0.0)
-        self._validators['strategy.evaluation.reliability.max_penalty'] = RangeValidator(low=0.0)
         self._validators['backward_chains.max_len'] = MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
         self._validators['backward_chains.update_frequency'] = RangeValidator(0.0, 1.0)
         self._validators['composite_actions.learn.min_baseline_advantage'] = TypeValidator([float])
-        self._validators['delegated_value_helper.decay_rate'] = RangeValidator(0.0, 1.0)
-        self._validators['delegated_value_helper.discount_factor'] = RangeValidator(0.0, 1.0)
         self._validators['ext_context.negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['ext_context.positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['ext_result.negative_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['ext_result.positive_correlation_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['features'] = SupportedFeatureValidator()
         self._validators['learning_rate'] = RangeValidator(0.0, 1.0)
-        self._validators['output_format'] = TypeValidator([str])
         self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['rng_seed'] = TypeValidator([int])
-        self._validators['verbosity'] = TypeValidator([Verbosity])
-
-        # TODO: is there any way to do validators for?
-        # TODO:    correlation_test,
-        # TODO:    item_type,
-        # TODO:    composite_item_type,
-        # TODO:    schema_type
 
     def reset(self):
         self._params = dict(self._defaults)
@@ -228,55 +181,10 @@ global_params: GlobalParams = GlobalParams()
 
 
 def display_params() -> None:
-    info(f'Global Parameters:')
+    logger.info(f'Global Parameters:')
     for param, value in global_params:
         is_default_value = value == global_params.defaults.get(param, None)
-        info(f'\t{param} = \'{value}\' [DEFAULT: {is_default_value}]')
-
-
-def _output_fd(level: Verbosity) -> TextIO:
-    return sys.stdout if level < Verbosity.WARN else sys.stderr
-
-
-def _timestamp() -> str:
-    return datetime.now().isoformat()
-
-
-def display_message(message: str, level: Verbosity) -> None:
-    verbosity = GlobalParams().get('verbosity')
-    output_format = GlobalParams().get('output_format')
-
-    if level >= verbosity:
-        out = output_format.format(timestamp=_timestamp(), severity=level.name, message=message)
-        print(out, file=_output_fd(level), flush=True)
-
-
-def trace(message):
-    display_message(message=message, level=Verbosity.TRACE)
-
-
-def debug(message):
-    display_message(message=message, level=Verbosity.DEBUG)
-
-
-def info(message):
-    display_message(message=message, level=Verbosity.INFO)
-
-
-def warn(message):
-    display_message(message=message, level=Verbosity.WARN)
-
-
-def error(message):
-    display_message(message=message, level=Verbosity.ERROR)
-
-
-def fatal(message):
-    display_message(message=message, level=Verbosity.FATAL)
-
-
-def log_level() -> Verbosity:
-    return GlobalParams().get('verbosity')
+        logger.info(f'\t{param} = \'{value}\' [DEFAULT: {is_default_value}]')
 
 
 _rng = None
@@ -289,8 +197,9 @@ def rng():
 
     new_seed = GlobalParams().get('rng_seed')
     if new_seed != _seed:
-        warn(f'(Re-)initializing random number generator using seed="{new_seed}".')
-        warn(f'For reproducibility, you should also set "PYTHONHASHSEED={new_seed}" in your environment variables.')
+        logger.warning(f'(Re-)initializing random number generator using seed="{new_seed}".')
+        logger.warning(
+            f'For reproducibility, you should also set "PYTHONHASHSEED={new_seed}" in your environment variables.')
 
         # setting globals
         _rng = np.random.default_rng(new_seed)

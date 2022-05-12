@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import logging
 from abc import ABC
 from abc import ABCMeta
 from abc import abstractmethod
@@ -32,9 +33,7 @@ from anytree import RenderTree
 
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
-from schema_mechanism.share import debug
 from schema_mechanism.share import is_feature_enabled
-from schema_mechanism.share import trace
 from schema_mechanism.strategies.correlation_test import CorrelationTable
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.correlation_test import ItemCorrelationTest
@@ -50,6 +49,8 @@ from schema_mechanism.util import Singleton
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import pairwise
 from schema_mechanism.util import repr_str
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -889,14 +890,17 @@ class CompositeItem(Item):
     def __hash__(self) -> int:
         return hash(self.source)
 
+    def __repr__(self) -> str:
+        return repr_str(self, {'source': ','.join(sorted([str(element) for element in self.source])),
+                               'pv': self.primitive_value,
+                               'dv': self.delegated_value})
+
     @property
     def state_elements(self) -> set[StateElement]:
         return self.source
 
     def is_on(self, state: State, **kwargs) -> bool:
         return all((item.is_on(state) for item in self._items))
-
-
 
 
 class StateAssertion:
@@ -927,7 +931,7 @@ class StateAssertion:
     def __hash__(self) -> int:
         return hash(self._items)
 
-    # TODO: can this be replace by making this class an iterable?
+    # TODO: can this be replace by using the fact that this class is iterable???
     @property
     def items(self) -> frozenset[Item]:
         return self._items
@@ -1032,7 +1036,7 @@ class ExtendedItemCollection(Observable):
 
             # if suppressed then no spin-offs will be created for this item
             if suppressed:
-                debug(f'suppressing spin-off for item {item}')
+                logger.debug(f'suppressing spin-off for item {item}')
             else:
                 self._new_relevant_items.add(item)
 
@@ -1820,7 +1824,8 @@ class Schema(Observer, Observable, UniqueIdMixin):
         # update extended result stats
         if self._extended_result:
             if is_feature_enabled(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED) and explained:
-                trace(f'update suppressed for schema {self} because its result was explained by a reliable schema')
+                logger.debug(
+                    f'update suppressed for schema {self} because its result was explained by a reliable schema')
             else:
                 self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
 
@@ -2044,7 +2049,7 @@ class SchemaTree:
         return self._nodes[assertion]
 
     def add_bare_schemas(self, schemas: Collection[Schema]) -> None:
-        trace(f'adding bare schemas! [{[str(s) for s in schemas]}]')
+        logger.debug(f'adding bare schemas! [{[str(s) for s in schemas]}]')
         if not schemas:
             raise ValueError('Schemas cannot be empty or None')
 
@@ -2190,7 +2195,7 @@ class SchemaTree:
 
         :return: the parent node for which the add operation occurred
         """
-        trace(f'adding schemas! [parent: {source}, spin-offs: {[str(s) for s in spin_offs]}]')
+        logger.debug(f'adding schemas! [parent: {source}, spin-offs: {[str(s) for s in spin_offs]}]')
         if not spin_offs:
             raise ValueError('Spin-off schemas cannot be empty or None')
 

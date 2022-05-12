@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from lark import Lark
@@ -12,6 +13,8 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import StateAssertion
+
+logger = logging.getLogger(__name__)
 
 # Lark-based parser grammar (see https://lark-parser.readthedocs.io/en/latest/) used for parsing string representations
 # into core objects (e.g., items, assertions, and schemas).

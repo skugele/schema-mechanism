@@ -1,4 +1,5 @@
 import argparse
+import logging.config
 from collections.abc import Sequence
 from time import sleep
 from typing import Optional
@@ -18,7 +19,6 @@ from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import display_params
-from schema_mechanism.share import info
 from schema_mechanism.share import rng
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
@@ -31,6 +31,8 @@ from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
 from schema_mechanism.util import Observable
+
+logger = logging.getLogger('examples.environments.multi_arm_bandits')
 
 # global constants
 
@@ -259,9 +261,6 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
 
     sm.params.set('backward_chains.update_frequency', 0.01)
     sm.params.set('backward_chains.max_len', 3)
-    sm.params.set('delegated_value_helper.decay_rate', 0.0)
-    sm.params.set('delegated_value_helper.discount_factor', 0.5)
-
     sm.params.set('learning_rate', 0.01)
     sm.params.set('reliability_threshold', 0.6)
     sm.params.set('composite_actions.learn.min_baseline_advantage', 1.0)
@@ -304,12 +303,12 @@ def run():
     sm = create_schema_mechanism(env)
 
     for n in range(args.steps):
-        info(f'winnings: {env.winnings}')
-        info(f'state[{n}]: {env.current_state}')
+        logger.info(f'winnings: {env.winnings}')
+        logger.info(f'state[{n}]: {env.current_state}')
 
         current_composite_schema = sm.schema_selection.pending_schema
         if current_composite_schema:
-            info(f'active composite action schema: {current_composite_schema} ')
+            logger.info(f'active composite action schema: {current_composite_schema} ')
 
         selection_details = sm.select(env.current_state)
 
@@ -321,10 +320,10 @@ def run():
         if terminated_composite_schemas:
             i = 0
             for pending_details in terminated_composite_schemas:
-                info(f'terminated schema [{i}]: {pending_details.schema}')
-                info(f'termination status [{i}]: {pending_details.status}')
-                info(f'selection state [{i}]: {pending_details.selection_state}')
-                info(f'duration [{i}]: {pending_details.duration}')
+                logger.info(f'terminated schema [{i}]: {pending_details.schema}')
+                logger.info(f'termination status [{i}]: {pending_details.status}')
+                logger.info(f'selection state [{i}]: {pending_details.selection_state}')
+                logger.info(f'duration [{i}]: {pending_details.duration}')
             i += 1
 
         if is_paused():
@@ -337,7 +336,7 @@ def run():
             except KeyboardInterrupt:
                 pass
 
-        info(f'selected schema[{n}]: {schema} [eff. value: {effective_value}]')
+        logger.info(f'selected schema[{n}]: {schema} [eff. value: {effective_value}]')
 
         state = env.step(action)
 
@@ -348,10 +347,13 @@ def run():
 
 
 def display_machine_info(machines):
-    info(f'machines ({len(machines)}):')
+    logger.info(f'machines ({len(machines)}):')
     for m in machines:
-        info(f'\t{repr(m)}')
+        logger.info(f'\t{repr(m)}')
 
 
 if __name__ == '__main__':
+    # configure logger
+    logging.config.fileConfig('../../config/logging.conf')
+
     run()
