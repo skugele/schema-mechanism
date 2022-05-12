@@ -10,7 +10,7 @@ from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.share import GlobalParams
 
-logger = logging.getLogger('test')
+logger = logging.getLogger(__name__)
 
 
 def common_test_setup():

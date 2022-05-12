@@ -1,3 +1,4 @@
+import logging
 from abc import ABC
 from abc import abstractmethod
 from collections import Sequence
@@ -14,13 +15,14 @@ from schema_mechanism.core import calc_delegated_value
 from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.core import get_action_trace
 from schema_mechanism.share import rng
-from schema_mechanism.strategies import logger
 from schema_mechanism.strategies.decay import DecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.scaling import ScalingStrategy
 from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import equal_weights
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
