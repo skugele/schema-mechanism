@@ -56,7 +56,10 @@ class TestSymbolicItem(TestCase):
         self.assertFalse(self.item.is_on(sym_state('123,4321')))
 
     def test_eq(self):
-        self.assertTrue(satisfies_equality_checks(obj=self.item, other=SymbolicItem('123')))
+        self.assertTrue(satisfies_equality_checks(
+            obj=self.item,
+            other=SymbolicItem('123'),
+            other_different_type=1.0))
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.item))
@@ -161,7 +164,10 @@ class TestCompositeItem(unittest.TestCase):
         self.assertTrue(is_eq_with_null_is_false(obj))
 
     def test_eq(self):
-        self.assertTrue(satisfies_equality_checks(obj=self.item, other=CompositeItem(source=['A', 'B'])))
+        self.assertTrue(satisfies_equality_checks(
+            obj=self.item,
+            other=CompositeItem(source=['A', 'B']),
+            other_different_type=1.0))
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.item))

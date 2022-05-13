@@ -160,11 +160,20 @@ class TestStateAssertion(TestCase):
         self.assertEqual(len(self.items), len(self.state_assertion))
 
     def test_eq(self):
-        self.assertTrue(satisfies_equality_checks(obj=self.state_assertion, other=sym_state_assert('4,5,6')))
+        self.assertTrue(
+            satisfies_equality_checks(
+                obj=self.state_assertion,
+                other=sym_state_assert('4,5,6'),
+                other_different_type=1.0)
+        )
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.state_assertion))
 
     def test_equal_with_composite_items(self):
-        self.assertTrue(satisfies_equality_checks(obj=sym_state_assert('(4,5,6),'),
-                                                  other=sym_state_assert('(7,8,9),')))
+        self.assertTrue(
+            satisfies_equality_checks(
+                obj=sym_state_assert('(4,5,6),'),
+                other=sym_state_assert('(7,8,9),'),
+                other_different_type=1.0)
+        )

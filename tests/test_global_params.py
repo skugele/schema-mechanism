@@ -4,7 +4,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from schema_mechanism.core import SupportedFeature
+from schema_mechanism.core import get_global_params
 from schema_mechanism.core import is_feature_enabled
+from schema_mechanism.core import set_global_params
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
 from schema_mechanism.share import GlobalParams
@@ -16,11 +18,8 @@ class TestGlobalParams(unittest.TestCase):
     def setUp(self):
         common_test_setup()
 
-        self.gp: GlobalParams = GlobalParams()
+        self.gp: GlobalParams = get_global_params()
         self.gp.reset()
-
-    def test_singleton(self):
-        self.assertIs(self.gp, GlobalParams())
 
     def test_reliability_threshold(self):
         key = 'reliability_threshold'
@@ -153,7 +152,7 @@ class TestGlobalParams(unittest.TestCase):
         self.assertRaises(ValueError, lambda: self.gp.set(key, {SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE}))
 
     def test_is_enabled(self):
-        features = {SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY, SupportedFeature.ER_INCREMENTAL_RESULTS}
+        features = {SupportedFeature.ER_INCREMENTAL_RESULTS}
         self.gp.set('features', features)
 
         for feature in SupportedFeature:
@@ -182,15 +181,16 @@ class TestGlobalParams(unittest.TestCase):
             'rng_seed': 123456,
         }
 
+        params = GlobalParams()
         for key, value in non_default_params.items():
-            self.gp.set(key, value)
+            params.set(key, value)
 
         expected_dict = dict()
-        expected_dict.update(self.gp.defaults)
+        expected_dict.update(params.defaults)
         expected_dict.update(non_default_params)
 
         # sanity check
-        self.assertDictEqual({k: v for k, v in self.gp}, expected_dict)
+        self.assertDictEqual({k: v for k, v in params}, expected_dict)
 
         with TemporaryDirectory() as tmp_dir:
             path = Path(os.path.join(tmp_dir, 'test-file-global_params-save_and_load.sav'))
@@ -198,18 +198,18 @@ class TestGlobalParams(unittest.TestCase):
             # sanity check: file SHOULD NOT exist
             self.assertFalse(path.exists())
 
-            serialize(self.gp, path)
+            serialize(params, path)
 
             # test: file SHOULD exist after call to save
             self.assertTrue(file_was_written(path))
 
-            # clear non-default parameters
-            self.gp.reset()
-
-            # sanity check: only defaults
-            self.assertDictEqual({k: v for k, v in self.gp}, self.gp.defaults)
-
-            deserialize(path)
+            recovered: GlobalParams = deserialize(path)
 
             # test: non-default global params SHOULD be restored after load
-            self.assertDictEqual({k: v for k, v in self.gp}, expected_dict)
+            self.assertEqual(params, recovered)
+
+    def test_global_params_accessor_functions(self):
+        params = GlobalParams()
+        set_global_params(params)
+
+        self.assertEqual(params, get_global_params())

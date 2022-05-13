@@ -11,6 +11,7 @@ from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_EC_ITEM_STATS
 from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import SymbolicItem
+from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_items
 from schema_mechanism.func_api import sym_state
@@ -30,9 +31,11 @@ class TestExtendedContext(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        GlobalParams().set('ext_context.correlation_test', DrescherCorrelationTest())
-        GlobalParams().set('ext_context.positive_correlation_threshold', 0.65)
-        GlobalParams().set('ext_context.negative_correlation_threshold', 0.65)
+        params = get_global_params()
+
+        params.set('ext_context.correlation_test', DrescherCorrelationTest())
+        params.set('ext_context.positive_correlation_threshold', 0.65)
+        params.set('ext_context.negative_correlation_threshold', 0.65)
 
         pool = ItemPool()
 
@@ -108,7 +111,8 @@ class TestExtendedContext(TestCase):
                 self.assertEqual(0, item_stats.n_fail_and_off)
 
     def test_update_all_2(self):
-        features = GlobalParams().get('features')
+        params = get_global_params()
+        features = params.get('features')
 
         # test update_all without SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE enabled
         if SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE in features:
@@ -180,8 +184,9 @@ class TestExtendedContext(TestCase):
 
         i1_stats = self.ec.stats[i1]
 
-        pos_threshold = GlobalParams().get('ext_context.positive_correlation_threshold')
-        neg_threshold = GlobalParams().get('ext_context.negative_correlation_threshold')
+        params = get_global_params()
+        pos_threshold = params.get('ext_context.positive_correlation_threshold')
+        neg_threshold = params.get('ext_context.negative_correlation_threshold')
 
         self.assertTrue(i1_stats.positive_correlation_stat > pos_threshold)
         self.assertTrue(i1_stats.negative_correlation_stat <= neg_threshold)

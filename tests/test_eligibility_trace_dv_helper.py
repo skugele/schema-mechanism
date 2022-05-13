@@ -4,6 +4,7 @@ import numpy as np
 
 from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
 from schema_mechanism.core import calc_value
+from schema_mechanism.core import get_global_params
 from schema_mechanism.core import items_from_state
 from schema_mechanism.core import new_state
 from schema_mechanism.core import reduce_to_most_specific_items
@@ -101,7 +102,8 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         result_state = sym_state('7,9')
 
         # simplify testing by setting learning rate to 1.0
-        GlobalParams().set('learning_rate', 1.0)
+        params = get_global_params()
+        params.set('learning_rate', 1.0)
 
         self.dv_helper.update(selection_state=selection_state, result_state=result_state)
 
@@ -133,7 +135,8 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
             eligibility_trace=self.eligibility_trace
         )
 
-        GlobalParams().set('learning_rate', 0.1)
+        params = get_global_params()
+        params.set('learning_rate', 0.1)
 
         dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('A,3'))
 
@@ -544,3 +547,27 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
 
         self.assertEqual(eff_value * trace_values[0], self.dv_helper.delegated_value(self.item_a))
         self.assertEqual(eff_value * trace_values[1], self.dv_helper.delegated_value(self.item_b))
+
+    def test_reset(self):
+
+        states = [
+            sym_state('B'),
+            sym_state('A'),
+            sym_state('7,9')
+        ]
+
+        for selection_state, result_state in pairwise(states):
+            self.dv_helper.update(selection_state=selection_state, result_state=result_state)
+
+        dv_a = self.dv_helper.delegated_value(self.item_a)
+        dv_b = self.dv_helper.delegated_value(self.item_b)
+
+        # sanity check: updates should have increased these values
+        self.assertGreater(dv_a, 0.0)
+        self.assertGreater(dv_b, 0.0)
+
+        self.dv_helper.reset()
+
+        # test: verify that delegated value is now zero
+        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))

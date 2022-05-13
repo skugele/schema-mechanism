@@ -33,7 +33,7 @@ from anytree import RenderTree
 
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
-from schema_mechanism.share import is_feature_enabled
+from schema_mechanism.share import logger
 from schema_mechanism.strategies.correlation_test import CorrelationTable
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.correlation_test import ItemCorrelationTest
@@ -152,7 +152,6 @@ class DelegatedValueHelper(ABC):
         :param item: the item for which the delegated value will be returned.
         :return: the item's current delegated value
         """
-        pass
 
     @abstractmethod
     def update(self, selection_state: State, result_state: State, **kwargs) -> None:
@@ -170,7 +169,6 @@ class DelegatedValueHelper(ABC):
 
         :return: None
         """
-        pass
 
     @abstractmethod
     def reset(self) -> None:
@@ -178,7 +176,6 @@ class DelegatedValueHelper(ABC):
 
         :return: None
         """
-        pass
 
 
 class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
@@ -277,7 +274,8 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         target = self.effective_state_value(selection_state, result_state)
 
         # incremental update of delegated values towards target
-        lr = GlobalParams().get('learning_rate')
+        params = get_global_params()
+        lr = params.get('learning_rate')
         for item in ReadOnlyItemPool():
             tv = self.eligibility_trace[item]
             if tv > 0.0:
@@ -324,7 +322,7 @@ class Item(ABC):
 
     @abstractmethod
     def __hash__(self) -> int:
-        pass
+        """ Returns a hash code for this item """
 
     def __str__(self) -> str:
         return ','.join(sorted([str(element) for element in self.state_elements])) if self.source else ''
@@ -341,7 +339,7 @@ class Item(ABC):
     @property
     @abstractmethod
     def state_elements(self) -> set[StateElement]:
-        pass
+        """ Returns the state elements contained in this item's source """
 
     @property
     def primitive_value(self) -> float:
@@ -362,9 +360,10 @@ class Item(ABC):
 
     @abstractmethod
     def is_on(self, state: State, **kwargs) -> bool:
-        return NotImplemented
+        """ Returns whether this item is On (i.e, present) in the current state """
 
     def is_off(self, state: State, **kwargs) -> bool:
+        """ Returns whether this item is Off (i.e, absent) in the current state """
         return not self.is_on(state, **kwargs)
 
 
@@ -445,7 +444,7 @@ def reduce_to_most_specific_items(items: Optional[Collection[Item]]) -> Collecti
     return items_to_keep
 
 
-class GlobalStats(metaclass=Singleton):
+class GlobalStats:
     def __init__(self, initial_baseline_value: float = 0.0):
         self.baseline_value: float = initial_baseline_value
         self.n: int = 0
@@ -456,12 +455,9 @@ class GlobalStats(metaclass=Singleton):
         :param state: a state
         :return: None
         """
-        lr = GlobalParams().get('learning_rate')
+        params = get_global_params()
+        lr = params.get('learning_rate')
         self.baseline_value += lr * (calc_primitive_value(state) - self.baseline_value)
-
-    # TODO: implement this, and replace update_baseline
-    def update(self):
-        pass
 
     def clear(self):
         self.baseline_value = 0.0
@@ -550,41 +546,45 @@ class ItemStats(ABC):
     @property
     @abstractmethod
     def correlation_test(self) -> ItemCorrelationTest:
-        pass
+        """ Returns a reference to the item correlation test used to generate item stats """
 
     @property
     @abstractmethod
     def positive_correlation_threshold(self) -> float:
-        pass
+        """ The threshold used to determine if positive correlation needed for relevant items designation """
 
     @property
     @abstractmethod
     def negative_correlation_threshold(self) -> float:
-        pass
+        """ The threshold used to determine if negative correlation needed for relevant items designation """
 
     @property
     def positive_correlation_stat(self) -> float:
+        """ Returns a real number that quantifies this item's positive correlation value """
         return self.correlation_test.positive_corr_statistic(self.as_table())
 
     @property
     def negative_correlation_stat(self) -> float:
+        """ Returns a real number that quantifies this item's negative correlation value """
         return self.correlation_test.negative_corr_statistic(self.as_table())
 
     @property
     def positive_correlation(self) -> bool:
+        """ Returns True if this Item is positively correlated based on the current threshold; False otherwise """
         return self.correlation_test.positive_corr_statistic(self.as_table()) >= self.positive_correlation_threshold
 
     @property
     def negative_correlation(self) -> bool:
+        """ Returns True if this Item is negatively correlated based on the current threshold; False otherwise """
         return self.correlation_test.negative_corr_statistic(self.as_table()) >= self.negative_correlation_threshold
 
     @abstractmethod
     def as_table(self) -> CorrelationTable:
-        pass
+        """ Returns the item statistics as a CorrelationTable """
 
     @abstractmethod
     def update(self, **kwargs) -> None:
-        pass
+        """ Updates the item statistics """
 
 
 class ECItemStats(ItemStats):
@@ -615,15 +615,18 @@ class ECItemStats(ItemStats):
 
     @property
     def correlation_test(self) -> ItemCorrelationTest:
-        return GlobalParams().get('ext_context.correlation_test') or FisherExactCorrelationTest()
+        params = get_global_params()
+        return params.get('ext_context.correlation_test') or FisherExactCorrelationTest()
 
     @property
     def positive_correlation_threshold(self) -> float:
-        return GlobalParams().get('ext_context.positive_correlation_threshold')
+        params = get_global_params()
+        return params.get('ext_context.positive_correlation_threshold')
 
     @property
     def negative_correlation_threshold(self) -> float:
-        return GlobalParams().get('ext_context.negative_correlation_threshold')
+        params = get_global_params()
+        return params.get('ext_context.negative_correlation_threshold')
 
     def update(self, on: bool, success: bool, count: int = 1) -> None:
         if on and success:
@@ -734,15 +737,18 @@ class ERItemStats(ItemStats):
 
     @property
     def correlation_test(self) -> ItemCorrelationTest:
-        return GlobalParams().get('ext_result.correlation_test') or FisherExactCorrelationTest()
+        params = get_global_params()
+        return params.get('ext_result.correlation_test') or FisherExactCorrelationTest()
 
     @property
     def positive_correlation_threshold(self) -> float:
-        return GlobalParams().get('ext_result.positive_correlation_threshold')
+        params = get_global_params()
+        return params.get('ext_result.positive_correlation_threshold')
 
     @property
     def negative_correlation_threshold(self) -> float:
-        return GlobalParams().get('ext_result.negative_correlation_threshold')
+        params = get_global_params()
+        return params.get('ext_result.negative_correlation_threshold')
 
     @property
     def n_on(self) -> int:
@@ -1194,8 +1200,6 @@ class ExtendedContext(ExtendedItemCollection):
 
         :return: True if should defer stats updates for this state to this schema's spin-offs.
         """
-        if not is_feature_enabled(SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY):
-            return False
         return any((item.is_on(state) for item in self.relevant_items))
 
     @property
@@ -1915,7 +1919,8 @@ class ReadOnlySchemaPool(SchemaPool):
 
 
 def is_reliable(schema: Schema, threshold: Optional[float] = None) -> bool:
-    threshold = threshold or GlobalParams().get('reliability_threshold')
+    params = get_global_params()
+    threshold = threshold or params.get('reliability_threshold')
     return schema.reliability != np.NAN and schema.reliability >= threshold
 
 
@@ -2504,3 +2509,15 @@ def set_global_stats(global_params: GlobalStats) -> None:
 
 def get_global_stats() -> GlobalStats:
     return _global_stats
+
+
+def is_feature_enabled(feature: SupportedFeature) -> bool:
+    params = get_global_params()
+    return feature in params.get('features')
+
+
+def display_params(global_params: GlobalParams) -> None:
+    logger.info(f'Global Parameters:')
+    for param, value in global_params:
+        is_default_value = value == global_params.defaults.get(param, None)
+        logger.info(f'\t{param} = \'{value}\' [DEFAULT: {is_default_value}]')

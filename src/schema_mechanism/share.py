@@ -12,7 +12,6 @@ from typing import Optional
 
 import numpy as np
 
-from schema_mechanism.util import Singleton
 from schema_mechanism.validate import MultiValidator
 from schema_mechanism.validate import NULL_VALIDATOR
 from schema_mechanism.validate import RangeValidator
@@ -47,12 +46,6 @@ class SupportedFeature(Enum):
     # comparison and experimentation.
     ER_INCREMENTAL_RESULTS = auto()
 
-    # Modifies the schema mechanism to only create context spin-offs containing positive assertions.
-    EC_POSITIVE_ASSERTIONS_ONLY = auto()
-
-    # Modifies the schema mechanism to only create result spin-offs containing positive assertions.
-    ER_POSITIVE_ASSERTIONS_ONLY = auto()
-
 
 class SupportedFeatureValidator(Validator):
     def __call__(self, features: Optional[Collection[SupportedFeature]]) -> None:
@@ -65,12 +58,14 @@ class SupportedFeatureValidator(Validator):
                 SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA not in features):
             raise ValueError(f'The feature EC_MOST_SPECIFIC_ON_MULTIPLE requires EC_DEFER_TO_MORE_SPECIFIC_SCHEMA')
 
+    def __eq__(self, other) -> bool:
+        return isinstance(other, SupportedFeatureValidator)
 
-def is_feature_enabled(feature: SupportedFeature) -> bool:
-    return feature in GlobalParams().get('features')
+    def __hash__(self) -> int:
+        return hash(self.__class__.__name__)
 
 
-class GlobalParams(metaclass=Singleton):
+class GlobalParams:
 
     def __init__(self) -> None:
         self._defaults: dict[str, Any] = dict()
@@ -85,13 +80,12 @@ class GlobalParams(metaclass=Singleton):
     def __iter__(self) -> ItemsView[str, Any]:
         yield from self._params.items()
 
-    def __getstate__(self) -> dict[str, Any]:
-        return {'_params': self._params}
-
-    def __setstate__(self, state: dict[str:Any]) -> None:
-        gp = GlobalParams()
-        for key in state:
-            setattr(gp, key, state[key])
+    def __eq__(self, other) -> bool:
+        if isinstance(other, GlobalParams):
+            return all((other._params == self._params,
+                        other._defaults == self._defaults,
+                        other._validators == self._validators))
+        return False if other is None else NotImplemented
 
     @property
     def defaults(self) -> dict[str, Any]:
@@ -114,6 +108,9 @@ class GlobalParams(metaclass=Singleton):
             logger.warning(f'Parameter "{name}" does not exist.')
 
         return self._params.get(name)
+
+    def reset(self):
+        self._params = dict(self._defaults)
 
     def _set_defaults(self) -> None:
         # default seed for the random number generator
@@ -155,8 +152,6 @@ class GlobalParams(metaclass=Singleton):
             SupportedFeature.COMPOSITE_ACTIONS,
             SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA,
             SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE,
-            SupportedFeature.ER_POSITIVE_ASSERTIONS_ONLY,
-            SupportedFeature.EC_POSITIVE_ASSERTIONS_ONLY,
             SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED,
         }
 
@@ -172,19 +167,6 @@ class GlobalParams(metaclass=Singleton):
         self._validators['learning_rate'] = RangeValidator(0.0, 1.0)
         self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
         self._validators['rng_seed'] = TypeValidator([int])
-
-    def reset(self):
-        self._params = dict(self._defaults)
-
-
-global_params: GlobalParams = GlobalParams()
-
-
-def display_params() -> None:
-    logger.info(f'Global Parameters:')
-    for param, value in global_params:
-        is_default_value = value == global_params.defaults.get(param, None)
-        logger.info(f'\t{param} = \'{value}\' [DEFAULT: {is_default_value}]')
 
 
 _rng = None

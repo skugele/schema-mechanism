@@ -34,6 +34,8 @@ from schema_mechanism.core import default_delegated_value_helper
 from schema_mechanism.core import default_global_params
 from schema_mechanism.core import default_global_stats
 from schema_mechanism.core import get_action_trace
+from schema_mechanism.core import get_global_params
+from schema_mechanism.core import is_feature_enabled
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
@@ -43,7 +45,6 @@ from schema_mechanism.core import set_global_params
 from schema_mechanism.core import set_global_stats
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
-from schema_mechanism.share import is_feature_enabled
 from schema_mechanism.share import rng
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
 from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
@@ -182,12 +183,14 @@ class SchemaMemory(Observer):
                     lost=lost_state(pending_selection_state, result_state),
                     explained=explained)
 
+        params = get_global_params()
+
         # TODO: there must be a better way to choose when to perform an update than this randomized mess.
         # update composite action controllers
         controllers = CompositeAction.all_satisfied_by(result_state)
         for c in controllers:
-            if rng().uniform(0.0, 1.0) < GlobalParams().get('backward_chains.update_frequency'):
-                chains = self.backward_chains(c.goal_state, max_len=GlobalParams().get('backward_chains.max_len'))
+            if rng().uniform(0.0, 1.0) < params.get('backward_chains.update_frequency'):
+                chains = self.backward_chains(c.goal_state, max_len=params.get('backward_chains.max_len'))
                 c.update(chains)
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
@@ -299,7 +302,8 @@ class SchemaMemory(Observer):
                 # TODO: this will permanently prevent the creation of a composite action if the result state
                 # TODO: is discovered very early. Note that allowing composite actions for all result states is
                 # TODO: not tractable for most environments.
-                min_adv = GlobalParams().get('composite_actions.learn.min_baseline_advantage')
+                params = get_global_params()
+                min_adv = params.get('composite_actions.learn.min_baseline_advantage')
                 if calc_primitive_value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
                     continue
 
@@ -487,6 +491,8 @@ class SchemaSelection:
         """
         terminated_list: list[PendingDetails] = list()
 
+        params = get_global_params()
+
         next_pending: Optional[Schema] = None
         while self._pending_schemas_stack and not next_pending:
 
@@ -495,7 +501,7 @@ class SchemaSelection:
             goal_state = action.goal_state
 
             # TODO: not sure if this is a good way to do this
-            max_duration = 1.5 * GlobalParams().get('backward_chains.max_len')
+            max_duration = 1.5 * params.get('backward_chains.max_len')
 
             # sanity check
             assert action.is_composite()

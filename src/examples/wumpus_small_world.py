@@ -14,14 +14,16 @@ from examples import run_decorator
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
 from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
+from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
+from schema_mechanism.core import display_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
-from schema_mechanism.share import display_params
+from schema_mechanism.share import GlobalParams
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
@@ -82,7 +84,9 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
         items=primitive_items,
         schema_memory=schema_memory,
         schema_selection=schema_selection,
-        delegated_value_helper=delegated_value_helper
+        delegated_value_helper=delegated_value_helper,
+        global_params=GlobalParams(),
+        global_stats=GlobalStats()
     )
 
     sm.params.set('backward_chains.max_len', 5)
@@ -95,7 +99,7 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     sm.params.set('learning_rate', 0.01)
     sm.params.set('reliability_threshold', 0.8)
 
-    display_params()
+    display_params(sm.params)
 
     return sm
 

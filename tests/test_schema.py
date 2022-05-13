@@ -18,6 +18,7 @@ from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
+from schema_mechanism.core import get_global_params
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
@@ -27,7 +28,6 @@ from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.func_api import update_schema
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
-from schema_mechanism.share import GlobalParams
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_classes import MockSchema
@@ -468,7 +468,8 @@ class TestSchema(TestCase):
         self.assertEqual(1.0, self.schema.reliability)
 
     def test_notify_all(self):
-        GlobalParams().set('ext_context.correlation_test', DrescherCorrelationTest())
+        params = get_global_params()
+        params.set('ext_context.correlation_test', DrescherCorrelationTest())
 
         self.schema.notify_all = MagicMock()
 
@@ -493,7 +494,10 @@ class TestSchema(TestCase):
         self.schema.notify_all.assert_called()
 
     def test_eq(self):
-        self.assertTrue(satisfies_equality_checks(obj=self.schema, other=sym_schema('1,2/A1/3,4,5')))
+        self.assertTrue(satisfies_equality_checks(
+            obj=self.schema,
+            other=sym_schema('1,2/A1/3,4,5'),
+            other_different_type=1.0))
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.schema))
@@ -642,7 +646,9 @@ class TestSchemaFunctions(TestCase):
     # noinspection PyPropertyAccess
     def test_is_reliable(self):
         reliability_threshold = 0.5
-        GlobalParams().set('reliability_threshold', reliability_threshold)
+
+        params = get_global_params()
+        params.set('reliability_threshold', reliability_threshold)
 
         schema = sym_schema('1,2/A1/3,4', schema_type=MockSchema)
 

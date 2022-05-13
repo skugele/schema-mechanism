@@ -1,4 +1,5 @@
 import unittest
+from typing import Hashable
 
 import numpy as np
 
@@ -73,12 +74,12 @@ class TestTypeValidator(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self.accept_set = [int, float]
+        self.accept_set = {int, float}
         self.validator = TypeValidator(self.accept_set)
 
     def test_init(self):
         # test: attributes should have been set during initialization
-        self.assertListEqual(self.accept_set, self.validator.accept_set)
+        self.assertSetEqual(self.accept_set, self.validator.accept_set)
 
         # test: if accept_set is empty it should generate a ValueError
         self.assertRaises(ValueError, lambda: TypeValidator(accept_set=[]))
@@ -111,12 +112,12 @@ class TestWhiteListValidator(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self.accept_set = list(range(10))
+        self.accept_set = set(range(10))
         self.validator = WhiteListValidator(self.accept_set)
 
     def test_init(self):
         # test: attributes should have been set during initialization
-        self.assertListEqual(self.accept_set, self.validator.accept_set)
+        self.assertSetEqual(self.accept_set, self.validator.accept_set)
 
         # test: if accept_set is empty it should generate a ValueError
         self.assertRaises(ValueError, lambda: WhiteListValidator(accept_set=[]))
@@ -140,12 +141,12 @@ class TestBlackListValidator(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self.reject_set = [8, 9]
+        self.reject_set = {8, 9}
         self.validator = BlackListValidator(self.reject_set)
 
     def test_init(self):
         # test: attributes should have been set during initialization
-        self.assertListEqual(self.reject_set, self.validator.reject_set)
+        self.assertSetEqual(self.reject_set, self.validator.reject_set)
 
         # test: if accept_set is empty it should generate a ValueError
         self.assertRaises(ValueError, lambda: BlackListValidator(reject_set=[]))
@@ -153,7 +154,8 @@ class TestBlackListValidator(unittest.TestCase):
     def test_call(self):
         # test: all values not in reject_set should be allowed
         try:
-            for value in [None, 'accept', 7, 10, 0.0, list()]:
+            value: Hashable
+            for value in [None, 'accept', 7, 10, 0.0, frozenset()]:
                 self.validator(value)
 
         except ValueError as e:
@@ -168,16 +170,16 @@ class TestMultiValidator(unittest.TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self.validator_list = [
+        self.validator_set = {
             TypeValidator(accept_set=[int]),
             RangeValidator(low=0.0, high=10.0, exclude=[10.0]),
-        ]
+        }
 
-        self.validator = MultiValidator(self.validator_list)
+        self.validator = MultiValidator(self.validator_set)
 
     def test_init(self):
         # test: attributes should have been set during initialization
-        self.assertListEqual(self.validator_list, self.validator.validators)
+        self.assertSetEqual(self.validator_set, self.validator.validators)
 
         # test: if accept_set is empty it should generate a ValueError
         self.assertRaises(ValueError, lambda: MultiValidator(validators=[]))

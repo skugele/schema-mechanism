@@ -11,6 +11,7 @@ from schema_mechanism.core import Action
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Schema
 from schema_mechanism.core import State
+from schema_mechanism.core import display_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import RandomizeBestSelectionStrategy
@@ -18,7 +19,6 @@ from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import GlobalParams
-from schema_mechanism.share import display_params
 from schema_mechanism.share import rng
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
@@ -279,7 +279,7 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
     sm.params.set('ext_result.positive_correlation_threshold', 0.95)
 
-    display_params()
+    display_params(sm.params)
 
     return sm
 

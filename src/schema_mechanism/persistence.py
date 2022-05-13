@@ -1,10 +1,11 @@
 import logging
 from pathlib import Path
-from pickle import dump
-from pickle import load
 from time import time
 from typing import Any
 from typing import Optional
+
+from dill import dump
+from dill import load
 
 logger = logging.getLogger(__name__)
 

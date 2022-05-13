@@ -54,7 +54,7 @@ class TestState(TestCase):
         self.assertNotEqual(self.s, self.s_conjoint)
         self.assertNotEqual(self.s, self.s_contained)
 
-        self.assertTrue(satisfies_equality_checks(obj=self.s, other=sym_state('4,5,6')))
+        self.assertTrue(satisfies_equality_checks(obj=self.s, other=sym_state('4,5,6'), other_different_type=1.0))
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.s))

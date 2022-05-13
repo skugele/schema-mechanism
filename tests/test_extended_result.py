@@ -7,6 +7,7 @@ from unittest import TestCase
 from schema_mechanism.core import ExtendedResult
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_ER_ITEM_STATS
+from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.persistence import deserialize
@@ -24,9 +25,10 @@ class TestExtendedResult(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        GlobalParams().set('ext_result.correlation_test', DrescherCorrelationTest())
-        GlobalParams().set('ext_result.positive_correlation_threshold', 0.65)
-        GlobalParams().set('ext_result.negative_correlation_threshold', 0.65)
+        params = get_global_params()
+        params.set('ext_result.correlation_test', DrescherCorrelationTest())
+        params.set('ext_result.positive_correlation_threshold', 0.65)
+        params.set('ext_result.negative_correlation_threshold', 0.65)
 
         # populate item pool
         self._item_pool = ItemPool()
@@ -104,8 +106,10 @@ class TestExtendedResult(TestCase):
 
         i1_stats = self.er.stats[i1]
 
-        pos_threshold = GlobalParams().get('ext_result.positive_correlation_threshold')
-        neg_threshold = GlobalParams().get('ext_result.negative_correlation_threshold')
+        params = get_global_params()
+
+        pos_threshold = params.get('ext_result.positive_correlation_threshold')
+        neg_threshold = params.get('ext_result.negative_correlation_threshold')
 
         self.assertTrue(i1_stats.positive_correlation_stat > pos_threshold)
         self.assertTrue(i1_stats.negative_correlation_stat <= neg_threshold)

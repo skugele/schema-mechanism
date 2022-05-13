@@ -10,7 +10,7 @@ from schema_mechanism.core import ERItemStats
 from schema_mechanism.core import ReadOnlyECItemStats
 from schema_mechanism.core import ReadOnlyERItemStats
 from schema_mechanism.core import SchemaStats
-from schema_mechanism.share import GlobalParams
+from schema_mechanism.core import get_global_params
 from schema_mechanism.strategies.correlation_test import BarnardExactCorrelationTest
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_func import common_test_setup
@@ -65,7 +65,8 @@ class TestECItemStatistics(TestCase):
         self.assertEqual(self.item_stats.n_fail_and_off, 8)
 
     def test_drescher_correlation(self):
-        GlobalParams().set('ext_context.correlation_test', DrescherCorrelationTest())
+        params = get_global_params()
+        params.set('ext_context.correlation_test', DrescherCorrelationTest())
 
         self.item_stats.update(on=True, success=True, count=12)
         self.item_stats.update(on=True, success=False, count=7)
@@ -77,7 +78,8 @@ class TestECItemStatistics(TestCase):
         self.assertAlmostEqual(0.3362, self.item_stats.negative_correlation_stat, delta=1e-3)
 
     def test_barnard_correlation_1(self):
-        GlobalParams().set('ext_context.correlation_test', BarnardExactCorrelationTest())
+        params = get_global_params()
+        params.set('ext_context.correlation_test', BarnardExactCorrelationTest())
 
         self.item_stats.update(on=True, success=True, count=12)
         self.item_stats.update(on=True, success=False, count=7)
@@ -89,7 +91,8 @@ class TestECItemStatistics(TestCase):
         self.assertAlmostEqual(0.0, self.item_stats.negative_correlation_stat, delta=1e-3)
 
     def test_barnard_correlation_2(self):
-        GlobalParams().set('ext_context.correlation_test', BarnardExactCorrelationTest())
+        params = get_global_params()
+        params.set('ext_context.correlation_test', BarnardExactCorrelationTest())
 
         self.item_stats.update(on=True, success=True, count=3)
         self.item_stats.update(on=True, success=False, count=8)
@@ -104,7 +107,7 @@ class TestECItemStatistics(TestCase):
         self.item_stats.update(on=True, success=True)
         self.item_stats.update(on=False, success=False)
 
-        self.assertTrue(satisfies_equality_checks(obj=self.item_stats, other=ECItemStats()))
+        self.assertTrue(satisfies_equality_checks(obj=self.item_stats, other=ECItemStats(), other_different_type=1.0))
 
     def test_hash(self):
         self.item_stats.update(on=True, success=True)
@@ -186,7 +189,7 @@ class TestERItemStatistics(TestCase):
         self.item_stats.update(on=True, activated=True)
         self.item_stats.update(on=False, activated=False)
 
-        self.assertTrue(satisfies_equality_checks(obj=self.item_stats, other=ECItemStats()))
+        self.assertTrue(satisfies_equality_checks(obj=self.item_stats, other=ECItemStats(), other_different_type=1.0))
 
     def test_hash(self):
         self.item_stats.update(on=True, activated=True)
@@ -195,7 +198,8 @@ class TestERItemStatistics(TestCase):
         self.assertTrue(satisfies_hash_checks(obj=self.item_stats))
 
     def test_drescher_correlation(self):
-        GlobalParams().set('ext_result.correlation_test', DrescherCorrelationTest())
+        params = get_global_params()
+        params.set('ext_result.correlation_test', DrescherCorrelationTest())
 
         self.item_stats.update(on=True, activated=True, count=12)
         self.item_stats.update(on=False, activated=True, count=7)
@@ -206,7 +210,8 @@ class TestERItemStatistics(TestCase):
         self.assertAlmostEqual(0.3362, self.item_stats.negative_correlation_stat, delta=1e-3)
 
     def test_barnard_correlation_1(self):
-        GlobalParams().set('ext_result.correlation_test', BarnardExactCorrelationTest())
+        params = get_global_params()
+        params.set('ext_result.correlation_test', BarnardExactCorrelationTest())
 
         self.item_stats.update(on=True, activated=True, count=12)
         self.item_stats.update(on=False, activated=True, count=7)
@@ -217,7 +222,8 @@ class TestERItemStatistics(TestCase):
         self.assertAlmostEqual(0.0, self.item_stats.negative_correlation_stat, delta=1e-3)
 
     def test_barnard_correlation_2(self):
-        GlobalParams().set('ext_result.correlation_test', BarnardExactCorrelationTest())
+        params = get_global_params()
+        params.set('ext_result.correlation_test', BarnardExactCorrelationTest())
 
         self.item_stats.update(on=True, activated=True, count=3)
         self.item_stats.update(on=False, activated=True, count=8)

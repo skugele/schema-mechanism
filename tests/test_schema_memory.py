@@ -11,6 +11,7 @@ from schema_mechanism.core import Action
 from schema_mechanism.core import Chain
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
+from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import actions
 from schema_mechanism.func_api import primitive_schemas
 from schema_mechanism.func_api import sym_item
@@ -24,7 +25,6 @@ from schema_mechanism.modules import create_context_spin_off
 from schema_mechanism.modules import create_result_spin_off
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
-from schema_mechanism.share import GlobalParams
 from test_share.test_func import common_test_setup
 from test_share.test_func import file_was_written
 
@@ -33,10 +33,11 @@ class TestSchemaMemory(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        GlobalParams().set('backward_chains.update_frequency', 1.0)
+        params = get_global_params()
+        params.set('backward_chains.update_frequency', 1.0)
 
         # always create composite actions for novel results
-        GlobalParams().set('composite_actions.learn.min_baseline_advantage', -np.inf)
+        params.set('composite_actions.learn.min_baseline_advantage', -np.inf)
 
         s1 = sym_schema('/A1/')
         s2 = sym_schema('/A2/')

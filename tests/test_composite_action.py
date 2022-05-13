@@ -230,7 +230,7 @@ class TestCompositeAction(TestShared):
         s3.is_applicable(sym_state('M1,P'))
 
     def test_equals(self):
-        self.assertTrue(satisfies_equality_checks(obj=self.ca, other=self.other))
+        self.assertTrue(satisfies_equality_checks(obj=self.ca, other=self.other, other_different_type=1.0))
 
         # test: goal state is used to determine equality NOT labels
         ca_1 = CompositeAction(sym_state_assert('1,2'), label='CA1')

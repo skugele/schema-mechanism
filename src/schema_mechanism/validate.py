@@ -1,7 +1,6 @@
 import logging
 from abc import ABC
 from abc import abstractmethod
-from collections import Callable
 from collections import Iterable
 from typing import Any
 from typing import Optional
@@ -23,6 +22,12 @@ class AcceptAllValidator(Validator):
     def __call__(self, value: Any):
         pass
 
+    def __eq__(self, other) -> bool:
+        return isinstance(other, AcceptAllValidator)
+
+    def __hash__(self) -> int:
+        return hash(self.__class__.__name__)
+
 
 class RangeValidator(Validator):
 
@@ -38,13 +43,27 @@ class RangeValidator(Validator):
             raise ValueError('RangeValidator\'s low value must be less than high value.')
 
     def __call__(self, value: Any) -> None:
-        if (value < self.low) or (value > self.high) or (value in self.exclude):
-            raise ValueError(f'Value must be between {self.low} and {self.high} excluding {self.exclude or None}.')
+        try:
+            if (value < self.low) or (value > self.high) or (value in self.exclude):
+                raise ValueError(f'Value must be between {self.low} and {self.high} excluding {self.exclude or None}.')
+        except TypeError:
+            raise ValueError(f'Value not supported: {value}')
+
+    def __eq__(self, other):
+        if isinstance(other, RangeValidator):
+            return all((other.low == self.low,
+                        other.high == self.high,
+                        other.exclude == self.exclude))
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        arg_dict = {'low': hash(self.low), 'high': hash(self.high), 'exclude': hash(self.exclude)}
+        return hash(self.__class__.__name__ + str(arg_dict))
 
 
 class TypeValidator(Validator):
     def __init__(self, accept_set: Iterable[Type]) -> None:
-        self.accept_set = list(accept_set) if accept_set else list()
+        self.accept_set = frozenset(accept_set) if accept_set else frozenset()
         if not self.accept_set:
             raise ValueError('TypeValidator\'s accept_set cannot be empty.')
 
@@ -56,10 +75,18 @@ class TypeValidator(Validator):
         if not accepted:
             raise ValueError(f'Type not supported: {type(value)}.')
 
+    def __eq__(self, other):
+        if isinstance(other, TypeValidator):
+            return other.accept_set == self.accept_set
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.__class__.__name__ + str(self.accept_set))
+
 
 class SubClassValidator(Validator):
     def __init__(self, accept_set: Iterable[Type]) -> None:
-        self.accept_set = list(accept_set) if accept_set else list()
+        self.accept_set = frozenset(accept_set) if accept_set else frozenset()
         if not self.accept_set:
             raise ValueError('SubClassValidator\'s accept_set cannot be empty.')
 
@@ -71,32 +98,70 @@ class SubClassValidator(Validator):
         if not accepted:
             raise ValueError(f'Subclass not supported: {value}.')
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, SubClassValidator):
+            return self.accept_set == other.accept_set
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.__class__.__name__ + str(self.accept_set))
+
 
 class BlackListValidator(Validator):
     def __init__(self, reject_set: Iterable[Any]) -> None:
-        self.reject_set = list(reject_set) if reject_set else list()
+        self.reject_set = frozenset(reject_set) if reject_set else frozenset()
         if not self.reject_set:
             raise ValueError('BlackListValidator\'s reject_set cannot be empty.')
 
     def __call__(self, value: Any) -> None:
-        if value in self.reject_set:
+        try:
+            valid = True if value not in self.reject_set else False
+
+        # this will occur if the value is not hashable
+        except TypeError:
+            valid = False
+
+        if not valid:
             raise ValueError(f'Value not supported: {value}.')
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, BlackListValidator):
+            return self.reject_set == other.reject_set
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.__class__.__name__ + str(self.reject_set))
 
 
 class WhiteListValidator(Validator):
     def __init__(self, accept_set: Iterable[Any]) -> None:
-        self.accept_set = list(accept_set) if accept_set else list()
+        self.accept_set = frozenset(accept_set) if accept_set else frozenset()
         if not self.accept_set:
             raise ValueError('WhiteListValidator\'s accept_set cannot be empty.')
 
     def __call__(self, value: Any) -> None:
-        if value not in self.accept_set:
+        try:
+            valid = False if value not in self.accept_set else True
+
+        # this will occur if the value is not hashable
+        except TypeError:
+            valid = False
+
+        if not valid:
             raise ValueError(f'Value not supported: {value}.')
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, WhiteListValidator):
+            return self.accept_set == other.accept_set
+        return False if other is None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.__class__.__name__ + str(self.accept_set))
 
 
 class MultiValidator(Validator):
     def __init__(self, validators: Iterable[Validator]) -> None:
-        self.validators = list(validators) if validators else list()
+        self.validators = frozenset(validators) if validators else frozenset()
         if not self.validators:
             raise ValueError('MultiValidator\'s list of validator_list cannot be empty.')
 
@@ -104,27 +169,39 @@ class MultiValidator(Validator):
         for v in self.validators:
             v(value)
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, MultiValidator):
+            return self.validators == other.validators
+        return False if other is None else NotImplemented
 
-class ElementValidator(Validator):
+    def __hash__(self) -> int:
+        return hash(self.__class__.__name__ + str(self.validators))
+
+
+class ElementWiseValidator(Validator):
+    """ Applies a validator to each element of an iterable. """
+
     def __init__(self, validator: Validator) -> None:
         self.validator = validator
         if not self.validator:
             raise ValueError('ElementValidator\'s validator must be defined in initializer.')
 
     def __call__(self, value: Iterable[Any]) -> None:
-        for v in value:
-            self.validator(v)
 
+        try:
+            for v in value:
+                self.validator(v)
 
-class CustomValidator(Validator):
-    def __init__(self, validator: Callable[[Any], None]):
-        self.validator = validator
-        if not self.validator:
-            raise ValueError('CustomValidator\'s validator must be defined in initializer.')
+        # this will occur if the value is not iterable
+        except TypeError:
+            raise ValueError(f'Value not supported: {value}.')
 
-    def __call__(self, value: Any) -> None:
-        self.validator(value)
+    def __eq__(self, other) -> bool:
+        if isinstance(other, ElementWiseValidator):
+            return self.validator == other.validator
+
+    def __hash__(self) -> int:
+        return hash(self.__class__.__name__ + str(self.validator))
 
 
 NULL_VALIDATOR = AcceptAllValidator()
-POSITIVE_INTEGER_VALIDATOR = MultiValidator([TypeValidator([int]), RangeValidator(low=1)])

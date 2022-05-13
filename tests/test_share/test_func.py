@@ -5,10 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from schema_mechanism.core import CompositeAction
-from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SchemaPool
-from schema_mechanism.share import GlobalParams
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +15,6 @@ def common_test_setup():
     # clear any objects added to pools in previous test cases
     ItemPool().clear()
     SchemaPool().clear()
-
-    # clear any updated stats values from previous test cases
-    GlobalStats().clear()
-
-    # reset stats to defaults to remove any parameter changes from previous test cases
-    GlobalParams().reset()
 
     # resets the composite action controller
     CompositeAction.reset()
@@ -114,6 +106,17 @@ def is_eq_with_null_is_false(x: Any) -> bool:
     return x != None
 
 
+def is_eq_returns_not_implemented_given_object_of_different_type(x: Any, y: Any) -> bool:
+    """ Tests whether NotImplement is returned when this object is compared with a non-None object of a different type.
+
+    :param x: any non-None object
+    :param y: any non-None object of a different type from x
+
+    :return: True if NotImplemented returned; False otherwise
+    """
+    return x.__eq__(y) == NotImplemented
+
+
 def is_hash_consistent(x: Hashable, count: int = 1) -> bool:
     """ Test that the object's hash method consistently returns the same hash.
 
@@ -139,7 +142,9 @@ def is_hash_same_for_equal_objects(x: Hashable, y: Hashable) -> bool:
     return hash(x) == hash(y)
 
 
-def satisfies_equality_checks(obj: Any, other: Any) -> bool:
+def satisfies_equality_checks(obj: Any, other: Any, other_different_type: Any) -> bool:
+    assert not isinstance(other_different_type, type(other))
+
     copy_ = copy(obj)
 
     return all({
@@ -148,6 +153,7 @@ def satisfies_equality_checks(obj: Any, other: Any) -> bool:
         is_eq_transitive(x=obj, y=copy_, z=copy(copy_)),
         is_eq_consistent(x=obj, y=copy_),
         is_eq_with_null_is_false(obj),
+        is_eq_returns_not_implemented_given_object_of_different_type(x=obj, y=other_different_type),
         obj != other
     })
 
