@@ -1,4 +1,6 @@
+import itertools
 import os
+from copy import deepcopy
 from pathlib import Path
 from random import sample
 from tempfile import TemporaryDirectory
@@ -7,6 +9,7 @@ from unittest import TestCase
 from schema_mechanism.core import ExtendedResult
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_ER_ITEM_STATS
+from schema_mechanism.core import SchemaSpinOffType
 from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
@@ -49,7 +52,7 @@ class TestExtendedResult(TestCase):
         for item in self.result:
             self.assertIn(item, self.er.suppressed_items)
 
-    def test_update_1(self):
+    def test_update(self):
         # testing updates for Items
         state = list(map(str, sample(range(self.N_ITEMS), k=10)))
 
@@ -73,6 +76,85 @@ class TestExtendedResult(TestCase):
                               item_stats.n_off_and_activated,
                               item_stats.n_off_and_not_activated]:
                     self.assertEqual(0, value)
+
+    def test_update_all(self):
+        # ExtendedResult.update_all (3 cases -> new items, lost items, and new_relevant_items calling notify_all)
+
+        activated_values = [True, False]
+        new_items_values = [[sym_item('1'), sym_item('2')], [sym_item('3')]]
+        lost_items_values = [[sym_item('4')], [sym_item('5'), sym_item('6')]]
+
+        loop_iterables = itertools.product(
+            activated_values,
+            new_items_values,
+            lost_items_values
+        )
+
+        for activated, new_items, lost_items in loop_iterables:
+            er_before = deepcopy(self.er)
+            self.er.update_all(activated=activated, new=new_items, lost=lost_items)
+            er_after = deepcopy(self.er)
+
+            for item in [*new_items, *lost_items]:
+                stats_before = er_before.stats[item]
+                stats_after = er_after.stats[item]
+
+                before = {
+                    'n_on': stats_before.n_on,
+                    'n_off': stats_before.n_off,
+                    'n_activated': stats_before.n_activated,
+                    'n_not_activated': stats_before.n_not_activated,
+                    'n_on_and_activated': stats_before.n_on_and_activated,
+                    'n_on_and_not_activated': stats_before.n_on_and_not_activated,
+                    'n_off_and_activated': stats_before.n_off_and_activated,
+                    'n_off_and_not_activated': stats_before.n_off_and_not_activated,
+                }
+                after = {
+                    'n_on': stats_after.n_on,
+                    'n_off': stats_after.n_off,
+                    'n_activated': stats_after.n_activated,
+                    'n_not_activated': stats_after.n_not_activated,
+                    'n_on_and_activated': stats_after.n_on_and_activated,
+                    'n_on_and_not_activated': stats_after.n_on_and_not_activated,
+                    'n_off_and_activated': stats_after.n_off_and_activated,
+                    'n_off_and_not_activated': stats_after.n_off_and_not_activated,
+                }
+
+                is_on = item in new_items
+                is_off = item in lost_items
+
+                if activated:
+                    self.assertEqual(before['n_activated'] + 1, after['n_activated'])
+                else:
+                    self.assertEqual(before['n_not_activated'] + 1, after['n_not_activated'])
+
+                if is_on:
+                    self.assertEqual(before['n_on'] + 1, after['n_on'])
+                elif is_off:
+                    self.assertEqual(before['n_off'] + 1, after['n_off'])
+
+                if is_on and activated:
+                    self.assertEqual(before['n_on_and_activated'] + 1, after['n_on_and_activated'])
+                elif is_off and activated:
+                    self.assertEqual(before['n_off_and_activated'] + 1, after['n_off_and_activated'])
+                elif is_on and not activated:
+                    self.assertEqual(before['n_on_and_not_activated'] + 1, after['n_on_and_not_activated'])
+                elif is_off and not activated:
+                    self.assertEqual(before['n_off_and_not_activated'] + 1, after['n_off_and_not_activated'])
+
+    def test_update_all_value_errors(self):
+        self.assertRaises(ValueError, lambda: self.er.update_all(
+            activated=True, new=[sym_item('1')], lost=[sym_item('1')]))
+
+        self.assertRaises(ValueError, lambda: self.er.update_all(
+            activated=True, new=[sym_item('1'), sym_item('2')], lost=[sym_item('2')]))
+
+    def test_notify_all_from_update_all(self):
+        self.er.update_all(activated=True, new=[sym_item('1')], lost=[])
+        self.er.update_all(activated=False, new=[], lost=[sym_item('1')])
+
+        # test: observer should have been notified of new relevant items
+        self.assertTrue(self.obs.n_received > 0)
 
     def test_register_and_unregister(self):
         observer = MockObserver()
@@ -128,7 +210,7 @@ class TestExtendedResult(TestCase):
         self.assertIn(i2, self.er.relevant_items)
 
         # number of new relevant items SHOULD be reset to zero after notifying observers
-        self.er.notify_all()
+        self.er.notify_all(spin_off_type=SchemaSpinOffType.RESULT)
         self.assertEqual(0, len(self.er.new_relevant_items))
 
     def test_relevant_items_2(self):

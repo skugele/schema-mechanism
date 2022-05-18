@@ -42,24 +42,6 @@ class TestGlobalParams(unittest.TestCase):
             except ValueError:
                 pass
 
-    def test_rng_seed(self):
-        key = 'rng_seed'
-
-        # test: value should be the default before updates
-        self.assertEqual(self.gp.defaults[key], self.gp.get(key))
-
-        # test: positive integer values should be accepted and returned
-        self.gp.set(key, 12345)
-        self.assertEqual(12345, self.gp.get(key))
-
-        # test: values that are not integers should be rejected
-        for illegal_value in [0.1, 'str']:
-            try:
-                self.gp.set(key, illegal_value)
-                self.fail('Did not raise expected ValueError on illegal value')
-            except ValueError:
-                pass
-
     def test_correlation_thresholds(self):
         # test: correlation thresholds
         ##############################
@@ -115,7 +97,6 @@ class TestGlobalParams(unittest.TestCase):
         self.gp.set('features', [SupportedFeature.ER_INCREMENTAL_RESULTS])
         self.gp.set('ext_result.positive_correlation_threshold', 0.176)
         self.gp.set('reliability_threshold', 0.72)
-        self.gp.set('rng_seed', 123456)
 
         # test: reset should set values to their defaults
         self.gp.reset()
@@ -168,7 +149,6 @@ class TestGlobalParams(unittest.TestCase):
         self.assertEqual(0.95, self.gp.defaults['ext_result.negative_correlation_threshold'])
         self.assertEqual(0.95, self.gp.defaults['ext_result.positive_correlation_threshold'])
         self.assertEqual(0.95, self.gp.defaults['reliability_threshold'])
-        self.assertLessEqual(0, self.gp.defaults['rng_seed'])
 
     def test_serialize(self):
         # sets a few non-default values
@@ -178,7 +158,6 @@ class TestGlobalParams(unittest.TestCase):
             'features': [SupportedFeature.ER_INCREMENTAL_RESULTS],
             'ext_result.positive_correlation_threshold': 0.176,
             'reliability_threshold': 0.72,
-            'rng_seed': 123456,
         }
 
         params = GlobalParams()
@@ -213,3 +192,10 @@ class TestGlobalParams(unittest.TestCase):
         set_global_params(params)
 
         self.assertEqual(params, get_global_params())
+
+    def test_str(self):
+        global_params = get_global_params()
+
+        # test: all parameters must appear in the GlobalParams string representation
+        for param, value in global_params:
+            self.assertIn(f"{param} = \'{value}\'", str(global_params))

@@ -4,6 +4,7 @@ from statistics import mean
 from time import sleep
 from typing import Iterable
 
+from examples import RANDOM_SEED
 from examples import display_item_values
 from examples import display_known_schemas
 from examples import display_schema_info
@@ -17,13 +18,13 @@ from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
-from schema_mechanism.core import display_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.share import GlobalParams
+from schema_mechanism.share import set_random_seed
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
@@ -40,6 +41,9 @@ from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.trace import ReplacingTrace
 
 logger = logging.getLogger('examples.environments.wumpus_small_world')
+
+# For reproducibility, we we also need to set PYTHONHASHSEED=RANDOM_SEED in the environment
+set_random_seed(RANDOM_SEED)
 
 MAX_EPISODES = 5000
 MAX_STEPS = 500
@@ -99,7 +103,7 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     sm.params.set('learning_rate', 0.01)
     sm.params.set('reliability_threshold', 0.8)
 
-    display_params(sm.params)
+    logger.info(sm.params)
 
     return sm
 

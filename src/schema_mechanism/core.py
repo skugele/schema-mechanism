@@ -11,8 +11,6 @@ from collections.abc import Collection
 from collections.abc import Iterator
 from datetime import datetime
 from enum import Enum
-from enum import auto
-from enum import unique
 from functools import singledispatch
 from functools import singledispatchmethod
 from time import time
@@ -33,7 +31,6 @@ from anytree import RenderTree
 
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import SupportedFeature
-from schema_mechanism.share import logger
 from schema_mechanism.strategies.correlation_test import CorrelationTable
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.correlation_test import ItemCorrelationTest
@@ -449,15 +446,21 @@ class GlobalStats:
         self.baseline_value: float = initial_baseline_value
         self.n: int = 0
 
-    def update_baseline(self, state: State) -> None:
-        """ Updates an unconditional running average of the primitive values of states encountered.
+    def update(self, selection_state: State, result_state: State) -> None:
+        """ Updates the global statistics based on the selection and result states.
 
-        :param state: a state
+        :param selection_state: the selection state from the last selection event
+        :param result_state: the result state from the last selection event
+
         :return: None
         """
         params = get_global_params()
         lr = params.get('learning_rate')
-        self.baseline_value += lr * (calc_primitive_value(state) - self.baseline_value)
+
+        self.n += 1
+
+        # updates baseline
+        self.baseline_value += lr * (calc_primitive_value(result_state) - self.baseline_value)
 
     def clear(self):
         self.baseline_value = 0.0
@@ -613,6 +616,34 @@ class ECItemStats(ItemStats):
             })
         return False if other is None else NotImplemented
 
+    def __hash__(self):
+        return hash((self._n_success_and_on,
+                     self._n_success_and_off,
+                     self._n_fail_and_on,
+                     self._n_fail_and_off))
+
+    def __str__(self) -> str:
+        attr_values = (
+            f'sc: {self.positive_correlation_stat:.2}',
+            f'fc: {self.negative_correlation_stat:.2}',
+        )
+
+        return f'{self.__class__.__name__}[{"; ".join(attr_values)}]'
+
+    def __repr__(self):
+        attr_values = {
+            'success_corr': f'{self.positive_correlation_stat:.2}',
+            'failure_corr': f'{self.negative_correlation_stat:.2}',
+            'n_on': f'{self.n_on:,}',
+            'n_off': f'{self.n_off:,}',
+            'n_success_and_on': f'{self.n_success_and_on:,}',
+            'n_success_and_off': f'{self.n_success_and_off:,}',
+            'n_fail_and_on': f'{self.n_fail_and_on:,}',
+            'n_fail_and_off': f'{self.n_fail_and_off:,}',
+        }
+
+        return repr_str(self, attr_values)
+
     @property
     def correlation_test(self) -> ItemCorrelationTest:
         params = get_global_params()
@@ -650,6 +681,14 @@ class ECItemStats(ItemStats):
         return self.n_success_and_off + self.n_fail_and_off
 
     @property
+    def n_success(self) -> int:
+        return self._n_success_and_on + self._n_success_and_off
+
+    @property
+    def n_fail(self) -> int:
+        return self._n_fail_and_on + self._n_fail_and_off
+
+    @property
     def n(self) -> int:
         return self.n_on + self.n_off
 
@@ -684,34 +723,6 @@ class ECItemStats(ItemStats):
 
     def as_table(self) -> CorrelationTable:
         return self.n_success_and_on, self.n_fail_and_on, self.n_success_and_off, self.n_fail_and_off
-
-    def __hash__(self):
-        return hash((self._n_success_and_on,
-                     self._n_success_and_off,
-                     self._n_fail_and_on,
-                     self._n_fail_and_off))
-
-    def __str__(self) -> str:
-        attr_values = (
-            f'sc: {self.positive_correlation_stat:.2}',
-            f'fc: {self.negative_correlation_stat:.2}',
-        )
-
-        return f'{self.__class__.__name__}[{"; ".join(attr_values)}]'
-
-    def __repr__(self):
-        attr_values = {
-            'success_corr': f'{self.positive_correlation_stat:.2}',
-            'failure_corr': f'{self.negative_correlation_stat:.2}',
-            'n_on': f'{self.n_on:,}',
-            'n_off': f'{self.n_off:,}',
-            'n_success_and_on': f'{self.n_success_and_on:,}',
-            'n_success_and_off': f'{self.n_success_and_off:,}',
-            'n_fail_and_on': f'{self.n_fail_and_on:,}',
-            'n_fail_and_off': f'{self.n_fail_and_off:,}',
-        }
-
-        return repr_str(self, attr_values)
 
 
 class ERItemStats(ItemStats):
@@ -865,8 +876,8 @@ class CompositeItem(Item):
                  primitive_value: float = None,
                  delegated_value_helper: DelegatedValueHelper = None,
                  **kwargs) -> None:
-        if len(source) < 2:
-            raise ValueError('CompositeItems must have at least two elements in their source.')
+
+        self._validate_source(source)
 
         self._items = frozenset([ItemPool().get(se) for se in source])
 
@@ -907,6 +918,15 @@ class CompositeItem(Item):
 
     def is_on(self, state: State, **kwargs) -> bool:
         return all((item.is_on(state) for item in self._items))
+
+    def _validate_source(self, source: Any) -> None:
+        try:
+            iter(source)
+        except TypeError:
+            raise TypeError('Source must be iterable') from None
+
+        if len(source) < 2:
+            raise ValueError('Source must contain at least two state elements.')
 
 
 class StateAssertion:
@@ -1024,6 +1044,10 @@ class ExtendedItemCollection(Observable):
             })
         return False if other is None else NotImplemented
 
+    def __hash__(self) -> int:
+        hash_str = str(self._suppressed_items) + str(self._stats)
+        return hash(hash_str)
+
     @property
     def stats(self) -> dict[Any, Any]:
         return self._stats
@@ -1046,11 +1070,8 @@ class ExtendedItemCollection(Observable):
             else:
                 self._new_relevant_items.add(item)
 
-    def notify_all(self, **kwargs) -> None:
-        if 'source' not in kwargs:
-            kwargs['source'] = self
-
-        super().notify_all(**kwargs)
+    def notify_all(self, spin_off_type: SchemaSpinOffType, **kwargs) -> None:
+        super().notify_all(source=self, spin_off_type=spin_off_type, **kwargs)
 
         # clears the set
         self._new_relevant_items = set()
@@ -1117,6 +1138,9 @@ class ExtendedResult(ExtendedItemCollection):
         # as a negative-transition trial" (see Drescher, 1991, p. 72)
         if new:
             for item in new:
+                if item in lost:
+                    raise ValueError(f'Item {item} is in both new and lost!')
+
                 self.update(item=item, on=True, activated=activated, count=count)
 
         if lost:
@@ -1124,7 +1148,7 @@ class ExtendedResult(ExtendedItemCollection):
                 self.update(item=item, on=False, activated=activated, count=count)
 
         if self.new_relevant_items:
-            self.notify_all(source=self)
+            self.notify_all(spin_off_type=SchemaSpinOffType.RESULT)
 
     def _check_for_relevance(self, item: Item, item_stats: ERItemStats) -> None:
         if item_stats.positive_correlation:
@@ -1160,6 +1184,12 @@ class ExtendedContext(ExtendedItemCollection):
 
     @property
     def stats(self) -> dict[Item, ECItemStats]:
+        """ Returns a dictionary mapping items to statistics that are specific to this extended context.
+
+        Note: Care should be used when saving references to the values of this dictionary, as the references can change.
+
+        :return: a extended-context statistics dictionary
+        """
         return super().stats
 
     def update(self, item: Item, on: bool, success: bool, count: int = 1) -> None:
@@ -1172,19 +1202,19 @@ class ExtendedContext(ExtendedItemCollection):
         if item not in self.suppressed_items:
             self._check_for_relevance(item, item_stats)
 
-    def update_all(self, state: State, success: bool, count: int = 1) -> None:
+    def update_all(self, selection_state: State, success: bool, count: int = 1) -> None:
         # bypass updates when a more specific spinoff schema exists
         if (is_feature_enabled(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
-                and self.defer_update_to_spin_offs(state)):
+                and self.defer_update_to_spin_offs(selection_state)):
             return
 
         for item in ItemPool().items:
-            self.update(item=item, on=item.is_on(state), success=success, count=count)
+            self.update(item=item, on=item.is_on(selection_state), success=success, count=count)
 
         self.check_pending_relevant_items()
 
         if self.new_relevant_items:
-            self.notify_all(source=self)
+            self.notify_all(spin_off_type=SchemaSpinOffType.CONTEXT)
 
             # after spinoff, all stats are reset to remove the influence of relevant items in stats; tracking the
             # correlations for these items is deferred to the schema's context spin-offs
@@ -1361,18 +1391,19 @@ class Controller:
         #  information is adjusted in the direction of the actual data. If the action fails to reach its goal
         #  state, the proximity measures for the utilized components are degraded." (See Drescher 1991, p. 92)
 
-    def contained_in(self, schema: Schema) -> bool:
-        if not schema.action.is_composite():
-            return False
-
-        if self == schema.action.controller:
-            return True
-
-        controller = schema.action.controller
-        for component in itertools.chain.from_iterable([controller.components, controller.descendants]):
-            if component.action.is_composite() and self == component.action.controller:
-                return True
-        return False
+    # uncomment this when composite action components are supported
+    # def contained_in(self, schema: Schema) -> bool:
+    #     if not schema.action.is_composite():
+    #         return False
+    #
+    #     if self == schema.action.controller:
+    #         return True
+    #
+    #     controller = schema.action.controller
+    #     for component in itertools.chain.from_iterable([controller.components, controller.descendants]):
+    #         if component.action.is_composite() and self == component.action.controller:
+    #             return True
+    #     return False
 
 
 class DummyController(Controller):
@@ -1389,9 +1420,6 @@ class DummyController(Controller):
     @property
     def descendants(self) -> set[Schema]:
         return self._descendants
-
-    def contained_in(self, *args, **kwargs) -> bool:
-        return False
 
     def update(self, *args, **kwargs) -> None:
         raise NotImplementedError()
@@ -1517,12 +1545,18 @@ class CompositeAction(Action):
         return any({schema.is_applicable(state) for schema in self._controller.components})
 
     @classmethod
-    def all_satisfied_by(cls, state: State) -> Collection[Controller]:
+    def all_satisfied_by(cls, state: State) -> set[Controller]:
+        """ Returns a collection containing all of the controllers satisfied by this state.
+
+        :param state: a State
+
+        :return: a collection of controllers satisfying this state
+        """
         satisfied: list[Controller] = []
         for goal_state, controller in cls._controller_map.items():
             if goal_state.is_satisfied(state):
                 satisfied.append(controller)
-        return satisfied
+        return set(satisfied)
 
     # TODO: It is a little strange calling a "reset" method on a class called CompositeAction. The reset is really
     # TODO: related to the controller map. Perhaps I should externalize the controller map in its own class, and call
@@ -1530,6 +1564,11 @@ class CompositeAction(Action):
     @classmethod
     def reset(cls) -> None:
         return cls._controller_map.clear()
+
+
+class SchemaSpinOffType(Enum):
+    CONTEXT = 'CONTEXT'  # (see Drescher, 1991, p. 73)
+    RESULT = 'RESULT'  # (see Drescher, 1991, p. 71)
 
 
 class Schema(Observer, Observable, UniqueIdMixin):
@@ -1543,11 +1582,6 @@ class Schema(Observer, Observable, UniqueIdMixin):
     an exhaustive list of all environmental conditions under which the schema's result may obtain if the
     action were taken.
     """
-
-    @unique
-    class SpinOffType(Enum):
-        CONTEXT = auto(),  # (see Drescher, 1991, p. 73)
-        RESULT = auto()  # (see Drescher, 1991, p. 71)
 
     def __init__(self,
                  action: Action,
@@ -1620,13 +1654,18 @@ class Schema(Observer, Observable, UniqueIdMixin):
         )
 
     def __repr__(self) -> str:
-        return repr_str(self, {'uid': self.uid,
-                               'creation_time': datetime.fromtimestamp(self.creation_time),
-                               'context': self.context,
-                               'action': self.action,
-                               'result': self.result,
-                               'overriding_conditions': self.overriding_conditions,
-                               'reliability': self.reliability, })
+        attr_values = {
+            'action': self.action,
+            'context': self.context,
+            'cost': self.cost,
+            'creation_time': datetime.fromtimestamp(self.creation_time),
+            'overriding_conditions': self.overriding_conditions,
+            'reliability': self.reliability,
+            'result': self.result,
+            'uid': self.uid,
+        }
+
+        return repr_str(self, attr_values=attr_values)
 
     @property
     def context(self) -> StateAssertion:
@@ -1835,25 +1874,19 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
         # update extended context stats
         if all((self._extended_context, activated, selection_state)):
-            self._extended_context.update_all(state=selection_state, success=succeeded, count=count)
+            self._extended_context.update_all(selection_state=selection_state, success=succeeded, count=count)
 
-    # invoked by a schema's extended context or extended result when a relevant item is discovered
-    def receive(self, **kwargs) -> None:
+    def receive(self, source: ExtendedItemCollection, spin_off_type: SchemaSpinOffType, **kwargs) -> None:
+        """ Supports the Schema class's implementation of the observer pattern.
 
-        # ext_source should be an ExtendedContext, ExtendedResult, or one of their subclasses
-        ext_source: ExtendedItemCollection = kwargs['source']
-        relevant_items: Collection[Item] = ext_source.new_relevant_items
+        This method is typically invoked by a Schema's extended context or extended result when relevant items are
+        discovered, initiating the creation of spin-off schemas based on those relevant items
 
-        spin_off_type = (
-            Schema.SpinOffType.CONTEXT if isinstance(ext_source, ExtendedContext) else
-            Schema.SpinOffType.RESULT if isinstance(ext_source, ExtendedResult) else
-            None
-        )
-
-        if not spin_off_type:
-            raise ValueError(f'Unrecognized source in receive: {type(ext_source)}')
-
-        self.notify_all(source=self, spin_off_type=spin_off_type, relevant_items=relevant_items)
+        :param source: the ExtendedItemCollection that invoked the receive method
+        :param spin_off_type: the relevant spin-off type (e.g., CONTEXT or RESULT)
+        :param kwargs: optional keyword arguments that will be sent to this schema's observers (via notify_all)
+        """
+        self.notify_all(source=self, spin_off_type=spin_off_type, relevant_items=source.new_relevant_items, **kwargs)
 
 
 class SchemaUniqueKey(NamedTuple):
@@ -1940,6 +1973,7 @@ class SchemaTreeNode(NodeMixin):
     def __eq__(self, other) -> bool:
         if isinstance(other, SchemaTreeNode):
             return self._context == other._context
+        return False if other is None else NotImplemented
 
     def __str__(self) -> str:
         return self._label if self._label else f'{self._context}'
@@ -2054,12 +2088,13 @@ class SchemaTree:
         return self._nodes[assertion]
 
     def add_bare_schemas(self, schemas: Collection[Schema]) -> None:
-        logger.debug(f'adding bare schemas! [{[str(s) for s in schemas]}]')
         if not schemas:
             raise ValueError('Schemas cannot be empty or None')
 
         if any({not schema.is_bare() for schema in schemas}):
             raise ValueError('Schemas must be bare (action-only) schemas')
+
+        logger.debug(f'adding bare schemas! [{[str(s) for s in schemas]}]')
 
         # needed because schemas to add may already exist in set reducing total new count
         len_before_add = len(self.root.schemas_satisfied_by)
@@ -2073,7 +2108,7 @@ class SchemaTree:
         :param spin_offs: the spin-off schemas.
         :return: None
         """
-        self.add(source, frozenset(spin_offs), Schema.SpinOffType.CONTEXT)
+        self.add(source, frozenset(spin_offs), SchemaSpinOffType.CONTEXT)
 
     def add_result_spin_offs(self, source: Schema, spin_offs: Collection[Schema]):
         """ Adds result spin-off schemas to this tree.
@@ -2082,7 +2117,7 @@ class SchemaTree:
         :param spin_offs: the spin-off schemas.
         :return: None
         """
-        self.add(source, frozenset(spin_offs), Schema.SpinOffType.RESULT)
+        self.add(source, frozenset(spin_offs), SchemaSpinOffType.RESULT)
 
     def find_all_satisfied(self, state: State, **kwargs) -> Collection[SchemaTreeNode]:
         """ Returns a collection of tree nodes containing schemas with contexts that are satisfied by this state.
@@ -2140,12 +2175,6 @@ class SchemaTree:
                     raise ValueError('invalid node: context should contain all of parent\'s item assertion')
                 return False
 
-            # 4. node's context contains exactly one item assertion not in parent's context
-            if len(parent_asserts) + 1 != len(node_context_asserts):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: context must differ from parent in exactly one assertion.')
-                return False
-
         # consistency checks between node and its schemas
         for s in node.schemas_satisfied_by:
 
@@ -2154,13 +2183,13 @@ class SchemaTree:
             schema_context_asserts = s.context.flatten()
             schema_result_asserts = s.result.flatten()
 
-            # 5. item assertions should be identical across all contained schemas, and equal to node's assertions
+            # 4. item assertions should be identical across all contained schemas, and equal to node's assertions
             if node_context_asserts != schema_context_asserts:
                 if raise_on_invalid:
                     raise ValueError('invalid node: schemas in schemas_satisfied_by must have same assertions as node')
                 return False
 
-            # 6. composite results should exist as contexts in the tree
+            # 5. composite results should exist as contexts in the tree
             if len(schema_result_asserts) > 1 and SchemaTreeNode(context=s.result) not in self:
                 if raise_on_invalid:
                     raise ValueError('invalid node: composite results must exist as a context in tree')
@@ -2171,7 +2200,7 @@ class SchemaTree:
             node_context_asserts = node.context.flatten()
             schema_result_asserts = s.result.flatten()
 
-            # 7. results should be identical across all contained schemas, and equal to node's context
+            # 6. node's context should be a subset of the schemas' results that would satisfy it
             if not node_context_asserts.issubset(schema_result_asserts):
                 if raise_on_invalid:
                     raise ValueError('invalid node: schemas in schemas_would_satisfy must have result = node context')
@@ -2190,7 +2219,7 @@ class SchemaTree:
     def add(self,
             source: Union[Schema, SchemaTreeNode],
             spin_offs: frozenset[Schema],
-            spin_off_type: Optional[Schema.SpinOffType] = None) -> SchemaTreeNode:
+            spin_off_type: Optional[SchemaSpinOffType] = None) -> SchemaTreeNode:
         """ Adds schemas to this schema tree.
 
         :param source: the "source" schema that generated the given (primitive or spin-off) schemas, or the previously
@@ -2200,17 +2229,18 @@ class SchemaTree:
 
         :return: the parent node for which the add operation occurred
         """
-        logger.debug(f'adding schemas! [parent: {source}, spin-offs: {[str(s) for s in spin_offs]}]')
         if not spin_offs:
             raise ValueError('Spin-off schemas cannot be empty or None')
 
         if any({source.action != s.action for s in spin_offs}):
             raise ValueError('Spin-off schemas must have the same action as their source.')
 
+        logger.debug(f'adding schemas! [parent: {source}, spin-offs: {[str(s) for s in spin_offs]}]')
+
         try:
             node = source if isinstance(source, SchemaTreeNode) else self.get(source.context.flatten())
 
-            if Schema.SpinOffType.RESULT is spin_off_type:
+            if SchemaSpinOffType.RESULT is spin_off_type:
                 # needed because schemas to add may already exist in set reducing total new count
                 len_before_add = len(node.schemas_satisfied_by)
                 node.schemas_satisfied_by |= spin_offs
@@ -2245,14 +2275,16 @@ class SchemaTree:
 
                 match = self._nodes.get(schema_result_assertions)
 
-                # node already exists in tree (should always be the case for composite results)
+                # node with context matching this result already exists in tree
                 if match:
                     if s not in match.schemas_would_satisfy:
                         match.schemas_would_satisfy.add(s)
+
+                # node with matching context for this result didn't exist in tree -- should not be a composite result
                 else:
-                    # TODO: WHY DID I ADD THIS CHECK????
-                    # if len(s.result) != 1:
-                    #     raise ValueError(f'Encountered an illegal composite result spin-off: {s.result}')
+                    # composite results must first exist as contexts in a schema
+                    if len(s.result) != 1:
+                        raise ValueError(f'Encountered an illegal composite result spin-off: {s.result}')
 
                     new_node = SchemaTreeNode(s.result)
                     new_node.schemas_would_satisfy.add(s)
@@ -2301,9 +2333,9 @@ class ItemPool(metaclass=Singleton):
         raise NotImplementedError(f'Source type is not supported.')
 
     @get.register
-    def _(self, source: StateElement, /, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
+    def _(self, source: StateElement, /, *, item_type: Optional[Type[Item]] = SymbolicItem, **kwargs) -> Optional[Item]:
         read_only = kwargs.get('read_only', False)
-        item_type = item_type or SymbolicItem
+        item_type = item_type
 
         obj = ItemPool._items.get(source)
 
@@ -2514,10 +2546,3 @@ def get_global_stats() -> GlobalStats:
 def is_feature_enabled(feature: SupportedFeature) -> bool:
     params = get_global_params()
     return feature in params.get('features')
-
-
-def display_params(global_params: GlobalParams) -> None:
-    logger.info(f'Global Parameters:')
-    for param, value in global_params:
-        is_default_value = value == global_params.defaults.get(param, None)
-        logger.info(f'\t{param} = \'{value}\' [DEFAULT: {is_default_value}]')

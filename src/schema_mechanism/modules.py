@@ -24,6 +24,7 @@ from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaPool
+from schema_mechanism.core import SchemaSpinOffType
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import State
@@ -260,13 +261,14 @@ class SchemaMemory(Observer):
     def is_novel_result(self, result: StateAssertion) -> bool:
         return not any({result == s.result for s in self._schema_tree.root.schemas_satisfied_by})
 
+    # TODO: add arguments for spin_off_type and relevant_items
     def _receive_from_schema(self, schema: Schema, **kwargs) -> None:
-        spin_off_type: Schema.SpinOffType = kwargs['spin_off_type']
+        spin_off_type: SchemaSpinOffType = kwargs['spin_off_type']
         relevant_items: Collection[Item] = kwargs['relevant_items']
 
         spin_offs = frozenset([create_spin_off(schema, spin_off_type, ia) for ia in relevant_items])
 
-        if schema.is_bare() and (spin_off_type is Schema.SpinOffType.RESULT):
+        if schema.is_bare() and (spin_off_type is SchemaSpinOffType.RESULT):
             self._create_composite_action_for_novel_spin_off_results(spin_offs)
 
         # register listeners for spin-offs
@@ -668,12 +670,11 @@ class SchemaMechanism:
         self._action_trace.update(actions)
         self._delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
 
-        # updates unconditional state value average
-        self._stats.n += 1
-        self._stats.update_baseline(result_state)
+        # updates global statistics
+        self._stats.update(selection_state=selection_state, result_state=result_state)
 
 
-def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, item: Item) -> Schema:
+def create_spin_off(schema: Schema, spin_off_type: SchemaSpinOffType, item: Item) -> Schema:
     """ Creates a context or result spin-off schema that includes the supplied item in its context or result.
 
     :param schema: the schema from which the new spin-off schema will be based
@@ -688,7 +689,7 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, item: Ite
     if not item:
         ValueError('Item must not be None or empty')
 
-    if Schema.SpinOffType.CONTEXT == spin_off_type:
+    if SchemaSpinOffType.CONTEXT == spin_off_type:
         new_context = (
             StateAssertion(items=(item,))
             if schema.context is NULL_STATE_ASSERT
@@ -702,7 +703,7 @@ def create_spin_off(schema: Schema, spin_off_type: Schema.SpinOffType, item: Ite
 
         return SchemaPool().get(SchemaUniqueKey(action=schema.action, context=new_context, result=schema.result))
 
-    elif Schema.SpinOffType.RESULT == spin_off_type:
+    elif SchemaSpinOffType.RESULT == spin_off_type:
         if not is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) and not schema.is_bare():
             raise ValueError('Result spin-off for primitive schemas only (unless ER_INCREMENTAL_RESULTS enabled)')
 
@@ -725,7 +726,7 @@ def create_context_spin_off(source: Schema, item: Item) -> Schema:
     :param item: the new item to include in the spin-off's context
     :return: a new context spin-off
     """
-    return create_spin_off(source, Schema.SpinOffType.CONTEXT, item)
+    return create_spin_off(source, SchemaSpinOffType.CONTEXT, item)
 
 
 def create_result_spin_off(source: Schema, item: Item) -> Schema:
@@ -735,4 +736,4 @@ def create_result_spin_off(source: Schema, item: Item) -> Schema:
     :param item: the new item to include in the spin-off's result
     :return: a new result spin-off
     """
-    return create_spin_off(source, Schema.SpinOffType.RESULT, item)
+    return create_spin_off(source, SchemaSpinOffType.RESULT, item)

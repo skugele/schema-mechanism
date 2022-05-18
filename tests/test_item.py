@@ -5,16 +5,26 @@ from pathlib import Path
 from random import sample
 from tempfile import TemporaryDirectory
 from time import time
+from typing import Optional
 from unittest import TestCase
 
 import test_share
 from schema_mechanism.core import CompositeItem
+from schema_mechanism.core import DelegatedValueHelper
+from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
+from schema_mechanism.core import Item
 from schema_mechanism.core import ItemPool
+from schema_mechanism.core import State
+from schema_mechanism.core import StateElement
 from schema_mechanism.core import SymbolicItem
+from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
+from schema_mechanism.strategies.decay import NoDecayStrategy
+from schema_mechanism.strategies.trace import ReplacingTrace
+from schema_mechanism.util import repr_str
 from test_share.test_func import common_test_setup
 from test_share.test_func import file_was_written
 from test_share.test_func import is_eq_consistent
@@ -26,6 +36,87 @@ from test_share.test_func import satisfies_equality_checks
 from test_share.test_func import satisfies_hash_checks
 
 
+class TestItem(TestCase):
+    class IntItem(Item):
+        """ A simple, concrete Item implementation used for testing Item's methods. """
+
+        def __init__(self,
+                     source: int,
+                     primitive_value: Optional[float] = 0.0,
+                     delegated_value_helper: DelegatedValueHelper = None,
+                     **kwargs) -> None:
+            super().__init__(
+                source=source,
+                primitive_value=primitive_value,
+                delegated_value_helper=delegated_value_helper
+            )
+
+        def __hash__(self) -> int:
+            return self.source
+
+        def is_on(self, state: State, **kwargs) -> bool:
+            return self.source in state
+
+        @property
+        def state_elements(self) -> set[StateElement]:
+            return {self.source}
+
+    def setUp(self) -> None:
+        common_test_setup()
+
+        self.pool: ItemPool = ItemPool()
+
+        self.item_2 = self.pool.get(2, item_type=TestItem.IntItem, primitive_value=10.0)
+
+    def test_init(self):
+        source = 1
+        primitive_value = 17.2
+
+        # no discount or decay in this instance, so delegated value updates will be equal to the primitive values of
+        # new result state items
+        delegated_value_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=1.0,
+            eligibility_trace=ReplacingTrace(
+                decay_strategy=NoDecayStrategy())
+        )
+
+        item = self.pool.get(
+            source,
+            item_type=TestItem.IntItem,
+            primitive_value=primitive_value,
+            delegated_value_helper=delegated_value_helper)
+
+        # test: attributes should have been set correctly by Item's initializer
+        self.assertEqual(source, item.source)
+        self.assertEqual(primitive_value, item.primitive_value)
+
+        # setting learning rate to 1.0 to simplify testing (1 dv_helper update is enough to converge to item 2's value)
+        params = get_global_params()
+        params.set('learning_rate', 1.0)
+
+        delegated_value_helper.update(selection_state=(1,), result_state=(2,))
+
+        # test: if delegated value helper were set properly, the item's delegated value should be equal to item 2's
+        #       primitive value
+        self.assertEqual(self.item_2.primitive_value, item.delegated_value)
+
+    def test_str(self):
+        item = TestItem.IntItem(source=1, primitive_value=5.0)
+        item_str = str(item)
+
+        self.assertEqual(str(item.source), item_str)
+
+    def test_repr(self):
+        item = TestItem.IntItem(source=1, primitive_value=5.0)
+        item_repr = repr(item)
+
+        expected_str = repr_str(item, {'source': str(item.source),
+                                       'pv': item.primitive_value,
+                                       'dv': item.delegated_value})
+
+        self.assertEqual(expected_str, item_repr)
+
+
 class TestSymbolicItem(TestCase):
 
     def setUp(self) -> None:
@@ -33,27 +124,43 @@ class TestSymbolicItem(TestCase):
 
         self.item = SymbolicItem(source='1234', primitive_value=1.0)
 
+    # noinspection PyTypeChecker
     def test_init(self):
-        # both the state element and the primitive value should be set properly
+        # test: both the state element and the primitive value should be set properly
         self.assertEqual('1234', self.item.source)
         self.assertEqual(1.0, self.item.primitive_value)
 
-        # default primitive value should be 0.0
+        # test: default primitive value should be 0.0
         i = SymbolicItem(source='1234')
         self.assertEqual(0.0, i.primitive_value)
+
+        # test: ValueError raised when source is not a str)
+        self.assertRaises(ValueError, lambda: SymbolicItem(source=1.0))
+        self.assertRaises(ValueError, lambda: SymbolicItem(source=frozenset(('1', '2'))))
+        self.assertRaises(ValueError, lambda: SymbolicItem(source=[]))
 
     def test_state_elements(self):
         self.assertSetEqual({'1234'}, self.item.state_elements)
 
     def test_is_on(self):
-        # item expected to be ON for these states
+        # test: items should be On for these states
         self.assertTrue(self.item.is_on(sym_state('1234')))
         self.assertTrue(self.item.is_on(sym_state('123,1234')))
 
-        # item expected to be OFF for these states
+        # test: items should be Off for these states
         self.assertFalse(self.item.is_on(sym_state('')))
         self.assertFalse(self.item.is_on(sym_state('123')))
         self.assertFalse(self.item.is_on(sym_state('123,4321')))
+
+    def test_is_off(self):
+        # test: items should be Off for these states
+        self.assertTrue(self.item.is_off(sym_state('')))
+        self.assertTrue(self.item.is_off(sym_state('123')))
+        self.assertTrue(self.item.is_off(sym_state('123,4321')))
+
+        # test: items should be On for these states
+        self.assertFalse(self.item.is_off(sym_state('1234')))
+        self.assertFalse(self.item.is_off(sym_state('123,1234')))
 
     def test_eq(self):
         self.assertTrue(satisfies_equality_checks(
@@ -110,9 +217,11 @@ class TestCompositeItem(unittest.TestCase):
         self.item_3 = self.pool.get('3', primitive_value=3.0)
         self.item_4 = self.pool.get('4', primitive_value=-3.0)
 
-        self.source = frozenset(['1', '2', '3', '4'])
+        self.state_elements = ['1', '2', '3', '4']
+        self.source = frozenset(self.state_elements)
         self.item = CompositeItem(source=self.source)
 
+    # noinspection PyTypeChecker
     def test_init(self):
         # test: the source should be set properly
         self.assertEqual(self.source, self.item.source)
@@ -132,6 +241,14 @@ class TestCompositeItem(unittest.TestCase):
         item = CompositeItem(source=self.source, primitive_value=primitive_value)
         self.assertEqual(primitive_value, item.primitive_value)
 
+        # test: TypeError raised when source is not iterable
+        self.assertRaises(TypeError, lambda: CompositeItem(source=1.0))
+        self.assertRaises(TypeError, lambda: CompositeItem(source=None))
+
+        # test: ValueError raised when source is an iterable with less than 2 elements
+        self.assertRaises(ValueError, lambda: CompositeItem(source=[]))
+        self.assertRaises(ValueError, lambda: CompositeItem(source=['1']))
+
     def test_state_elements(self):
         # test: all state elements should be returned
         self.assertSetEqual({'1', '2'}, sym_item('(1,2)').state_elements)
@@ -147,6 +264,32 @@ class TestCompositeItem(unittest.TestCase):
         self.assertFalse(self.item.is_on(sym_state('1,2,3')))
         self.assertFalse(self.item.is_on(sym_state('1,4')))
         self.assertFalse(self.item.is_on(sym_state('2,4')))
+
+    def test_is_off(self):
+        # item expected to be ON for these states
+        self.assertFalse(self.item.is_off(sym_state('1,2,3,4')))
+        self.assertFalse(self.item.is_off(sym_state('1,2,3,4,5,6')))
+
+        # item expected to be OFF for these states
+        self.assertTrue(self.item.is_off(sym_state('')))
+        self.assertTrue(self.item.is_off(sym_state('1,2,3')))
+        self.assertTrue(self.item.is_off(sym_state('1,4')))
+        self.assertTrue(self.item.is_off(sym_state('2,4')))
+
+    def test_contains(self):
+        # test: all of these state elements SHOULD be contained in this composite item
+        for state_element in self.state_elements:
+            self.assertIn(state_element, self.item)
+
+        # test: all of these state elements SHOULD NOT be contained in this composite item
+        other_state_elements = set(range(100)).difference(self.source)
+        for state_element in other_state_elements:
+            self.assertNotIn(state_element, self.item)
+
+        # test: contains should always return False when parameter is not a state element
+        self.assertNotIn(set(), self.item)
+        self.assertNotIn(list(), self.item)
+        self.assertNotIn(dict(), self.item)
 
     def test_equal(self):
         obj = self.item
@@ -171,6 +314,18 @@ class TestCompositeItem(unittest.TestCase):
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.item))
+
+    def test_str(self):
+        expected_str = ','.join(sorted([str(element) for element in self.source]))
+        self.assertEqual(expected_str, str(self.item))
+
+    def test_repr(self):
+        attr_values = {'source': ','.join(sorted([str(element) for element in self.source])),
+                       'pv': self.item.primitive_value,
+                       'dv': self.item.delegated_value}
+
+        expected_repr = repr_str(self.item, attr_values)
+        self.assertEqual(expected_repr, repr(self.item))
 
     def test_item_from_pool(self):
         source_1 = frozenset(['2', '3', '4'])

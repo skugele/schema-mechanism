@@ -10,6 +10,7 @@ import numpy as np
 from schema_mechanism.core import Action
 from schema_mechanism.core import Chain
 from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaSpinOffType
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import actions
@@ -307,7 +308,7 @@ class TestSchemaMemory(TestCase):
         self.assertNotIn(sym_schema('1,3,7,9,11/A1/'), self.sm)
         self.sm.receive(
             source=sym_schema('1,3,7,9/A1/'),
-            spin_off_type=Schema.SpinOffType.CONTEXT,
+            spin_off_type=SchemaSpinOffType.CONTEXT,
             relevant_items=[sym_item('11')]
         )
         self.assertIn(sym_schema('1,3,7,9,11/A1/'), self.sm)
@@ -324,7 +325,7 @@ class TestSchemaMemory(TestCase):
 
         self.sm.receive(
             source=sym_schema('/A1/'),
-            spin_off_type=Schema.SpinOffType.RESULT,
+            spin_off_type=SchemaSpinOffType.RESULT,
             relevant_items=[sym_item('1000')]
         )
 
@@ -341,7 +342,7 @@ class TestSchemaMemory(TestCase):
         self.assertNotIn(sym_schema('1,3,7,9,13/A1/'), self.sm)
         self.sm.receive(
             source=sym_schema('1,3,7,9/A1/'),
-            spin_off_type=Schema.SpinOffType.CONTEXT,
+            spin_off_type=SchemaSpinOffType.CONTEXT,
             relevant_items=sym_items('11;13')
         )
         self.assertIn(sym_schema('1,3,7,9,11/A1/'), self.sm)
@@ -361,7 +362,7 @@ class TestSchemaMemory(TestCase):
 
         self.sm.receive(
             source=sym_schema('/A1/'),
-            spin_off_type=Schema.SpinOffType.RESULT,
+            spin_off_type=SchemaSpinOffType.RESULT,
             relevant_items=sym_items('1000;1001')
         )
 
@@ -383,7 +384,7 @@ class TestSchemaMemory(TestCase):
         self.assertNotIn(sym_schema('3,6/A1/'), self.sm)
         self.sm.receive(
             source=sym_schema('3,/A1/'),
-            spin_off_type=Schema.SpinOffType.CONTEXT,
+            spin_off_type=SchemaSpinOffType.CONTEXT,
             relevant_items=sym_items('1;6')
         )
         self.assertIn(sym_schema('1,3/A1/'), self.sm)
@@ -406,7 +407,7 @@ class TestSchemaMemory(TestCase):
 
         self.sm.receive(
             source=sym_schema('/A1/'),
-            spin_off_type=Schema.SpinOffType.RESULT,
+            spin_off_type=SchemaSpinOffType.RESULT,
             relevant_items=sym_items('101;1001')
         )
 

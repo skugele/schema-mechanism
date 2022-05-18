@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
+import random
 from collections import Collection
 from collections import ItemsView
 from collections import defaultdict
 from enum import Enum
-from enum import auto
-from time import time
 from typing import Any
 from typing import Optional
 
@@ -22,29 +21,29 @@ logger = logging.getLogger(__name__)
 
 
 class SupportedFeature(Enum):
-    COMPOSITE_ACTIONS = auto()
+    COMPOSITE_ACTIONS = 'COMPOSITE_ACTIONS'
 
     # "There is an embellishment of the marginal attribution algorithm--deferring to a more specific applicable schema--
     #  that often enables the discovery of an item whose relevance has been obscured." (see Drescher,1991, pp. 75-76)
-    EC_DEFER_TO_MORE_SPECIFIC_SCHEMA = auto()
+    EC_DEFER_TO_MORE_SPECIFIC_SCHEMA = 'EC_DEFER_TO_MORE_SPECIFIC_SCHEMA'
 
     # "[another] embellishment also reduces redundancy: when a schema's extended context simultaneously detects the
     # relevance of several items--that is, their statistics pass the significance threshold on the same trial--the most
     # specific is chosen as the one for inclusion in a spin-off from that schema." (see Drescher, 1991, p. 77)
     #
     #     Note: Requires that EC_DEFER_TO_MORE_SPECIFIC is also enabled.
-    EC_MOST_SPECIFIC_ON_MULTIPLE = auto()
+    EC_MOST_SPECIFIC_ON_MULTIPLE = 'EC_MOST_SPECIFIC_ON_MULTIPLE'
 
     # "The machinery's sensitivity to results is amplified by an embellishment of marginal attribution: when a given
     #  schema is idle (i.e., it has not just completed an activation), the updating of its extended result data is
     #  suppressed for any state transition which is explained--meaning that the transition is predicted as the result
     #  of a reliable schema whose activation has just completed." (see Drescher, 1991, p. 73)
-    ER_SUPPRESS_UPDATE_ON_EXPLAINED = auto()
+    ER_SUPPRESS_UPDATE_ON_EXPLAINED = 'ER_SUPPRESS_UPDATE_ON_EXPLAINED'
 
     # Supports the creation of result spin-off schemas incrementally. This was not supported in the original schema
     # mechanism because of the proliferation of composite results that result. It is allowed here to facilitate
     # comparison and experimentation.
-    ER_INCREMENTAL_RESULTS = auto()
+    ER_INCREMENTAL_RESULTS = 'ER_INCREMENTAL_RESULTS'
 
 
 class SupportedFeatureValidator(Validator):
@@ -87,6 +86,13 @@ class GlobalParams:
                         other._validators == self._validators))
         return False if other is None else NotImplemented
 
+    def __str__(self) -> str:
+        parameter_details = []
+        for param, value in self:
+            is_default_value = value == self.defaults.get(param, None)
+            parameter_details.append(f'{param} = \'{value}\' [DEFAULT: {is_default_value}]')
+        return 'Global Parameters: ' + '; '.join(parameter_details)
+
     @property
     def defaults(self) -> dict[str, Any]:
         return self._defaults
@@ -113,9 +119,6 @@ class GlobalParams:
         self._params = dict(self._defaults)
 
     def _set_defaults(self) -> None:
-        # default seed for the random number generator
-        self._defaults['rng_seed'] = int(time())
-
         # determines step size for incremental updates (e.g., this is used for delegated value updates)
         self._defaults['learning_rate'] = 0.01
 
@@ -166,25 +169,35 @@ class GlobalParams:
         self._validators['features'] = SupportedFeatureValidator()
         self._validators['learning_rate'] = RangeValidator(0.0, 1.0)
         self._validators['reliability_threshold'] = RangeValidator(0.0, 1.0)
-        self._validators['rng_seed'] = TypeValidator([int])
 
 
-_rng = None
-_seed = None
+_rng: Optional[np.random.Generator] = None
+_seed: Optional[int] = None
+
+
+def set_random_seed(seed: int) -> None:
+    global _seed
+    _seed = seed
+
+    random.seed(_seed)
+
+
+def get_random_seed() -> Optional[int]:
+    return _seed
 
 
 def rng():
     global _rng
     global _seed
 
-    new_seed = GlobalParams().get('rng_seed')
-    if new_seed != _seed:
-        logger.warning(f'(Re-)initializing random number generator using seed="{new_seed}".')
+    seed = get_random_seed()
+    if not _rng:
+        logger.warning(f'Initializing random number generator using seed="{seed}".')
         logger.warning(
-            f'For reproducibility, you should also set "PYTHONHASHSEED={new_seed}" in your environment variables.')
+            f'For reproducibility, you should also set "PYTHONHASHSEED={seed}" in your environment variables.')
 
         # setting globals
-        _rng = np.random.default_rng(new_seed)
-        _seed = new_seed
+        _rng = np.random.default_rng(seed)
+        _seed = seed
 
     return _rng

@@ -4,38 +4,39 @@ from collections.abc import Sequence
 from time import sleep
 from typing import Optional
 
+from examples import RANDOM_SEED
 from examples import display_summary
 from examples import is_paused
 from examples import run_decorator
 from schema_mechanism.core import Action
-from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Schema
 from schema_mechanism.core import State
-from schema_mechanism.core import display_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
-from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import rng
+from schema_mechanism.share import set_random_seed
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
-from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
-from schema_mechanism.strategies.evaluation import PendingFocusEvaluationStrategy
+from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
+from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.util import Observable
 
 logger = logging.getLogger('examples.environments.multi_arm_bandits')
 
-# global constants
+# For reproducibility, we we also need to set PYTHONHASHSEED=RANDOM_SEED in the environment
+set_random_seed(RANDOM_SEED)
 
+# global constants
 N_MACHINES = 25
 N_STEPS = 15000
 
@@ -242,10 +243,10 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
             strategies=[
                 TotalPrimitiveValueEvaluationStrategy(),
                 TotalDelegatedValueEvaluationStrategy(),
-                PendingFocusEvaluationStrategy(decay_strategy=ExponentialDecayStrategy(rate=0.1)),
-                ReliabilityEvaluationStrategy(max_penalty=0.05),
-                EpsilonGreedyEvaluationStrategy(epsilon=0.9999,
-                                                epsilon_min=0.1,
+                ReliabilityEvaluationStrategy(max_penalty=1.0),
+                HabituationEvaluationStrategy(scaling_strategy=SigmoidScalingStrategy()),
+                EpsilonGreedyEvaluationStrategy(epsilon=0.999,
+                                                epsilon_min=0.05,
                                                 decay_strategy=GeometricDecayStrategy(rate=0.9999))
             ]
         )
@@ -255,8 +256,6 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
         items=primitive_items,
         schema_memory=schema_memory,
         schema_selection=schema_selection,
-        global_params=GlobalParams(),
-        global_stats=GlobalStats()
     )
 
     sm.params.set('backward_chains.update_frequency', 0.01)
@@ -279,7 +278,7 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
     sm.params.set('ext_result.positive_correlation_threshold', 0.95)
 
-    display_params(sm.params)
+    logger.info(sm.params)
 
     return sm
 

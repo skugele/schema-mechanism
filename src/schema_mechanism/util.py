@@ -272,7 +272,10 @@ def cosine_sims(v: np.ndarray, state: Iterable[np.ndarray]) -> np.ndarray:
 def repr_str(obj: Any, attr_values: dict[str, Any]) -> str:
     type_name = type(obj).__name__
 
-    return f'{type_name}({attr_values})'
+    # attribute values sorted by dictionary key
+    sorted_attr_values = {key: attr_values[key] for key in sorted(attr_values)}
+
+    return f'{type_name}({sorted_attr_values})'
 
 
 # note: this is available in standard Python starting in 3.10

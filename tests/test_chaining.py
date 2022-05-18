@@ -326,6 +326,31 @@ class TestChain(unittest.TestCase):
         # test: this complex chain should be valid
         self.assertTrue(self.chain.is_valid())
 
+        # test: ValueError should be raised when raise_on_invalid is true and the context of a subsequent link is not
+        #       satisfied by its predecessor
+        chain_with_invalid_links = Chain([sym_schema('A,/A1/B,'), sym_schema('X,/A2/Y,')])
+        self.assertRaises(ValueError, lambda: chain_with_invalid_links.is_valid(raise_on_invalid=True))
+
+    def test_str_and_repr(self):
+        empty_chain = Chain([])
+        self.assertEqual('', str(empty_chain))
+
+        chains = [
+            Chain([sym_schema('A,/A1/B,')]),
+            Chain([sym_schema('B,/A1/C,'), sym_schema('C,/A1/D,')]),
+            Chain([sym_schema('B,/A1/C,'), sym_schema('C,/A1/D,'), sym_schema('D,/A1/E,')]),
+        ]
+
+        for chain in chains:
+            chain_str = str(chain)
+            chain_repr = repr(chain)
+            for schema in chain:
+                schema_str = str(schema)
+
+                # test: string representations for each schema should be embedded in the chain's string representation
+                self.assertIn(schema_str, chain_str)
+                self.assertIn(schema_str, chain_repr)
+
     @test_share.string_test
     def test_str(self):
         print(str(self.chain))

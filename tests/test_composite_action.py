@@ -7,8 +7,11 @@ import numpy as np
 from schema_mechanism.core import Chain
 from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import Controller
+from schema_mechanism.core import DummyController
+from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
+from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
@@ -361,6 +364,59 @@ class TestController(TestShared):
         for component in components:
             self.assertEqual(expected_proximities[component], actual_proximities[component])
 
+    def test_chain_with_composite_action_schema(self):
+        composite_action_schema_a_b = sym_schema('A,/G1,/B,')
+        composite_action_schema_b_c = sym_schema('B,/G1,/C,')
+        composite_action_schema_c_d = sym_schema('C,/G1,/D,')
+        composite_action_schema_d_e = sym_schema('D,/G1,/E,')
+
+        chains = [
+            Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d, composite_action_schema_d_e]),
+            Chain([self.s1_a_b, self.s2_b_c, composite_action_schema_c_d, self.s3_d_e]),
+            Chain([self.s1_a_b, composite_action_schema_b_c, self.s3_c_d, self.s3_d_e]),
+            Chain([composite_action_schema_a_b, self.s2_b_c, self.s3_c_d, self.s3_d_e]),
+        ]
+
+        for i, chain in enumerate(chains):
+            controller = Controller(self.goal_state)
+            controller.update([chain])
+
+            # test: the chain should be broken when a composite action schema is encountered
+            expected_components = list(reversed(chain))[:i]
+
+            self.assertSetEqual(set(expected_components), controller.components)
+
+    def test_all_satisfied_by(self):
+        # clears all of the registered controllers
+        CompositeAction.reset()
+
+        controllers: dict = {
+            'A': CompositeAction(goal_state=sym_assert('A')).controller,
+            'A,B,C': CompositeAction(goal_state=sym_assert('A,B,C')).controller,
+            'X': CompositeAction(goal_state=sym_assert('X')).controller,
+            'X,Y,Z': CompositeAction(goal_state=sym_assert('X,Y,Z')).controller,
+        }
+
+        all_controllers: set = {controller for controller in controllers.values()}
+
+        # test: no controllers should be satisfied by these goal state
+        self.assertSetEqual(set(), CompositeAction.all_satisfied_by(sym_state('1')))
+        self.assertSetEqual(set(), CompositeAction.all_satisfied_by(sym_state('101')))
+
+        # test: all controllers should be satisfied by these goal state
+        self.assertSetEqual(all_controllers, CompositeAction.all_satisfied_by(state=sym_state('A,B,C,X,Y,Z')))
+        self.assertSetEqual(all_controllers, CompositeAction.all_satisfied_by(state=sym_state('A,B,C,X,Y,Z,1,2,3')))
+
+        # test: these states should match some, but not all, of the controllers
+        self.assertSetEqual({controllers['A']}, CompositeAction.all_satisfied_by(state=sym_state('A')))
+        self.assertSetEqual({controllers['A']}, CompositeAction.all_satisfied_by(state=sym_state('A,B')))
+        self.assertSetEqual({controllers['A'], controllers['A,B,C']},
+                            CompositeAction.all_satisfied_by(state=sym_state('A,B,C')))
+        self.assertSetEqual({controllers['X']}, CompositeAction.all_satisfied_by(state=sym_state('X')))
+        self.assertSetEqual({controllers['X']}, CompositeAction.all_satisfied_by(state=sym_state('X,Y')))
+        self.assertSetEqual({controllers['X'], controllers['X,Y,Z']},
+                            CompositeAction.all_satisfied_by(state=sym_state('X,Y,Z')))
+
     # FIXME: the behavior was changed to replace rather than update existing components. It may be desirable to
     # FIXME: to revert this based on additional experimentation. I am commenting out these test cases for now.
     @disable_test
@@ -422,6 +478,7 @@ class TestController(TestShared):
             self.assertEqual(expected_proximities[component], actual_proximities[component])
 
     # FIXME: Enable this test case if/when controller components with composite actions are supported
+    # noinspection PyUnresolvedReferences
     @disable_test
     def test_contained_in(self):
         controller = Controller(goal_state=sym_state_assert('S2,'))
@@ -444,8 +501,46 @@ class TestController(TestShared):
         self.assertTrue(controller.contained_in(sym_schema('1,/S2,/2,')))
         self.assertTrue(controller.contained_in(schema_ca))
 
+    def test_eq(self):
+        # test: equal should function properly given controllers no components
+        controller_1 = Controller(goal_state=sym_state_assert('D'))
+        controller_2 = Controller(goal_state=sym_state_assert('E'))
+
+        self.assertTrue(satisfies_equality_checks(obj=controller_1, other=controller_2, other_different_type=1.0))
+
+        # test: equal should function properly given controllers with components
+        controller_1 = Controller(goal_state=sym_state_assert('D'))
+        controller_2 = Controller(goal_state=sym_state_assert('E'))
+
+        controller_1.update([Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d])])
+        controller_2.update([Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d, self.s3_d_e])])
+
+        self.assertTrue(satisfies_equality_checks(obj=controller_1, other=controller_2, other_different_type=1.0))
+
+    def test_hash(self):
+        self.assertTrue(satisfies_hash_checks(obj=self.controller))
+
     def _calc_proximity(self, schema: Schema, chain: Chain) -> float:
         start = chain.index(schema)
 
         # this calculation assumes a learning rate of 1.0
         return 1.0 / sum(s.avg_duration for s in itertools.islice(chain, start, None))
+
+
+class TestDummyController(TestShared):
+    def setUp(self) -> None:
+        super().setUp()
+
+        self.dummy_controller = DummyController()
+
+    def test_init(self):
+        self.assertSetEqual(set(), self.dummy_controller.components)
+        self.assertSetEqual(set(), self.dummy_controller.descendants)
+        self.assertEqual(NULL_STATE_ASSERT, self.dummy_controller.goal_state)
+
+    def test_update(self):
+        self.assertRaises(NotImplementedError, lambda: self.dummy_controller.update())
+
+    def test_proximity(self):
+        for schema in self.sm:
+            self.assertEqual(-np.inf, self.dummy_controller.proximity(schema))

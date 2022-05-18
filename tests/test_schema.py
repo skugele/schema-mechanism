@@ -1,5 +1,7 @@
 import os
 from copy import copy
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from random import sample
 from tempfile import TemporaryDirectory
@@ -16,19 +18,23 @@ from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaSpinOffType
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.core import get_global_params
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
 from schema_mechanism.core import new_state
+from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.func_api import update_schema
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
+from schema_mechanism.share import SupportedFeature
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
+from schema_mechanism.util import repr_str
 from test_share.test_classes import MockObserver
 from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
@@ -41,11 +47,11 @@ class TestSchema(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self._item_pool = ItemPool()
+        self.item_pool = ItemPool()
 
         # populate pool
         for i in range(10):
-            _ = self._item_pool.get(str(i), primitive_value=1.0, item_type=SymbolicItem)
+            _ = self.item_pool.get(str(i), primitive_value=1.0, item_type=SymbolicItem)
 
         self.schema = sym_schema('0,1/A1/2,3,4')
         self.schema_ca = sym_schema('0,1/2,3/2,3,4')
@@ -105,6 +111,36 @@ class TestSchema(TestCase):
         self.assertIsNotNone(s.creation_time)
         self.assertGreaterEqual(s.creation_time, before)
         self.assertLessEqual(s.creation_time, after)
+
+    def test_cost(self):
+        # test: cost getter/setter should correctly set the value
+        cost = 17.2
+        self.schema.cost = cost
+
+        self.assertEqual(cost, self.schema.cost)
+
+    def test_repr(self):
+        # test: repr should return the expected str representation
+        expected_repr = repr_str(self.schema, {'uid': self.schema.uid,
+                                               'creation_time': datetime.fromtimestamp(self.schema.creation_time),
+                                               'context': self.schema.context,
+                                               'cost': self.schema.cost,
+                                               'action': self.schema.action,
+                                               'result': self.schema.result,
+                                               'overriding_conditions': self.schema.overriding_conditions,
+                                               'reliability': self.schema.reliability, })
+
+        self.assertEqual(expected_repr, repr(self.schema))
+
+    # Schema.update
+    # 	conditions to test:
+    #             if is_feature_enabled(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED) and explained:
+    #                 logger.debug(
+    #                     f'update suppressed for schema {self} because its result was explained by a reliable schema')
+    #             else:
+    #                 self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
+    #
+    # Schema.receive (test unrecognized spin_off_type raises a ValueError)
 
     def test_is_context_satisfied(self):
         c = sym_state_assert('1,3')
@@ -175,6 +211,97 @@ class TestSchema(TestCase):
             self.assertTrue(self.schema_ca.is_applicable(sym_state('0,1')))
             mock.assert_called()
 
+    def test_is_activated(self):
+        schema_blank_context = sym_schema('/A1/C,')
+        schema_a = sym_schema('A,/A1/C,')
+        schema_ab = sym_schema('A,B/A2/C,D')
+        schema_cd = sym_schema('C,D/A1/S1,')
+
+        composite_action_schema = sym_schema('/S1,/C,')
+
+        schemas = [
+            schema_blank_context,
+            schema_a,
+            schema_ab,
+            schema_cd,
+            composite_action_schema
+        ]
+
+        state_a = sym_state('A')
+        state_ab = sym_state('A,B')
+        state_cde = sym_state('C,D,E')
+        state_s1 = sym_state('S1')
+
+        states = [
+            state_a,
+            state_ab,
+            state_cde,
+            state_s1
+        ]
+
+        # test: should return False for non-applicable schemas
+        explicitly_activated_schema = schema_a
+        for state in states:
+            for schema in schemas:
+                is_applicable = schema.is_applicable(state)
+                if not is_applicable:
+                    is_activated = schema.is_activated(
+                        schema=explicitly_activated_schema,
+                        state=state,
+                        applicable=is_applicable
+                    )
+                    self.assertFalse(is_activated)
+
+        # test: should return False if action not the same as explicitly activated schema
+        explicitly_activated_schema = schema_a
+        for state in states:
+            for schema in schemas:
+                is_applicable = schema.is_applicable(state)
+                if schema.action != explicitly_activated_schema.action:
+                    is_activated = schema.is_activated(
+                        schema=explicitly_activated_schema,
+                        state=state,
+                        applicable=is_applicable
+                    )
+                    self.assertFalse(is_activated)
+
+        # test: non-composite action schemas should return True if applicable and share same action as explicitly
+        #     : activated schema
+        explicitly_activated_schema = schema_a
+        for state in states:
+            for schema in schemas:
+                if schema.action == explicitly_activated_schema.action and not schema.action.is_composite():
+                    is_activated = schema.is_activated(
+                        schema=explicitly_activated_schema,
+                        state=state,
+                        applicable=True
+                    )
+                    self.assertTrue(is_activated)
+
+        # test: should return True if the schema is the explicitly activated schema
+        for explicitly_activated_schema in schemas:
+            for schema in schemas:
+                if schema is explicitly_activated_schema:
+                    is_activated = schema.is_activated(
+                        schema=explicitly_activated_schema,
+                        state=sym_state('A,B,C,D,S1'),
+                        applicable=True
+                    )
+                    self.assertTrue(is_activated)
+
+        # test: composite action schemas should return True whenever they are applicable and their goal state is
+        #     : satisfied and False otherwise
+        goal_state = composite_action_schema.action.goal_state
+        for explicitly_activated_schema in schemas:
+            for state in states:
+                is_activated = composite_action_schema.is_activated(
+                    schema=explicitly_activated_schema,
+                    state=state,
+                    applicable=True
+                )
+                if goal_state.is_satisfied(state):
+                    self.assertTrue(is_activated)
+
     def test_predicts_state(self):
         state = sym_state('1,2,3')  # used for all test cases
 
@@ -211,8 +338,67 @@ class TestSchema(TestCase):
         # complex action schema
         self.assertTrue(self.schema_ca.predicts_state(sym_state('2,3,4')))
 
-    def test_update_1(self):
-        # testing activated + success
+    def test_update_when_explained(self):
+        params = get_global_params()
+
+        features: set[SupportedFeature] = params.get('features')
+
+        # test case depends on this feature being enabled
+        features.add(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
+
+        # only bare schemas have an extended result
+        schema = sym_schema('/A1/')
+
+        # test: extended result item stats not updated if result explained (by a reliable schema)
+        ext_result_before = deepcopy(schema.extended_result)
+        schema.update(
+            activated=True,
+            succeeded=True,
+            selection_state=sym_state('1,2,3'),
+            new=[self.item_pool.get('1')],
+            lost=[self.item_pool.get('4')],
+            explained=True,
+        )
+        ext_result_after = deepcopy(schema.extended_result)
+
+        # check item stats
+        self.assertEqual(ext_result_before, ext_result_after)
+
+        # test: extended result item stats SHOULD be updated if result not explained (by a reliable schema)
+        ext_result_before = deepcopy(schema.extended_result)
+        schema.update(
+            activated=True,
+            succeeded=True,
+            selection_state=sym_state('1,2,3'),
+            new=[self.item_pool.get('1')],
+            lost=[self.item_pool.get('4')],
+            explained=False,
+        )
+        ext_result_after = deepcopy(schema.extended_result)
+
+        # check item stats
+        self.assertNotEqual(ext_result_before, ext_result_after)
+
+        # test case depends on this feature being enabled
+        features.remove(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
+
+        # test: update should always occur (regardless of explained) when ER_SUPPRESS_UPDATE_ON_EXPLAINED is disabled
+        # test: extended result item stats SHOULD be updated if result not explained (by a reliable schema)
+        ext_result_before = deepcopy(schema.extended_result)
+        schema.update(
+            activated=True,
+            succeeded=True,
+            selection_state=sym_state('1,2,3'),
+            new=[self.item_pool.get('1')],
+            lost=[self.item_pool.get('4')],
+            explained=True,
+        )
+        ext_result_after = deepcopy(schema.extended_result)
+
+        # check item stats
+        self.assertNotEqual(ext_result_before, ext_result_after)
+
+    def test_update_when_activated_and_successful(self):
         s_prev = sym_state('0,1,2,3')
         s_curr = sym_state('2,3,4,5')
 
@@ -221,16 +407,23 @@ class TestSchema(TestCase):
 
         self.schema.update(activated=True, succeeded=True, selection_state=s_prev, new=new, lost=lost)
 
-        # check schema level statistics
+        # test: total number of updates (n) SHOULD always be updated
         self.assertEqual(1, self.schema.stats.n)
+
+        # test: n_success SHOULD be updated on success
         self.assertEqual(1, self.schema.stats.n_success)
+
+        # test: n_fail SHOULD NOT be updated on success
         self.assertEqual(0, self.schema.stats.n_fail)
+
+        # test: n_activated SHOULD be updated when schema activated
         self.assertEqual(1, self.schema.stats.n_activated)
 
         # check item level statistics
-        for i in self._item_pool:
+        for i in self.item_pool:
             ec_stats = self.schema.extended_context.stats[i]
 
+            # test: extended context success statistics SHOULD be updated when item is On or Off in selection state
             if i.is_on(s_prev):
                 self.assertEqual(1, ec_stats.n_success_and_on)
                 self.assertEqual(0, ec_stats.n_success_and_off)
@@ -245,6 +438,7 @@ class TestSchema(TestCase):
             if self.schema.extended_result:
                 er_stats = self.schema.extended_result.stats.get(i)
 
+                # test: extended-result, activation statistics SHOULD be updated when item is in new or lost
                 if i in new:
                     self.assertEqual(1, er_stats.n_on_and_activated)
                     self.assertEqual(0, er_stats.n_on_and_not_activated)
@@ -256,27 +450,33 @@ class TestSchema(TestCase):
                     self.assertEqual(1, er_stats.n_off_and_activated)
                     self.assertEqual(0, er_stats.n_off_and_not_activated)
 
-    def test_update_2(self):
-        # testing activated and not success
-        s_prev = sym_state('0,1,2,3')
-        s_curr = sym_state('2,5')
+    def test_update_when_activated_and_failure(self):
+        selection_state = sym_state('0,1,2,3')
+        result_state = sym_state('2,5')
 
-        new = new_state(s_prev, s_curr)
-        lost = lost_state(s_prev, s_curr)
+        new = new_state(selection_state, result_state)
+        lost = lost_state(selection_state, result_state)
 
-        self.schema.update(activated=True, succeeded=False, selection_state=s_prev, new=new, lost=lost)
+        self.schema.update(activated=True, succeeded=False, selection_state=selection_state, new=new, lost=lost)
 
-        # check schema level statistics
+        # test: total number of updates (n) SHOULD always be updated
         self.assertEqual(1, self.schema.stats.n)
+
+        # test: n_success SHOULD NOT be updated on failure
         self.assertEqual(0, self.schema.stats.n_success)
+
+        # test: n_fail SHOULD be updated on failure
         self.assertEqual(1, self.schema.stats.n_fail)
+
+        # test: n_activated SHOULD be updated when schema activated
         self.assertEqual(1, self.schema.stats.n_activated)
 
         # check item level statistics
-        for i in self._item_pool:
+        for i in self.item_pool:
             ec_stats = self.schema.extended_context.stats[i]
 
-            if i.is_on(s_prev):
+            # test: extended context failure statistics SHOULD be updated when item is On or Off in selection state
+            if i.is_on(selection_state):
                 self.assertEqual(0, ec_stats.n_success_and_on)
                 self.assertEqual(0, ec_stats.n_success_and_off)
                 self.assertEqual(1, ec_stats.n_fail_and_on)
@@ -287,6 +487,7 @@ class TestSchema(TestCase):
                 self.assertEqual(0, ec_stats.n_fail_and_on)
                 self.assertEqual(1, ec_stats.n_fail_and_off)
 
+            # test: extended-result, activation statistics SHOULD be updated when item is in new or lost
             if self.schema.extended_result:
                 er_stats = self.schema.extended_result.stats.get(i)
 
@@ -301,44 +502,39 @@ class TestSchema(TestCase):
                     self.assertEqual(1, er_stats.n_off_and_activated)
                     self.assertEqual(0, er_stats.n_off_and_not_activated)
 
-    def test_update_3(self):
-        # testing not activated
-        s_prev = sym_state('0,3')
-        s_curr = sym_state('2,4,5')
+    def test_update_when_schema_not_activated(self):
+        selection_state = sym_state('0,3')
+        result_state = sym_state('2,4,5')
 
-        new = new_state(s_prev, s_curr)
-        lost = lost_state(s_prev, s_curr)
+        new = new_state(selection_state, result_state)
+        lost = lost_state(selection_state, result_state)
 
-        self.schema.update(activated=False, succeeded=False, selection_state=s_prev, new=new, lost=lost)
+        self.schema.update(activated=False, succeeded=False, selection_state=selection_state, new=new, lost=lost)
 
-        # check schema level statistics
+        # test: total number of updates (n) SHOULD always be updated
         self.assertEqual(1, self.schema.stats.n)
 
-        # test: success/failure should only be updated if activated
+        # test: success/failure statistics SHOULD NOT be updated if not activated
         self.assertEqual(0, self.schema.stats.n_success)
         self.assertEqual(0, self.schema.stats.n_fail)
 
-        # test: not activated, should not have been updated
+        # test: n_activated SHOULD NOT be updated when schema not activated
         self.assertEqual(0, self.schema.stats.n_activated)
 
         # check item level statistics
-        for i in self._item_pool:
+        for i in self.item_pool:
             ec_stats = self.schema.extended_context.stats[i]
 
-            if i.is_on(s_prev):
-                self.assertEqual(0, ec_stats.n_success_and_on)
-                self.assertEqual(0, ec_stats.n_success_and_off)
-                self.assertEqual(0, ec_stats.n_fail_and_on)
-                self.assertEqual(0, ec_stats.n_fail_and_off)
-            else:
-                self.assertEqual(0, ec_stats.n_success_and_on)
-                self.assertEqual(0, ec_stats.n_success_and_off)
-                self.assertEqual(0, ec_stats.n_fail_and_on)
-                self.assertEqual(0, ec_stats.n_fail_and_off)
+            # test: extended context item statistics SHOULD NOT have been updated if schema not activated
+            self.assertEqual(0, ec_stats.n_success_and_on)
+            self.assertEqual(0, ec_stats.n_success_and_off)
+            self.assertEqual(0, ec_stats.n_fail_and_on)
+            self.assertEqual(0, ec_stats.n_fail_and_off)
 
             if self.schema.extended_result:
                 er_stats = self.schema.extended_result.stats.get(i)
 
+                # test: extended result item statistics SHOULD be updated if item was in new or lost
                 if i in new:
                     self.assertEqual(0, er_stats.n_on_and_activated)
                     self.assertEqual(1, er_stats.n_on_and_not_activated)
@@ -467,6 +663,45 @@ class TestSchema(TestCase):
                       count=1)
         self.assertEqual(1.0, self.schema.reliability)
 
+    def test_receive_from_extended_result(self):
+        # only bare schemas have an extended result
+        schema = sym_schema('/A1/')
+        schema.notify_all = MagicMock()
+
+        new_relevant_items = frozenset([sym_item('1'), sym_item('2')])
+        schema.extended_result.new_relevant_items = new_relevant_items
+        schema.receive(
+            source=schema.extended_result,
+            spin_off_type=SchemaSpinOffType.RESULT,
+            another_kwarg='another_kwarg_value'
+        )
+
+        schema.notify_all.assert_called_once_with(
+            source=schema,
+            spin_off_type=SchemaSpinOffType.RESULT,
+            relevant_items=new_relevant_items,
+            another_kwarg='another_kwarg_value'
+        )
+
+    def test_receive_from_extended_context(self):
+        schema = sym_schema('/A1/1,2')
+        schema.notify_all = MagicMock()
+
+        new_relevant_items = frozenset([sym_item('3'), sym_item('4')])
+        schema.extended_context.new_relevant_items = new_relevant_items
+        schema.receive(
+            source=schema.extended_context,
+            spin_off_type=SchemaSpinOffType.CONTEXT,
+            another_kwarg='another_kwarg_value'
+        )
+
+        schema.notify_all.assert_called_once_with(
+            source=schema,
+            spin_off_type=SchemaSpinOffType.CONTEXT,
+            relevant_items=new_relevant_items,
+            another_kwarg='another_kwarg_value'
+        )
+
     def test_notify_all(self):
         params = get_global_params()
         params.set('ext_context.correlation_test', DrescherCorrelationTest())
@@ -540,9 +775,9 @@ class TestSchema(TestCase):
         n_state_elements = 25
 
         # populate item pool
-        self._item_pool.clear()
+        self.item_pool.clear()
         for i in range(n_items):
-            self._item_pool.get(str(i))
+            self.item_pool.get(str(i))
 
         s_prev = tuple(map(str, sample(range(n_items), k=n_state_elements)))
         s_curr = tuple(map(str, sample(range(n_items), k=n_state_elements)))
@@ -573,9 +808,9 @@ class TestSchema(TestCase):
         n_schemas = 10_000
 
         # populate item pool
-        self._item_pool.clear()
+        self.item_pool.clear()
         for i in range(n_items):
-            self._item_pool.get(str(i))
+            self.item_pool.get(str(i))
 
         schemas = [
             Schema(context=sym_state_assert(','.join(str(i) for i in sample(range(n_items), k=n_context_elements))),

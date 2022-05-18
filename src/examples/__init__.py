@@ -1,5 +1,4 @@
 import logging.config
-import random
 from time import time
 from typing import Callable
 
@@ -9,19 +8,11 @@ from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ReadOnlyItemPool
 from schema_mechanism.core import Schema
 from schema_mechanism.modules import SchemaMechanism
-from schema_mechanism.share import GlobalParams
 
 logger = logging.getLogger(__name__)
 
 # configure random seed
 RANDOM_SEED = 8675309
-
-# For reproducibility, we we also need to set PYTHONHASHSEED=RANDOM_SEED in the environment
-random.seed(RANDOM_SEED)
-
-# set random seed for reproducibility
-params = GlobalParams()
-params.set('rng_seed', RANDOM_SEED)
 
 
 def display_known_schemas(sm: SchemaMechanism, composite_only: bool = False) -> None:

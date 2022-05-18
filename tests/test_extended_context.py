@@ -1,4 +1,6 @@
+import itertools
 import os
+from copy import deepcopy
 from pathlib import Path
 from random import sample
 from tempfile import TemporaryDirectory
@@ -6,9 +8,12 @@ from unittest import TestCase
 from unittest.mock import PropertyMock
 from unittest.mock import patch
 
+import numpy as np
+
 from schema_mechanism.core import ExtendedContext
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_EC_ITEM_STATS
+from schema_mechanism.core import SchemaSpinOffType
 from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.core import get_global_params
@@ -37,10 +42,10 @@ class TestExtendedContext(TestCase):
         params.set('ext_context.positive_correlation_threshold', 0.65)
         params.set('ext_context.negative_correlation_threshold', 0.65)
 
-        pool = ItemPool()
+        self.pool = ItemPool()
 
         for i in range(self.N_ITEMS):
-            pool.get(str(i), item_type=SymbolicItem)
+            self.pool.get(str(i), item_type=SymbolicItem)
 
         self.context = sym_state_assert('100,101')
         self.ec = ExtendedContext(suppressed_items=self.context.items)
@@ -49,12 +54,23 @@ class TestExtendedContext(TestCase):
         self.ec.register(self.obs)
 
     def test_init(self):
-        ec = ExtendedContext(self.context.items)
-        for item in ItemPool():
+        ec = ExtendedContext(suppressed_items=self.context.items)
+
+        # test: stats for all items in item pool should start as NULL_EC_ITEM_STATS
+        for item in self.pool:
             self.assertIs(NULL_EC_ITEM_STATS, ec.stats[item])
 
+        new_item = self.pool.get('NEW_ITEM')
+
+        # test: if a new item is added to the item pool it should also have a value of NULL_EC_ITEM_STATS
+        self.assertIs(NULL_EC_ITEM_STATS, ec.stats[new_item])
+
+        # test: verify that suppressed items were set properly
         for item in self.context:
             self.assertIn(item, ec.suppressed_items)
+
+        # test: initial pending max specificity should be -np.inf
+        self.assertEqual(-np.inf, ec.pending_max_specificity)
 
     def test_update(self):
         state = list(map(str, sample(range(self.N_ITEMS), k=10)))
@@ -131,6 +147,177 @@ class TestExtendedContext(TestCase):
         self.assertEqual(2, len(self.ec.relevant_items))
         self.assertSetEqual(set(sym_items('1;2')), self.ec.relevant_items)
 
+    def test_update_all_without_ec_defer_to_more_specific(self):
+        params = get_global_params()
+        features: set[SupportedFeature] = params.get('features')
+        features.remove(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+
+        success_values = [True, False]
+        selection_state_values = [
+            sym_state('1'),
+            sym_state('2'),
+            sym_state('1,2'),
+            sym_state('2,3'),
+            sym_state('1,2,3')
+        ]
+
+        loop_iterables = itertools.product(
+            success_values,
+            selection_state_values,
+        )
+
+        for success, selection_state in loop_iterables:
+            ec_before = deepcopy(self.ec)
+            self.ec.update_all(success=success, selection_state=selection_state)
+            ec_after = deepcopy(self.ec)
+
+            for item in ItemPool():
+                stats_before = ec_before.stats[item]
+                stats_after = ec_after.stats[item]
+
+                before = {
+                    'n': stats_before.n,
+                    'n_on': stats_before.n_on,
+                    'n_off': stats_before.n_off,
+                    'n_success_and_on': stats_before.n_success_and_on,
+                    'n_success_and_off': stats_before.n_success_and_off,
+                    'n_fail_and_on': stats_before.n_fail_and_on,
+                    'n_fail_and_off': stats_before.n_fail_and_off,
+                    'n_success': stats_before.n_success,
+                    'n_fail': stats_before.n_fail,
+                }
+
+                after = {
+                    'n': stats_after.n,
+                    'n_on': stats_after.n_on,
+                    'n_off': stats_after.n_off,
+                    'n_success_and_on': stats_after.n_success_and_on,
+                    'n_success_and_off': stats_after.n_success_and_off,
+                    'n_fail_and_on': stats_after.n_fail_and_on,
+                    'n_fail_and_off': stats_after.n_fail_and_off,
+                    'n_success': stats_after.n_success,
+                    'n_fail': stats_after.n_fail,
+                }
+
+                is_on = item.is_on(selection_state)
+                is_off = item.is_off(selection_state)
+
+                if success:
+                    self.assertEqual(before['n_success'] + 1, after['n_success'])
+                else:
+                    self.assertEqual(before['n_fail'] + 1, after['n_fail'])
+
+                if is_on:
+                    self.assertEqual(before['n_on'] + 1, after['n_on'])
+                elif is_off:
+                    self.assertEqual(before['n_off'] + 1, after['n_off'])
+
+                if is_on and success:
+                    self.assertEqual(before['n_success_and_on'] + 1, after['n_success_and_on'])
+                elif is_off and success:
+                    self.assertEqual(before['n_success_and_off'] + 1, after['n_success_and_off'])
+                elif is_on and not success:
+                    self.assertEqual(before['n_fail_and_on'] + 1, after['n_fail_and_on'])
+                elif is_off and not success:
+                    self.assertEqual(before['n_fail_and_off'] + 1, after['n_fail_and_off'])
+
+    def test_update_all_with_ec_defer_to_more_specific(self):
+        params = get_global_params()
+        features: set[SupportedFeature] = params.get('features')
+        features.add(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+
+        success_values = [True, False]
+        selection_state_values = [
+            sym_state('1'),
+            sym_state('2'),
+            sym_state('1,2'),
+            sym_state('2,3'),
+            sym_state('1,2,3')
+        ]
+
+        loop_iterables = itertools.product(
+            success_values,
+            selection_state_values,
+        )
+
+        for success, selection_state in loop_iterables:
+            ec_before = deepcopy(self.ec)
+            defer_to_spinoff = ec_before.defer_update_to_spin_offs(selection_state)
+
+            self.ec.update_all(success=success, selection_state=selection_state)
+            ec_after = deepcopy(self.ec)
+
+            new_relevant_items = ec_after.relevant_items.difference(ec_before.relevant_items)
+
+            for item in ItemPool():
+                stats_before = ec_before.stats[item]
+                stats_after = ec_after.stats[item]
+
+                before = {
+                    'n': stats_before.n,
+                    'n_on': stats_before.n_on,
+                    'n_off': stats_before.n_off,
+                    'n_success_and_on': stats_before.n_success_and_on,
+                    'n_success_and_off': stats_before.n_success_and_off,
+                    'n_fail_and_on': stats_before.n_fail_and_on,
+                    'n_fail_and_off': stats_before.n_fail_and_off,
+                    'n_success': stats_before.n_success,
+                    'n_fail': stats_before.n_fail,
+                }
+
+                after = {
+                    'n': stats_after.n,
+                    'n_on': stats_after.n_on,
+                    'n_off': stats_after.n_off,
+                    'n_success_and_on': stats_after.n_success_and_on,
+                    'n_success_and_off': stats_after.n_success_and_off,
+                    'n_fail_and_on': stats_after.n_fail_and_on,
+                    'n_fail_and_off': stats_after.n_fail_and_off,
+                    'n_success': stats_after.n_success,
+                    'n_fail': stats_after.n_fail,
+                }
+
+                # test: if there was a new relevant item identified, then the values of ALL stats in ALL extended
+                #     : context slots should be reset to zero
+                if new_relevant_items:
+                    self.assertTrue(all((value == 0 for value in after.values())))
+                    break
+
+                is_on = item.is_on(selection_state)
+                is_off = item.is_off(selection_state)
+
+                # test: if updates have been deferred to the spinoff schemas then the before and after stats should be
+                #     : equal
+                if defer_to_spinoff:
+                    self.assertDictEqual(before, after)
+                    break
+
+                if success:
+                    self.assertEqual(before['n_success'] + 1, after['n_success'])
+                else:
+                    self.assertEqual(before['n_fail'] + 1, after['n_fail'])
+
+                if is_on:
+                    self.assertEqual(before['n_on'] + 1, after['n_on'])
+                elif is_off:
+                    self.assertEqual(before['n_off'] + 1, after['n_off'])
+
+                if is_on and success:
+                    self.assertEqual(before['n_success_and_on'] + 1, after['n_success_and_on'])
+                elif is_off and success:
+                    self.assertEqual(before['n_success_and_off'] + 1, after['n_success_and_off'])
+                elif is_on and not success:
+                    self.assertEqual(before['n_fail_and_on'] + 1, after['n_fail_and_on'])
+                elif is_off and not success:
+                    self.assertEqual(before['n_fail_and_off'] + 1, after['n_fail_and_off'])
+
+    def test_notify_all_from_update_all(self):
+        self.ec.update_all(success=True, selection_state=sym_state('1'))
+        self.ec.update_all(success=False, selection_state=sym_state('2'))
+
+        # test: observer should have been notified of new relevant items
+        self.assertTrue(self.obs.n_received > 0)
+
     def test_defer_update_to_spin_offs(self):
         # SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA enabled
         GlobalParams().get('features').add(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
@@ -152,6 +339,32 @@ class TestExtendedContext(TestCase):
             # test: relevant items should defer updates when satisfied
             self.assertTrue(ec.defer_update_to_spin_offs(defer_state_1))
             self.assertTrue(ec.defer_update_to_spin_offs(defer_state_2))
+
+    def test_pending_max_specificity(self):
+        params = get_global_params()
+        features: set[SupportedFeature] = params.get('features')
+
+        # the EC_MOST_SPECIFIC_ON_MULTIPLE feature must be enabled for this test
+        features.add(SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE)
+
+        # removing this feature to simplify testing (otherwise, stats would revert to zero for every relevant item)
+        features.remove(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+
+        item_1, item_2 = sym_item('1'), sym_item('2')
+
+        # updating item 1 stats for testing
+        self.ec.update(item_1, on=True, success=True)
+        self.ec.update(item_1, on=False, success=False, count=9)
+
+        # updating item 2 stats for testing
+        self.ec.update(item_2, on=True, success=True)
+        self.ec.update(item_2, on=False, success=False, count=4)
+
+        item_1_specificity, item_2_specificity = self.ec.stats[item_1].specificity, self.ec.stats[item_2].specificity
+        self.assertEqual(max(item_1_specificity, item_2_specificity), self.ec.pending_max_specificity)
+
+    def test_clear_pending_relevant_items(self):
+        pass
 
     def test_register_and_unregister(self):
         observer = MockObserver()
@@ -213,7 +426,7 @@ class TestExtendedContext(TestCase):
         self.assertIn(i2, self.ec.relevant_items)
 
         # number of new relevant items SHOULD be reset to zero after notifying observers
-        self.ec.notify_all()
+        self.ec.notify_all(spin_off_type=SchemaSpinOffType.CONTEXT)
         self.assertEqual(0, len(self.ec.new_relevant_items))
 
     def test_relevant_items_2(self):

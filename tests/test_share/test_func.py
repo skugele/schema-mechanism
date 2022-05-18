@@ -1,4 +1,5 @@
 import logging
+import logging.config
 from collections import Hashable
 from copy import copy
 from pathlib import Path
@@ -12,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 def common_test_setup():
+    # configure logger
+    logging.config.fileConfig('../config/logging.conf')
+
     # clear any objects added to pools in previous test cases
     ItemPool().clear()
     SchemaPool().clear()

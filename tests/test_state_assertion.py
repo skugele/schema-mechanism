@@ -4,6 +4,7 @@ from schema_mechanism.core import StateAssertion
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
+from schema_mechanism.util import repr_str
 from test_share.test_func import common_test_setup
 from test_share.test_func import satisfies_equality_checks
 from test_share.test_func import satisfies_hash_checks
@@ -177,3 +178,13 @@ class TestStateAssertion(TestCase):
                 other=sym_state_assert('(7,8,9),'),
                 other_different_type=1.0)
         )
+
+    def test_str(self):
+        expected_str = ','.join(sorted(map(str, self.state_assertion.items)))
+        self.assertEqual(expected_str, str(self.state_assertion))
+
+    def test_repr(self):
+        attr_values = {'items': ','.join(sorted(map(str, self.state_assertion.items)))}
+
+        expected_repr = repr_str(self.state_assertion, attr_values)
+        self.assertEqual(expected_repr, repr(self.state_assertion))

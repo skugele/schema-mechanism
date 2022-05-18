@@ -55,6 +55,10 @@ class TestItemPool(TestCase):
         self.assertIsInstance(item4, SymbolicItem)
         self.assertTrue(all(item4 != other for other in [item1, item2, item3]))
 
+        # test: NotImplementedError should be raised when source is not StateElement or frozenset
+        for invalid_source in [set(), list(), dict()]:
+            self.assertRaises(NotImplementedError, lambda: pool.get(invalid_source))
+
     def test_contains(self):
         pool = ItemPool()
 

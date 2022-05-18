@@ -3,19 +3,26 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-import test_share
+from schema_mechanism.core import Action
 from schema_mechanism.core import SchemaTree
+from schema_mechanism.core import SchemaTreeNode
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_schema_tree_node
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
+from schema_mechanism.util import repr_str
+from test_share.test_func import common_test_setup
 from test_share.test_func import file_was_written
+from test_share.test_func import satisfies_equality_checks
+from test_share.test_func import satisfies_hash_checks
 
 
 class TestSchemaTree(TestCase):
     def setUp(self) -> None:
+        common_test_setup()
+
         # root
         # |-- 1
         # |   |-- 1,2
@@ -156,7 +163,10 @@ class TestSchemaTree(TestCase):
             self.assertIn(schema, tree)
 
         # test: ValueError should be raised if source and spin-offs have different actions
-        self.assertRaises(ValueError, lambda: tree.add_result_spin_offs(p2, spin_offs))
+        self.assertRaises(ValueError, lambda: tree.add_result_spin_offs(source=p2, spin_offs=spin_offs))
+
+        # test: ValueError should be raised if spin-off contains a composite result without a corresponding tree node
+        self.assertRaises(ValueError, lambda: tree.add_result_spin_offs(source=p1, spin_offs=[sym_schema('/A1/1,2,3')]))
 
     def test_add_context_spin_offs(self):
         p1 = sym_schema('/A1/')
@@ -185,6 +195,10 @@ class TestSchemaTree(TestCase):
 
         # test: ValueError should be raised if source and spin-offs have different actions
         self.assertRaises(ValueError, lambda: tree.add_context_spin_offs(p2, spin_offs))
+
+        # test: ValueError should be raised if source node does not exist in tree
+        self.assertRaises(ValueError, lambda: tree.add_context_spin_offs(
+            source=sym_schema('X,Y/A2/B,C'), spin_offs=[sym_schema('X,Y,Z/A2/B,C')]))
 
     def test_add_spin_offs(self):
         # more realistic example that interleaves result and context spin-offs
@@ -262,6 +276,7 @@ class TestSchemaTree(TestCase):
         for schema in [s1_r1_c1_2, s1_r2_c1_3, s2_r1_c1_2]:
             self.assertEqual(schema.context, tree.get(schema.context.flatten()).context)
 
+    # noinspection PyTypeChecker
     def test_add_bare_schemas(self):
         p1 = sym_schema('/A1/')
         p2 = sym_schema('/A2/')
@@ -291,19 +306,30 @@ class TestSchemaTree(TestCase):
         for s in new_primitives:
             self.assertIn(s, tree)
 
-    def test_is_valid_node_1(self):
+        # test: a ValueError should be raised if argument is None or empty collection
+        self.assertRaises(ValueError, lambda: tree.add_bare_schemas(schemas=[]))
+        self.assertRaises(ValueError, lambda: tree.add_bare_schemas(schemas=None))
+
+    def test_is_valid_node_check_default_test_tree_valid(self):
         # sanity check: all nodes in the test tree should be valid
         for node in self.tree:
             self.assertTrue(self.tree.is_valid_node(node))
 
-    def test_is_valid_node_2(self):
+    def test_is_valid_node_check_for_unattached_node(self):
         # test: unattached tree node should be invalid
         s_unattached = sym_schema_tree_node('7,')
         self.assertFalse(self.tree.is_valid_node(s_unattached))
 
-    def test_is_valid_node_3(self):
-        # test: composite results must also exist as contexts in tree
+        # test: should raise ValueError if raise_on_invalid=True
+        self.assertRaises(
+            ValueError,
+            lambda: self.tree.is_valid_node(
+                node=s_unattached,
+                raise_on_invalid=True)
+        )
 
+    def test_is_valid_node_check_valid_composite_results(self):
+        # test: composite results must also exist as contexts in tree
         p1 = sym_schema('/A1/')
         p2_r1 = sym_schema('/A1/1,')
         s1 = sym_schema('1,/A1/1,')
@@ -323,7 +349,7 @@ class TestSchemaTree(TestCase):
         tree.add_context_spin_offs(p1, [s3])
         self.assertTrue(tree.is_valid_node(tree.get(s3.context.flatten())))
 
-    def test_is_valid_node_4(self):
+    def test_is_valid_node_check_children_have_all_parent_item_assertions(self):
         # test: children should have all of the context item assertion of their parents
         p1 = sym_schema('/A1/')
         p1_r1 = sym_schema('/A1/1,')
@@ -339,7 +365,15 @@ class TestSchemaTree(TestCase):
 
         self.assertFalse(tree.is_valid_node(tree.get(s_illegal_context.context.flatten())))
 
-    def test_is_valid_node_5(self):
+        # test: should raise ValueError if raise_on_invalid=True
+        self.assertRaises(
+            ValueError,
+            lambda: tree.is_valid_node(
+                node=tree.get(s_illegal_context.context.flatten()),
+                raise_on_invalid=True)
+        )
+
+    def test_is_valid_node_check_correct_depth(self):
         # test: nodes should have a depth equal to the number of item assertions in their context
         p1 = sym_schema('/A1/')
         p1_r1 = sym_schema('/A1/1,')
@@ -358,6 +392,165 @@ class TestSchemaTree(TestCase):
         tree.add_context_spin_offs(s2, [s3])
 
         self.assertFalse(tree.is_valid_node(tree.get(s3.context.flatten())))
+
+        # test: should raise ValueError if raise_on_invalid=True
+        self.assertRaises(
+            ValueError,
+            lambda: tree.is_valid_node(
+                node=tree.get(s3.context.flatten()),
+                raise_on_invalid=True)
+        )
+
+    def test_is_valid_node_check_exactly_one_additional_item_assertion_in_child_node(self):
+        # test: nodes' contexts should contain exactly one item assertion not in parent's context
+        s1 = sym_schema('/A1/')
+        s2 = sym_schema('/A1/1,')
+        s3 = sym_schema('2,/A1/1,')
+        s4 = sym_schema('2,3,4/A1/1,')
+
+        tree = SchemaTree(schemas=[s1])
+        tree.add_result_spin_offs(source=s1, spin_offs=[s2])
+        tree.add_context_spin_offs(source=s2, spin_offs=[s3])
+
+        # this add should have generated an invalid node
+        tree.add_context_spin_offs(source=s3, spin_offs=[s4])
+
+        self.assertFalse(tree.is_valid_node(tree.get(s4.context.flatten())))
+
+        # test: should raise ValueError if raise_on_invalid=True
+        self.assertRaises(
+            ValueError,
+            lambda: tree.is_valid_node(
+                node=tree.get(s4.context.flatten()),
+                raise_on_invalid=True)
+        )
+
+    def test_is_valid_node_check_item_assertions_identical_across_all_schemas_in_node(self):
+        # test: contexts should be same across all schemas in node's schemas_satisfied_by and equal to node's context
+
+        # scenario 1 - root node invalid
+        s1 = sym_schema('/A1/')
+        tree = SchemaTree(schemas=[s1])
+
+        node = tree.get(s1.context.flatten())
+        node.schemas_satisfied_by = [
+            sym_schema('1,/A1/2,')
+        ]
+
+        self.assertFalse(tree.is_valid_node(node))
+
+        # test: should raise ValueError if raise_on_invalid=True
+        self.assertRaises(
+            ValueError,
+            lambda: tree.is_valid_node(
+                node=node,
+                raise_on_invalid=True)
+        )
+
+        # scenario 2 - non-root node invalid
+        s1 = sym_schema('/A1/')
+
+        tree = SchemaTree(schemas=[s1])
+
+        s2 = sym_schema('/A1/1,')
+        tree.add_result_spin_offs(source=s1, spin_offs=[s2])
+
+        s3 = sym_schema('2,/A1/1,')
+        tree.add_context_spin_offs(source=s2, spin_offs=[s3])
+
+        node = tree.get(s3.context)
+
+        # adding invalid node
+        s4 = sym_schema('3,/A1/1,')
+        node.schemas_satisfied_by = [s4]
+
+        self.assertFalse(tree.is_valid_node(node))
+
+        # test: should raise ValueError if raise_on_invalid=True
+        self.assertRaises(
+            ValueError,
+            lambda: tree.is_valid_node(
+                node=node,
+                raise_on_invalid=True)
+        )
+
+        # scenario 3 - schemas have same context assertions, but are different from node's context
+        s1 = sym_schema('/A1/')
+
+        tree = SchemaTree(schemas=[s1])
+
+        s2 = sym_schema('/A1/1,')
+        tree.add_result_spin_offs(source=s1, spin_offs=[s2])
+
+        s3 = sym_schema('/A1/2,')
+        tree.add_result_spin_offs(source=s1, spin_offs=[s3])
+
+        s4 = sym_schema('2,/A1/1,')
+        s5 = sym_schema('2,/A1/1,2')
+
+        node = tree.get(s3.context)
+        node.schemas_satisfied_by.update({s4, s5})
+
+        self.assertFalse(tree.is_valid_node(node))
+
+        # test: should raise ValueError if raise_on_invalid=True
+        self.assertRaises(
+            ValueError,
+            lambda: tree.is_valid_node(
+                node=node,
+                raise_on_invalid=True)
+        )
+
+    def test_is_valid_composite_results_must_exist_as_contexts_in_tree(self):
+        s1 = sym_schema('/A1/')
+        tree = SchemaTree(schemas=[s1])
+
+        node = tree.get(s1.context)
+        node.schemas_satisfied_by.add(sym_schema('/A1/1,2'))
+
+        self.assertFalse(tree.is_valid_node(node))
+
+        # test: should raise ValueError if raise_on_invalid=True
+        self.assertRaises(
+            ValueError,
+            lambda: tree.is_valid_node(
+                node=node,
+                raise_on_invalid=True)
+        )
+
+    def test_is_valid_node_check_schemas_would_satisfy_have_satisfying_results(self):
+        s1 = sym_schema('/A1/')
+        tree = SchemaTree(schemas=[s1])
+
+        s2 = sym_schema('/A1/1,')
+        tree.add_result_spin_offs(source=s1, spin_offs=[s2])
+
+        s3 = sym_schema('2,/A1/1,')
+        tree.add_context_spin_offs(source=s2, spin_offs=[s3])
+
+        node = tree.get(s3.context)
+
+        # adds an invalid schema (does not satisfy the node's context)
+        node.schemas_would_satisfy.add(sym_schema('/A1/1,'))
+
+        self.assertFalse(tree.is_valid_node(node))
+
+        # test: should raise ValueError if raise_on_invalid=True
+        self.assertRaises(
+            ValueError,
+            lambda: tree.is_valid_node(
+                node=node,
+                raise_on_invalid=True)
+        )
+
+    # 6. results should be identical across all contained schemas, and equal to node's context
+    #             if not node_context_asserts.issubset(schema_result_asserts):
+    #                 if raise_on_invalid:
+    #                     raise ValueError('invalid node: schemas in schemas_would_satisfy must have result = node context')
+    #                 return False
+    # SchemaTree.is_valid_node
+    # 	4. test case where composite results do not exist as contexts in the tree
+    # 	5. test case where results are not identical across all contained schemas, and equal to node's context
 
     def test_validate(self):
         # all nodes in tree should be valid
@@ -394,9 +587,54 @@ class TestSchemaTree(TestCase):
         node_missing = sym_schema_tree_node('1,19,')
         self.assertNotIn(node_missing, self.tree)
 
-    @test_share.string_test
+        # test: False should be returned for non-schema, non-node arguments
+        self.assertNotIn(None, self.tree)
+        self.assertNotIn(Action(), self.tree)
+
+    def test_height(self):
+        # test: height of tree with only bare nodes should be zero
+        schemas = [sym_schema('/A1/'), sym_schema('/A2/')]
+        tree = SchemaTree(schemas=schemas)
+        self.assertEqual(0, tree.height)
+
+        # test: height of tree with only bare nodes and single-item-assertion result nodes should be 1
+        tree.add_result_spin_offs(source=sym_schema('/A1/'), spin_offs=[sym_schema('/A1/1,')])
+        tree.add_result_spin_offs(source=sym_schema('/A2/'), spin_offs=[sym_schema('/A2/2,')])
+
+        self.assertEqual(1, tree.height)
+
+        # test: height of tree should remain 1 after adding single-item-assertion context nodes
+        tree.add_context_spin_offs(source=sym_schema('/A1/1,'), spin_offs=[sym_schema('3,/A1/1,')])
+        tree.add_context_spin_offs(source=sym_schema('/A2/2,'), spin_offs=[sym_schema('4,/A2/2,')])
+
+        self.assertEqual(1, tree.height)
+
+        # test: height of tree should increase to 2 after adding two-item assertion in context nodes
+        tree.add_context_spin_offs(source=sym_schema('3,/A1/1,'), spin_offs=[sym_schema('1,3,/A1/1,')])
+        tree.add_context_spin_offs(source=sym_schema('4,/A2/2,'), spin_offs=[sym_schema('1,4,/A2/2,')])
+
+        self.assertEqual(2, tree.height)
+
+        # test: larger example using tree created in setUp (height should be 5)
+        self.assertEqual(5, self.tree.height)
+
     def test_str(self):
-        print(self.tree)
+        tree_str = str(self.tree)
+        for node in self.tree:
+            node_str = str(node)
+
+            # test: string representations for nodes in tree SHOULD be sub-strings of tree string representation
+            self.assertIn(node_str, tree_str)
+
+        # test: string representations for nodes NOT in tree SHOULD NOT be in tree string
+        node = sym_schema_tree_node('J,K,L')
+        self.assertNotIn(str(node), tree_str)
+
+    def test_eq(self):
+        tree = self.tree
+        other = SchemaTree(schemas=[sym_schema('/A1/'), sym_schema('/A2/')])
+
+        self.assertTrue(satisfies_equality_checks(obj=tree, other=other, other_different_type=1.0))
 
     def test_find_all_satisfied(self):
 
@@ -467,3 +705,63 @@ class TestSchemaTree(TestCase):
             recovered: SchemaTree = deserialize(path)
 
             self.assertEqual(self.tree, recovered)
+
+
+class TestSchemaTreeNode(TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+        self.node = sym_schema_tree_node('1,2')
+
+    def test_init(self):
+        context = sym_state_assert('1,2,3')
+        label = 'custom label'
+
+        node = SchemaTreeNode(
+            context=context,
+            label=label)
+
+        # test: attribute values should be properly set by initializer
+        self.assertEqual(context, node.context)
+        self.assertEqual(label, node.label)
+
+        # test: schemas satisfied-by and would-satisfy should be initialized to empty sets
+        self.assertSetEqual(set(), node.schemas_satisfied_by)
+        self.assertSetEqual(set(), node.schemas_would_satisfy)
+
+    def test_schemas_satisfied_by(self):
+        schemas_satisfied_by = {
+            sym_schema('1,/A1/2,'),
+            sym_schema('2,/A1/3,'),
+            sym_schema('1,2/A1/3,4'),
+            sym_schema('1,2/A1/5,'),
+        }
+
+        self.node.schemas_satisfied_by = schemas_satisfied_by
+        self.assertSetEqual(schemas_satisfied_by, self.node.schemas_satisfied_by)
+
+    def test_schemas_would_satisfy(self):
+        schemas_would_satisfy = {
+            sym_schema('1,/A1/1,2'),
+            sym_schema('2,/A1/1,2,3'),
+            sym_schema('3,4/A1/1,2'),
+        }
+
+        self.node.schemas_would_satisfy = schemas_would_satisfy
+        self.assertSetEqual(schemas_would_satisfy, self.node.schemas_would_satisfy)
+
+    def test_equal(self):
+        node = sym_schema_tree_node('1,2,3')
+        other = sym_schema_tree_node('4,5,6')
+
+        self.assertTrue(satisfies_equality_checks(obj=node, other=other, other_different_type=1.0))
+
+    def test_repr(self):
+        node = sym_schema_tree_node('1,2,3')
+        attr_values = {'context': node.context,
+                       'label': node.label}
+        self.assertEqual(repr_str(node, attr_values), repr(node))
+
+    def test_hash(self):
+        node = sym_schema_tree_node('1,2,3')
+        self.assertTrue(satisfies_hash_checks(obj=node))
