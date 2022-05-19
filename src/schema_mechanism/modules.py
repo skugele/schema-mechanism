@@ -29,7 +29,7 @@ from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
-from schema_mechanism.core import calc_primitive_value
+from schema_mechanism.core import calc_value
 from schema_mechanism.core import default_action_trace
 from schema_mechanism.core import default_delegated_value_helper
 from schema_mechanism.core import default_global_params
@@ -306,7 +306,7 @@ class SchemaMemory(Observer):
                 # TODO: not tractable for most environments.
                 params = get_global_params()
                 min_adv = params.get('composite_actions.learn.min_baseline_advantage')
-                if calc_primitive_value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
+                if calc_value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
                     continue
 
                 logger.debug(f'Novel result detected: {spin_off.result}. Creating new composite action.')
