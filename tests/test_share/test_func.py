@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def common_test_setup():
     # configure logger
-    logging.config.fileConfig('../config/logging.conf')
+    logging.config.fileConfig('config/logging.conf')
 
     # clear any objects added to pools in previous test cases
     ItemPool().clear()
