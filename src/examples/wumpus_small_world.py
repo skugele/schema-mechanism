@@ -46,13 +46,15 @@ logger = logging.getLogger('examples.environments.wumpus_small_world')
 set_random_seed(RANDOM_SEED)
 
 MAX_EPISODES = 5000
-MAX_STEPS = 500
+MAX_STEPS = 50
 
 
 def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     primitive_items = [
         sym_item('EVENT[AGENT ESCAPED]', primitive_value=1.0),
+        sym_item('AGENT.HAS[GOLD]', primitive_value=0.5),
     ]
+
     bare_schemas = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in env.actions]
     schema_memory = SchemaMemory(bare_schemas)
     schema_selection = SchemaSelection(
@@ -76,7 +78,7 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     )
 
     delegated_value_helper = EligibilityTraceDelegatedValueHelper(
-        discount_factor=1.0,
+        discount_factor=0.5,
         eligibility_trace=ReplacingTrace(
             active_value=1.0,
             decay_strategy=GeometricDecayStrategy(rate=0.1)
@@ -93,13 +95,13 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     )
 
     sm.params.set('backward_chains.max_len', 3)
-    sm.params.set('backward_chains.update_frequency', 0.05)
-    sm.params.set('composite_actions.learn.min_baseline_advantage', 0.25)
+    sm.params.set('backward_chains.update_frequency', 0.01)
+    sm.params.set('composite_actions.learn.min_baseline_advantage', 0.5)
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
     sm.params.set('ext_context.positive_correlation_threshold', 0.8)
     sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
     sm.params.set('ext_result.positive_correlation_threshold', 0.8)
-    sm.params.set('learning_rate', 0.01)
+    sm.params.set('learning_rate', 0.1)
     sm.params.set('reliability_threshold', 0.7)
 
     logger.info(sm.params)
@@ -129,7 +131,7 @@ def create_world() -> WumpusWorldMDP:
     wwwwww
     w....w
     w.ww.w
-    w...ew
+    wg..ew
     wwwwww
     """
     # world = """
@@ -210,7 +212,7 @@ def run() -> None:
             if is_paused():
                 display_item_values()
                 display_known_schemas(sm)
-                display_schema_info(sym_schema(f'/USE[EXIT]/'))
+                # display_schema_info(sym_schema(f'/USE[EXIT]/'))
                 if episode > 1:
                     display_performance_summary(max_steps, steps_in_episode)
 
