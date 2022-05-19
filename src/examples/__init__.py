@@ -7,6 +7,7 @@ from pynput import keyboard
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ReadOnlyItemPool
 from schema_mechanism.core import Schema
+from schema_mechanism.core import get_global_stats
 from schema_mechanism.modules import SchemaMechanism
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,8 @@ def display_components(schema: Schema) -> None:
 
 
 def display_item_values() -> None:
-    logger.info(f'baseline value: {GlobalStats().baseline_value}')
+    global_stats: GlobalStats = get_global_stats()
+    logger.info(f'baseline value: {global_stats.baseline_value}')
 
     pool = ReadOnlyItemPool()
     logger.info(f'known items: (n = {len(pool)})')
