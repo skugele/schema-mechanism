@@ -62,9 +62,8 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
                 TotalPrimitiveValueEvaluationStrategy(),
                 TotalDelegatedValueEvaluationStrategy(),
                 HabituationEvaluationStrategy(scaling_strategy=SigmoidScalingStrategy()),
-                ReliabilityEvaluationStrategy(max_penalty=1.0),
-                EpsilonGreedyEvaluationStrategy(epsilon=0.999,
-                                                epsilon_min=0.05,
+                ReliabilityEvaluationStrategy(max_penalty=0.8),
+                EpsilonGreedyEvaluationStrategy(epsilon=0.999, epsilon_min=0.05,
                                                 decay_strategy=ExponentialDecayStrategy(
                                                     rate=1e-4,
                                                     initial=1.0,
@@ -93,15 +92,15 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
         global_stats=GlobalStats()
     )
 
-    sm.params.set('backward_chains.max_len', 5)
-    sm.params.set('backward_chains.update_frequency', 0.01)
-    sm.params.set('composite_actions.learn.min_baseline_advantage', 0.001)
+    sm.params.set('backward_chains.max_len', 3)
+    sm.params.set('backward_chains.update_frequency', 0.05)
+    sm.params.set('composite_actions.learn.min_baseline_advantage', 0.25)
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
-    sm.params.set('ext_context.positive_correlation_threshold', 0.95)
+    sm.params.set('ext_context.positive_correlation_threshold', 0.8)
     sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
-    sm.params.set('ext_result.positive_correlation_threshold', 0.95)
+    sm.params.set('ext_result.positive_correlation_threshold', 0.8)
     sm.params.set('learning_rate', 0.01)
-    sm.params.set('reliability_threshold', 0.8)
+    sm.params.set('reliability_threshold', 0.7)
 
     logger.info(sm.params)
 
@@ -257,6 +256,6 @@ def display_performance_summary(max_steps: int, steps_in_episode: Iterable[int])
 if __name__ == "__main__":
     # TODO: Add code to load a serialized instance that was saved to disk
     # configure logger
-    logging.config.fileConfig('../../config/logging.conf')
+    logging.config.fileConfig('config/logging.conf')
 
     run()

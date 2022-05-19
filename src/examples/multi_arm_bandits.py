@@ -21,13 +21,16 @@ from schema_mechanism.share import rng
 from schema_mechanism.share import set_random_seed
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
-from schema_mechanism.strategies.decay import GeometricDecayStrategy
+from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
+from schema_mechanism.strategies.evaluation import InstrumentalValueEvaluationStrategy
+from schema_mechanism.strategies.evaluation import PendingFocusEvaluationStrategy
 from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
+from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
 from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.util import Observable
 
@@ -38,7 +41,7 @@ set_random_seed(RANDOM_SEED)
 
 # global constants
 N_MACHINES = 25
-N_STEPS = 15000
+N_STEPS = 15_000
 
 
 class Machine:
@@ -80,7 +83,7 @@ class BanditEnvironment(Observable):
         self._currency_to_play = currency_to_play
         self._currency_on_win = currency_on_win
 
-        self._actions = [Action(a_str) for a_str in ['deposit', 'stand', 'play', 'withdraw']]
+        self._actions = [Action(a_str) for a_str in ['deposit', 'stand', 'play']]
 
         self._sit_actions = [Action(f'sit({m_})') for m_ in self._machines]
         self._actions.extend(self._sit_actions)
@@ -90,7 +93,6 @@ class BanditEnvironment(Observable):
             sym_state('L'),  # agent's last play lost
             sym_state('S'),  # agent is standing
             sym_state('P'),  # money is deposited in current machine
-            sym_state('B'),  # agent is broke (not enough money to play),
         ]
 
         # add machine related states
@@ -238,17 +240,33 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     bare_schemas = [Schema(action=a) for a in env.actions]
     schema_memory = SchemaMemory(bare_schemas)
     schema_selection = SchemaSelection(
-        select_strategy=RandomizeBestSelectionStrategy(),
+        select_strategy=RandomizeBestSelectionStrategy(
+            match=AbsoluteDiffMatchStrategy(max_diff=0.01)),
         evaluation_strategy=CompositeEvaluationStrategy(
             strategies=[
                 TotalPrimitiveValueEvaluationStrategy(),
                 TotalDelegatedValueEvaluationStrategy(),
-                ReliabilityEvaluationStrategy(max_penalty=1.0),
-                HabituationEvaluationStrategy(scaling_strategy=SigmoidScalingStrategy()),
-                EpsilonGreedyEvaluationStrategy(epsilon=0.999,
-                                                epsilon_min=0.05,
-                                                decay_strategy=GeometricDecayStrategy(rate=0.9999))
-            ]
+                InstrumentalValueEvaluationStrategy(),
+                PendingFocusEvaluationStrategy(
+                    max_value=1.0,
+                    decay_strategy=ExponentialDecayStrategy(rate=0.1, minimum=-1.0)
+                ),
+                ReliabilityEvaluationStrategy(),
+                HabituationEvaluationStrategy(
+                    scaling_strategy=SigmoidScalingStrategy()
+                ),
+                EpsilonGreedyEvaluationStrategy(
+                    epsilon=0.9999,
+                    epsilon_min=0.1,
+                    decay_strategy=ExponentialDecayStrategy(
+                        rate=1.0e-4,
+                        initial=1.0,
+                        minimum=0.0
+                    )
+                ),
+            ],
+            weights=[0.1, 0.4, 0.05, 0.05, 0.1, 0.15, 0.15],
+            # post_process=[display_values, display_minmax]
         )
     )
 
@@ -259,10 +277,10 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     )
 
     sm.params.set('backward_chains.update_frequency', 0.01)
-    sm.params.set('backward_chains.max_len', 3)
-    sm.params.set('learning_rate', 0.01)
-    sm.params.set('reliability_threshold', 0.6)
-    sm.params.set('composite_actions.learn.min_baseline_advantage', 1.0)
+    sm.params.set('backward_chains.max_len', 5)
+    sm.params.set('learning_rate', 0.2)
+    sm.params.set('reliability_threshold', 0.8)
+    sm.params.set('composite_actions.learn.min_baseline_advantage', 0.1)
 
     # item correlation test used for determining relevance of extended context items
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
@@ -353,6 +371,6 @@ def display_machine_info(machines):
 
 if __name__ == '__main__':
     # configure logger
-    logging.config.fileConfig('../../config/logging.conf')
+    logging.config.fileConfig('config/logging.conf')
 
     run()
