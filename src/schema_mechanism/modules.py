@@ -29,7 +29,7 @@ from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
-from schema_mechanism.core import calc_value
+from schema_mechanism.core import advantage
 from schema_mechanism.core import default_action_trace
 from schema_mechanism.core import default_delegated_value_helper
 from schema_mechanism.core import default_global_params
@@ -200,12 +200,6 @@ class SchemaMemory(Observer):
 
         return [schema for schema in satisfied if schema.is_applicable(state)]
 
-    def receive(self, **kwargs) -> None:
-        source: Schema = kwargs['source']
-
-        if isinstance(source, Schema):
-            self._receive_from_schema(schema=source, **kwargs)
-
     def backward_chains(self,
                         goal_state: StateAssertion,
                         max_len: Optional[int] = None,
@@ -258,29 +252,43 @@ class SchemaMemory(Observer):
             chains.extend(more_chains)
         return chains
 
+    def receive(self, source: Schema, spin_off_type: SchemaSpinOffType, relevant_items: Collection[Item]) -> None:
+        """ Receives a message from an observed schema indicating that one or more relevant items were detected.
+
+        This method is invoked by a schema to indicate that one or more relevant items were detected. Spin-off schemas
+        of the requested spin-off type will be created for these items and added to SchemaMemory.
+
+        Note that this method is used in the implementation of the Observer Design Pattern: SchemaMemory is an Observer
+        of a set of Schemas (i.e., Observables).
+
+        :param source: the schema invoking the receive method
+        :param spin_off_type: the requested spin-off type
+        :param relevant_items: a collection of new, relevant items detected by the source
+
+        :return: None
+        """
+        if not relevant_items:
+            raise ValueError('Relevant items cannot be empty.')
+
+        spin_offs: frozenset[Schema] = frozenset(
+            [create_spin_off(schema=source, spin_off_type=spin_off_type, item=item) for item in relevant_items]
+        )
+
+        for spin_off in spin_offs:
+            # register listener for spin-off
+            spin_off.register(self)
+
+            # add new composite action (if necessary)
+            if self._new_composite_action_needed(source=source, spin_off=spin_off, spin_off_type=spin_off_type):
+                self._create_new_composite_action(goal_state=spin_off.result)
+
+        self._schema_tree.add(source=source, spin_offs=spin_offs, spin_off_type=spin_off_type)
+
     def is_novel_result(self, result: StateAssertion) -> bool:
         return not any({result == s.result for s in self._schema_tree.root.schemas_satisfied_by})
 
-    # TODO: add arguments for spin_off_type and relevant_items
-    def _receive_from_schema(self, schema: Schema, **kwargs) -> None:
-        spin_off_type: SchemaSpinOffType = kwargs['spin_off_type']
-        relevant_items: Collection[Item] = kwargs['relevant_items']
-
-        spin_offs = frozenset([create_spin_off(schema, spin_off_type, ia) for ia in relevant_items])
-
-        if schema.is_bare() and (spin_off_type is SchemaSpinOffType.RESULT):
-            self._create_composite_action_for_novel_spin_off_results(spin_offs)
-
-        # register listeners for spin-offs
-        for s in spin_offs:
-            s.register(self)
-
-        logger.debug(f'creating spin-offs for schema {str(schema)}: {",".join([str(s) for s in spin_offs])}')
-
-        self._schema_tree.add(schema, spin_offs, spin_off_type)
-
-    def _create_composite_action_for_novel_spin_off_results(self, result_spin_offs: frozenset[Schema]) -> None:
-        """ Creates new composite actions and bare schemas for novel results of result spin-offs.
+    def _new_composite_action_needed(self, source: Schema, spin_off: Schema, spin_off_type: SchemaSpinOffType) -> bool:
+        """ Returns whether a new composite action is needed.
 
         "Whenever a bare schema spawns a spinoff schema, the mechanism determines whether the new schema's result is
          novel, as opposed to its already appearing as the result component of some other schema. If the result is
@@ -289,40 +297,53 @@ class SchemaMemory(Observer):
          that schema's extended result then can discover effects of achieving the action's goal state"
              (See Drescher 1991, p. 90)
 
-        :param result_spin_offs: a set of result spin-off schemas
+        Note: Composite actions will only be generated if the CompositeAction feature is enabled and the "advantage"
+        (value - baseline) of the spin_off_schema's result is sufficient. The minimum advantage is determined by the
+        global parameter composite_actions.learn.min_baseline_advantage.
+
+        :param source: the schema from which this spin-off schema originated
+        :param spin_off: the spin-off schema
+        :param spin_off_type: the spin-off type the source used to generate this spin-off schema
+
+        :return: True if a new composite action is needed; False otherwise.
+        """
+        min_advantage = get_global_params().get('composite_actions.learn.min_baseline_advantage')
+
+        return all((
+            is_feature_enabled(SupportedFeature.COMPOSITE_ACTIONS),
+            source.is_bare(),
+            spin_off_type is SchemaSpinOffType.RESULT,
+            self.is_novel_result(spin_off.result),
+
+            # TODO: There must be a better way to limit composite action creation to high value states. This
+            # TODO: solution is problematic because the result state's value will fluctuate over time, and
+            # TODO: this will permanently prevent the creation of a composite action if the result state
+            # TODO: is discovered very early. Note that allowing composite actions for all result states is
+            # TODO: not tractable for most environments.
+            advantage(spin_off.result) > min_advantage
+        ))
+
+    def _create_new_composite_action(self, goal_state: StateAssertion) -> None:
+        """ Creates a new composite action and bare schema for this goal state.
+
+        :param goal_state: the goal state for the new composite action
 
         :return: None
         """
-        if not is_feature_enabled(SupportedFeature.COMPOSITE_ACTIONS):
-            return
+        logger.debug(f'Creating new composite action for spin-off\'s with goal state: {goal_state}')
 
-        for spin_off in result_spin_offs:
-            if self.is_novel_result(spin_off.result):
+        # creates and initializes a new composite action
+        ca = CompositeAction(goal_state=goal_state)
+        ca.controller.update(self.backward_chains(ca.goal_state))
 
-                # TODO: There must be a better way to limit composite action creation to high value states. This
-                # TODO: solution is problematic because the result state's value will fluctuate over time, and
-                # TODO: this will permanently prevent the creation of a composite action if the result state
-                # TODO: is discovered very early. Note that allowing composite actions for all result states is
-                # TODO: not tractable for most environments.
-                params = get_global_params()
-                min_adv = params.get('composite_actions.learn.min_baseline_advantage')
-                if calc_value(spin_off.result.as_state()) < GlobalStats().baseline_value + min_adv:
-                    continue
+        # add composite action to action trace
+        action_trace: Trace[Action] = get_action_trace()
+        action_trace.add([ca])
 
-                logger.debug(f'Novel result detected: {spin_off.result}. Creating new composite action.')
-
-                # creates and initializes a new composite action
-                ca = CompositeAction(goal_state=spin_off.result)
-                ca.controller.update(self.backward_chains(ca.goal_state))
-
-                action_trace: Trace[Action] = get_action_trace()
-                action_trace.add([ca])
-
-                # adds a new bare schema for the new composite action
-                ca_schema = SchemaPool().get(SchemaUniqueKey(action=ca))
-                ca_schema.register(self)
-
-                self._schema_tree.add_bare_schemas([ca_schema])
+        # adds a new bare schema for the new composite action
+        ca_schema = SchemaPool().get(SchemaUniqueKey(action=ca))
+        ca_schema.register(self)
+        self._schema_tree.add_bare_schemas([ca_schema])
 
 
 def schema_succeeded(applicable: bool, activated: bool, satisfied: bool) -> bool:
@@ -650,11 +671,11 @@ class SchemaMechanism:
         """
         return self._stats
 
-    def select(self, state: State, **kwargs) -> SelectionDetails:
+    def select(self, state: State, **_kwargs) -> SelectionDetails:
         applicable_schemas = self.schema_memory.all_applicable(state)
         return self.schema_selection.select(applicable_schemas, state)
 
-    def learn(self, selection_details: SelectionDetails, result_state: State, **kwargs) -> None:
+    def learn(self, selection_details: SelectionDetails, result_state: State, **_kwargs) -> None:
         self.schema_memory.update_all(selection_details=selection_details, result_state=result_state)
         self.update(result_state, selection_details)
 

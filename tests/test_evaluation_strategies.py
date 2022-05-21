@@ -19,12 +19,15 @@ from schema_mechanism.core import ItemPool
 from schema_mechanism.core import Schema
 from schema_mechanism.core import calc_delegated_value
 from schema_mechanism.core import calc_primitive_value
+from schema_mechanism.core import get_action_trace
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.share import GlobalParams
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
 from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
@@ -41,6 +44,7 @@ from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.strategies.trace import AccumulatingTrace
 from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import equal_weights
+from schema_mechanism.util import repr_str
 from test_share import disable_test
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSchema
@@ -98,6 +102,9 @@ class TestCommon(TestCase):
         ]
 
         self.composite_action_schema = sym_schema('X,/X,Y/A,B')
+        self.composite_action_schema.action.controller.update([
+            Chain([sym_schema('A,/CA1/B,'), sym_schema('B,/CA2/C,'), sym_schema('C,/CA3/X,Y')])
+        ])
 
         # sanity check: composite action schema should have a composite action
         self.assertTrue(self.composite_action_schema.action.is_composite())
@@ -105,8 +112,14 @@ class TestCommon(TestCase):
         self.schemas = [
             *self.simple_result_schemas,
             *self.composite_result_schemas,
-            self.composite_action_schema
+            self.composite_action_schema,
+            *self.composite_action_schema.action.controller.components,
         ]
+
+        self.actions = [schema.action for schema in self.schemas]
+        self.action_trace = get_action_trace()
+        self.action_trace.clear()
+        self.action_trace.update(self.actions)
 
         self.simple_items: list[Item] = [self.item_a, self.item_b, self.item_c]
 
@@ -128,6 +141,7 @@ class TestCommon(TestCase):
             self.assertEqual(length, len(strategy(schemas=self.schemas[:length], pending=None)))
 
     def assert_correctly_invokes_post_process_callables(self, strategy: EvaluationStrategy):
+        """ NOTE: The current implementation of this method only works if strategies are idempotent! """
         values = strategy(schemas=self.schemas, pending=self.composite_action_schema)
 
         # mocking post-process callables
@@ -203,6 +217,10 @@ class TestNoOpEvaluationStrategy(TestCommon):
                 np.zeros_like(self.schemas, dtype=np.float64),
                 self.strategy.values(self.schemas, pending=self.composite_action_schema)))
 
+    def test_repr(self):
+        expected_str = repr_str(obj=self.strategy, attr_values=dict())
+        self.assertEqual(expected_str, repr(self.strategy))
+
 
 class TestTotalPrimitiveValueEvaluationStrategy(TestCommon):
     def setUp(self) -> None:
@@ -227,6 +245,10 @@ class TestTotalPrimitiveValueEvaluationStrategy(TestCommon):
             np.array([sum(item.primitive_value for item in schema.result.items) for schema in self.schemas])
         )
         np.testing.assert_array_equal(expected_values, actual_values)
+
+    def test_repr(self):
+        expected_str = repr_str(obj=self.strategy, attr_values=dict())
+        self.assertEqual(expected_str, repr(self.strategy))
 
 
 class TestTotalDelegatedValueEvaluationStrategy(TestCommon):
@@ -253,6 +275,10 @@ class TestTotalDelegatedValueEvaluationStrategy(TestCommon):
             np.array([sum(item.delegated_value for item in schema.result.items) for schema in self.schemas])
         )
         np.testing.assert_array_equal(expected_values, actual_values)
+
+    def test_repr(self):
+        expected_str = repr_str(obj=self.strategy, attr_values=dict())
+        self.assertEqual(expected_str, repr(self.strategy))
 
 
 class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
@@ -282,6 +308,10 @@ class TestMaxDelegatedValueEvaluationStrategy(TestCommon):
             ])
         )
         np.testing.assert_array_equal(expected_values, actual_values)
+
+    def test_repr(self):
+        expected_str = repr_str(obj=self.strategy, attr_values=dict())
+        self.assertEqual(expected_str, repr(self.strategy))
 
 
 class TestInstrumentalValueEvaluationStrategy(TestCommon):
@@ -423,6 +453,10 @@ class TestInstrumentalValueEvaluationStrategy(TestCommon):
 
         self.assertTrue(np.allclose(expected_result, actual_result))
 
+    def test_repr(self):
+        expected_str = repr_str(obj=self.strategy, attr_values=dict())
+        self.assertEqual(expected_str, repr(self.strategy))
+
 
 class TestPendingFocusEvaluationStrategy(TestCommon):
     def setUp(self) -> None:
@@ -531,6 +565,27 @@ class TestPendingFocusEvaluationStrategy(TestCommon):
             new_values = self.strategy.values(schemas=pending_components, pending=pending)
             np.testing.assert_array_less(new_values, old_values)
 
+    def test_repr(self):
+        attr_values = {
+            'max_value': self.strategy.max_value,
+            'decay_strategy': self.strategy.decay_strategy
+        }
+
+        expected_str = repr_str(obj=self.strategy, attr_values=attr_values)
+        self.assertEqual(expected_str, repr(self.strategy))
+
+    @disable_test
+    def test_playground(self):
+        logging.getLogger('schema_mechanism.strategies.evaluation').setLevel(logging.DEBUG)
+
+        strategy = PendingFocusEvaluationStrategy(
+            max_value=1.0,
+            decay_strategy=ExponentialDecayStrategy(rate=0.1, minimum=-1.0)
+        )
+
+        for i in range(1000):
+            values = strategy(schemas=self.schemas, pending=self.s_s1, post_process=[display_values])
+
 
 class TestReliabilityEvaluationStrategy(TestCommon):
 
@@ -564,17 +619,17 @@ class TestReliabilityEvaluationStrategy(TestCommon):
         self.strategy.max_penalty = max_penalty
 
         # test: a reliability of 1.0 should result in penalty of 0.0
-        schemas = [sym_schema('A,/A1/B,', schema_type=MockSchema, reliability=1.0)]
+        schemas = [sym_schema('J,/A1/B,', schema_type=MockSchema, reliability=1.0)]
         rvs = self.strategy(schemas, max_penalty=max_penalty)
         self.assertTrue(np.array_equal(np.zeros_like(schemas), rvs))
 
         # test: a reliability of 0.0 should result in max penalty
-        schemas = [sym_schema('A,/A1/C,', schema_type=MockSchema, reliability=0.0)]
+        schemas = [sym_schema('K,/A1/C,', schema_type=MockSchema, reliability=0.0)]
         rvs = self.strategy(schemas, max_penalty=max_penalty)
         self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
 
         # test: a reliability of nan should result in max penalty
-        schemas = [sym_schema('A,/A1/D,', schema_type=MockSchema, reliability=np.nan)]
+        schemas = [sym_schema('L,/A1/D,', schema_type=MockSchema, reliability=np.nan)]
         rvs = self.strategy(schemas, max_penalty=max_penalty)
         self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
 
@@ -619,6 +674,15 @@ class TestReliabilityEvaluationStrategy(TestCommon):
             _ = ReliabilityEvaluationStrategy(max_penalty=0.0)
             _ = ReliabilityEvaluationStrategy(max_penalty=-1.0)
 
+    def test_repr(self):
+        attr_values = {
+            'max_penalty': self.strategy.max_penalty,
+            'severity': self.strategy.severity
+        }
+
+        expected_str = repr_str(obj=self.strategy, attr_values=attr_values)
+        self.assertEqual(expected_str, repr(self.strategy))
+
 
 class TestEpsilonGreedyEvaluationStrategy(TestCommon):
     def setUp(self) -> None:
@@ -645,27 +709,32 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
         epsilon = 0.991
         epsilon_min = 0.025
         decay_strategy = ExponentialDecayStrategy(rate=0.7)
+        max_value = 1.72
 
         strategy = EpsilonGreedyEvaluationStrategy(
             epsilon=epsilon,
             epsilon_min=epsilon_min,
-            decay_strategy=decay_strategy
+            decay_strategy=decay_strategy,
+            max_value=max_value
         )
 
         self.assertEqual(epsilon, strategy.epsilon)
         self.assertEqual(epsilon_min, strategy.epsilon_min)
         self.assertEqual(decay_strategy, strategy.decay_strategy)
+        self.assertEqual(max_value, strategy.max_value)
 
         # test: default attribute values should be set if values not given to initializer
         default_epsilon = 0.99
         default_epsilon_min = 0.0
         default_decay_strategy = None
+        default_max_value = 1.0
 
         strategy = EpsilonGreedyEvaluationStrategy()
 
         self.assertEqual(default_epsilon, strategy.epsilon)
         self.assertEqual(default_epsilon_min, strategy.epsilon_min)
         self.assertEqual(default_decay_strategy, strategy.decay_strategy)
+        self.assertEqual(default_max_value, strategy.max_value)
 
         # test: epsilon values between 0.0 and 1.0 (inclusion) should be allowed
         for epsilon in np.linspace(0.0, 1.0, endpoint=True):
@@ -712,16 +781,16 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
             pass
 
     def test_values(self):
-        # test: non-empty schema array should return an np.array with a single np.inf on exploratory choice
+        # test: non-empty schema array should return an np.array with a single max_value value on exploratory choice
         values = self.eps_always_explore([self.schema])
         self.assertEqual(1, len(values))
-        self.assertEqual(1, np.count_nonzero(values == np.inf))
+        self.assertEqual(1, np.count_nonzero(values == self.eps_always_explore.max_value))
         self.assertIsInstance(values, np.ndarray)
 
         values = self.eps_always_explore(self.schemas)
         self.assertIsInstance(values, np.ndarray)
         self.assertEqual(len(self.schemas), len(values))
-        self.assertEqual(1, np.count_nonzero(values == np.inf))
+        self.assertEqual(1, np.count_nonzero(values == self.eps_always_explore.max_value))
 
         # test: non-empty schema array should return an np.array with same length of zeros on non-exploratory choice
         values = self.eps_never_explore([self.schema])
@@ -740,7 +809,7 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
             for n_calls in range(0, n):
                 strategy = EpsilonGreedyEvaluationStrategy(epsilon=epsilon)
                 values = strategy(self.schemas)
-                if np.inf in values:
+                if strategy.max_value in values:
                     n_exploration += 1
 
             expected_probability = epsilon
@@ -775,10 +844,8 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
         epsilon_min = 0.5
 
         decay_strategy = GeometricDecayStrategy(rate=0.25)
-        eps_greedy = EpsilonGreedyEvaluationStrategy(
-            epsilon=epsilon,
-            epsilon_min=epsilon_min,
-            decay_strategy=decay_strategy)
+        eps_greedy = EpsilonGreedyEvaluationStrategy(epsilon=epsilon, epsilon_min=epsilon_min,
+                                                     decay_strategy=decay_strategy)
 
         for _ in range(100):
             _ = eps_greedy(schemas=self.schemas)
@@ -826,7 +893,7 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
 
         for _ in range(1000):
             values = self.eps_always_explore(schemas=all_schemas, pending=pending_schema)
-            greedy_selection_index = np.argwhere(values == np.inf)[0][0]
+            greedy_selection_index = np.argwhere(values == self.eps_always_explore.max_value)[0][0]
             counter[greedy_selection_index] += 1
 
         for index in non_component_indexes:
@@ -834,6 +901,18 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
 
         for index in component_indexes:
             self.assertNotEqual(0, counter[index], msg=f'Component schema {all_schemas[index]} was never selected')
+
+    def test_repr(self):
+        attr_values = {
+            'epsilon': self.strategy.epsilon,
+            'epsilon_min': self.strategy.epsilon_min,
+            'decay_strategy': self.strategy.decay_strategy,
+            'max_value': self.strategy.max_value,
+
+        }
+
+        expected_str = repr_str(obj=self.strategy, attr_values=attr_values)
+        self.assertEqual(expected_str, repr(self.strategy))
 
 
 class TestHabituationEvaluationStrategy(TestCommon):
@@ -873,18 +952,18 @@ class TestHabituationEvaluationStrategy(TestCommon):
 
         self.assertTrue(np.array_equal(expected, actual))
 
-        self.habituation_strategy = HabituationEvaluationStrategy(
+        self.strategy = HabituationEvaluationStrategy(
             trace=self.trace,
             scaling_strategy=SigmoidScalingStrategy()
         )
 
     def test_common(self):
-        self.assert_all_common_functionality(self.habituation_strategy)
+        self.assert_all_common_functionality(self.strategy)
 
     def test_single_action(self):
         # test: single action should have zero value
         expected = np.zeros(1)
-        actual = self.habituation_strategy.values(schemas=[self.schemas[0]])
+        actual = self.strategy.values(schemas=[self.schemas[0]])
 
         self.assertTrue(np.array_equal(expected, actual))
 
@@ -893,12 +972,12 @@ class TestHabituationEvaluationStrategy(TestCommon):
         schemas = self.schemas[:5]
 
         expected = np.zeros_like(schemas)
-        actual = self.habituation_strategy.values(schemas=schemas)
+        actual = self.strategy.values(schemas=schemas)
 
         self.assertTrue(np.array_equal(expected, actual))
 
     def test_multiple_actions_different_values_contains_median(self):
-        values = self.habituation_strategy.values(schemas=self.schemas)
+        values = self.strategy.values(schemas=self.schemas)
 
         # sanity check
         self.assertTrue(np.median(values) in values)
@@ -913,7 +992,7 @@ class TestHabituationEvaluationStrategy(TestCommon):
         self.assertTrue(np.alltrue(values[6:] < 0.0))
 
     def test_multiple_actions_different_values_does_not_contain_median(self):
-        values = self.habituation_strategy.values(schemas=self.schemas[1:])
+        values = self.strategy.values(schemas=self.schemas[1:])
 
         # sanity check
         self.assertTrue(np.median(values) not in values)
@@ -927,7 +1006,16 @@ class TestHabituationEvaluationStrategy(TestCommon):
     def test_unknown_values(self):
         # test: schemas with unknown actions should raise ValueError
         schemas = [*self.schemas, sym_schema('/UNK/')]
-        self.assertRaises(ValueError, lambda: self.habituation_strategy.values(schemas=schemas))
+        self.assertRaises(ValueError, lambda: self.strategy.values(schemas=schemas))
+
+    def test_repr(self):
+        attr_values = {
+            'trace': self.strategy.trace,
+            'scaling_strategy': self.strategy.scaling_strategy,
+        }
+
+        expected_str = repr_str(obj=self.strategy, attr_values=attr_values)
+        self.assertEqual(expected_str, repr(self.strategy))
 
 
 class TestCompositeEvaluationStrategy(TestCommon):
@@ -939,6 +1027,8 @@ class TestCompositeEvaluationStrategy(TestCommon):
                 TotalPrimitiveValueEvaluationStrategy(),
                 TotalDelegatedValueEvaluationStrategy(),
             ],
+            strategy_alias='TestEvaluationStrategy',
+            post_process=[display_minmax]
         )
 
     def test_init(self):
@@ -1064,6 +1154,17 @@ class TestCompositeEvaluationStrategy(TestCommon):
 
                 np.testing.assert_allclose(expected_values, scaled_values)
 
+    def test_repr(self):
+        attr_values = {
+            'post_process': self.strategy.post_process,
+            'strategy_alias': self.strategy.strategy_alias,
+            'strategies': self.strategy.strategies,
+            'weights': self.strategy.weights,
+        }
+
+        expected_str = repr_str(obj=self.strategy, attr_values=attr_values)
+        self.assertEqual(expected_str, repr(self.strategy))
+
     @disable_test
     def test_playground(self):
         logging.getLogger('schema_mechanism.strategies.evaluation').setLevel(logging.DEBUG)
@@ -1082,11 +1183,228 @@ class TestCompositeEvaluationStrategy(TestCommon):
 
         strategy(self.schemas)
 
-# class TestDefaultExploratoryEvaluationStrategy(TestCase):
-#     def setUp(self) -> None:
-#         common_test_setup()
-#
-#
-# class TestDefaultGoalPursuitEvaluationStrategy(TestCase):
-#     def setUp(self) -> None:
-#         common_test_setup()
+
+class TestDefaultExploratoryEvaluationStrategy(TestCommon):
+    def setUp(self) -> None:
+        super().setUp()
+
+        # some tests will fail unless the strategy provided to them is idempotent. Currently, the
+        # DefaultExploratoryEvaluationStrategy is not idempotent in general, therefore a special, highly contrived
+        # set of parameters is currently used to ensure idempotence. This seems to be a weakness of the current
+        # implementation of this strategy rather than of the test cases.
+        self.strategy = DefaultExploratoryEvaluationStrategy(epsilon=0.0, epsilon_min=0.0)
+
+    def test_init(self):
+        epsilon = 0.765
+        epsilon_min = 0.12
+        epsilon_decay_rate = 0.002
+        post_process = [display_minmax, display_values]
+
+        # test: attributes should be set to given values when provided to initializer
+        strategy = DefaultExploratoryEvaluationStrategy(
+            epsilon=epsilon,
+            epsilon_min=epsilon_min,
+            epsilon_decay_rate=epsilon_decay_rate,
+            post_process=post_process
+        )
+
+        self.assertEqual(epsilon, strategy.epsilon)
+        self.assertEqual(epsilon_min, strategy.epsilon_min)
+        self.assertEqual(epsilon_decay_rate, strategy.epsilon_decay_rate)
+        self.assertListEqual(list(post_process), list(strategy.post_process))
+
+        # test: weights should be equal
+        np.testing.assert_array_equal(equal_weights(len(strategy.strategies)), strategy.weights)
+
+    def test_common(self):
+        self.assert_all_common_functionality(self.strategy)
+
+    def test_post_process(self):
+        post_process = [
+            MagicMock(return_value=np.zeros_like(self.schemas)),
+            MagicMock(return_value=np.zeros_like(self.schemas)),
+            MagicMock(return_value=np.zeros_like(self.schemas)),
+        ]
+
+        strategy = CompositeEvaluationStrategy(
+            strategies=[NoOpEvaluationStrategy()],
+            post_process=post_process,
+        )
+
+        values = strategy(self.schemas)
+        for mock in post_process:
+            mock.assert_called_once()
+            kwargs_to_mock = mock.call_args.kwargs
+
+            self.assertEqual(2, len(kwargs_to_mock))
+            self.assertListEqual(self.schemas, kwargs_to_mock['schemas'])
+            np.testing.assert_array_equal(values, kwargs_to_mock['values'])
+
+    def test_values(self):
+        # test: verify that component strategies are called
+        for strategy in self.strategy.strategies:
+            strategy.values = MagicMock(return_value=np.ones_like(self.schemas))
+
+        self.strategy.values(schemas=self.schemas, pending=self.composite_action_schema)
+
+        for strategy in self.strategy.strategies:
+            strategy.values.assert_called_once()
+            kwargs = strategy.values.call_args.kwargs
+
+            called_with_schemas: set[Schema] = set(kwargs['schemas'])
+            called_with_pending: Schema = kwargs['pending']
+
+            self.assertSetEqual(set(self.schemas), called_with_schemas)
+            self.assertEqual(self.composite_action_schema, called_with_pending)
+
+    def test_value_weighting(self):
+
+        for weights in [(1.0, 0.0), (0.5, 0.5), (0.25, 0.75)]:
+            self.strategy.weights = weights
+
+            expected_values = sum(
+                weight * strategy.values(self.schemas)
+                for weight, strategy in zip(weights, self.strategy.strategies)
+            )
+            actual_values = self.strategy.values(self.schemas)
+
+            np.testing.assert_array_almost_equal(np.array(expected_values), np.array(actual_values))
+
+    def test_repr(self):
+        attr_values = {
+            'post_process': self.strategy.post_process,
+            'strategy_alias': self.strategy.strategy_alias,
+            'strategies': self.strategy.strategies,
+            'weights': self.strategy.weights,
+        }
+
+        expected_str = repr_str(obj=self.strategy, attr_values=attr_values)
+        self.assertEqual(expected_str, repr(self.strategy))
+
+
+class TestDefaultGoalPursuitEvaluationStrategy(TestCommon):
+    def setUp(self) -> None:
+        super().setUp()
+
+        # these shared tests will fail unless the strategy provided to them is idempotent. This is not the case for the
+        # DefaultExploratoryEvaluationStrategy in general, therefore a special, highly contrived set of parameters
+        # must be used. This seems to be a weakness of the current implementation of this strategy rather than of the
+        # test cases in my opinion.
+        self.strategy = DefaultGoalPursuitEvaluationStrategy(
+            pending_focus_max_value=0.0,
+            pending_focus_decay_rate=1e-24
+        )
+
+    def test_init(self):
+        reliability_max_penalty = 0.765
+        pending_focus_max_value = 0.12
+        pending_focus_decay_rate = 0.002
+        post_process = [display_minmax, display_values]
+
+        # test: attributes should be set to given values when provided to initializer
+        strategy = DefaultGoalPursuitEvaluationStrategy(
+            reliability_max_penalty=reliability_max_penalty,
+            pending_focus_max_value=pending_focus_max_value,
+            pending_focus_decay_rate=pending_focus_decay_rate,
+            post_process=post_process
+        )
+
+        self.assertEqual(reliability_max_penalty, strategy.reliability_max_penalty)
+        self.assertEqual(pending_focus_max_value, strategy.pending_focus_max_value)
+        self.assertEqual(pending_focus_decay_rate, strategy.pending_focus_decay_rate)
+        self.assertListEqual(list(post_process), list(strategy.post_process))
+
+        # test: default values should be set properly when other parameter values not provided
+        strategy = DefaultGoalPursuitEvaluationStrategy()
+
+        self.assertEqual(1.0, strategy.reliability_max_penalty)
+        self.assertEqual(1.0, strategy.pending_focus_max_value)
+        self.assertEqual(0.5, strategy.pending_focus_decay_rate)
+        self.assertListEqual(list(), list(strategy.post_process))
+
+        # test: weights should be equal
+        np.testing.assert_array_equal(equal_weights(len(strategy.strategies)), strategy.weights)
+
+    def test_mutators(self):
+        reliability_max_penalty = 0.765
+        pending_focus_max_value = 0.12
+        pending_focus_decay_rate = 0.002
+        post_process = [display_minmax, display_values]
+
+        # test: attributes should be set to given values when provided to initializer
+        strategy = DefaultGoalPursuitEvaluationStrategy()
+
+        strategy.reliability_max_penalty = reliability_max_penalty
+        strategy.pending_focus_max_value = pending_focus_max_value
+        strategy.pending_focus_decay_rate = pending_focus_decay_rate
+        strategy.post_process = post_process
+
+        self.assertEqual(reliability_max_penalty, strategy.reliability_max_penalty)
+        self.assertEqual(pending_focus_max_value, strategy.pending_focus_max_value)
+        self.assertEqual(pending_focus_decay_rate, strategy.pending_focus_decay_rate)
+        self.assertListEqual(list(post_process), list(strategy.post_process))
+
+    def test_common(self):
+        self.assert_all_common_functionality(self.strategy)
+
+    def test_post_process(self):
+        post_process = [
+            MagicMock(return_value=np.zeros_like(self.schemas)),
+            MagicMock(return_value=np.zeros_like(self.schemas)),
+            MagicMock(return_value=np.zeros_like(self.schemas)),
+        ]
+
+        strategy = CompositeEvaluationStrategy(
+            strategies=[NoOpEvaluationStrategy()],
+            post_process=post_process,
+        )
+
+        values = strategy(self.schemas)
+        for mock in post_process:
+            mock.assert_called_once()
+            kwargs_to_mock = mock.call_args.kwargs
+
+            self.assertEqual(2, len(kwargs_to_mock))
+            self.assertListEqual(self.schemas, kwargs_to_mock['schemas'])
+            np.testing.assert_array_equal(values, kwargs_to_mock['values'])
+
+    def test_values(self):
+        # test: verify that component strategies are called
+        for strategy in self.strategy.strategies:
+            strategy.values = MagicMock(return_value=np.ones_like(self.schemas))
+
+        self.strategy.values(schemas=self.schemas, pending=self.composite_action_schema)
+
+        for strategy in self.strategy.strategies:
+            strategy.values.assert_called_once()
+            kwargs = strategy.values.call_args.kwargs
+
+            called_with_schemas: set[Schema] = set(kwargs['schemas'])
+            called_with_pending: Schema = kwargs['pending']
+
+            self.assertSetEqual(set(self.schemas), called_with_schemas)
+            self.assertEqual(self.composite_action_schema, called_with_pending)
+
+    def test_value_weighting(self):
+
+        for weights in [(1.0, 0.0, 0.0, 0.0, 0.0), (0.2, 0.2, 0.2, 0.2, 0.2), (0.25, 0.05, 0.0, 0.01, 0.69)]:
+            self.strategy.weights = weights
+
+            expected_values = sum(
+                weight * strategy.values(self.schemas)
+                for weight, strategy in zip(weights, self.strategy.strategies)
+            )
+            actual_values = self.strategy.values(self.schemas)
+
+            np.testing.assert_array_almost_equal(np.array(expected_values), np.array(actual_values))
+
+    def test_repr(self):
+        attr_values = {
+            'post_process': self.strategy.post_process,
+            'strategy_alias': self.strategy.strategy_alias,
+            'strategies': self.strategy.strategies,
+            'weights': self.strategy.weights,
+        }
+
+        expected_str = repr_str(obj=self.strategy, attr_values=attr_values)
+        self.assertEqual(expected_str, repr(self.strategy))

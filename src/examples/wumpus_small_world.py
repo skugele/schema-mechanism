@@ -7,7 +7,6 @@ from typing import Iterable
 from examples import RANDOM_SEED
 from examples import display_item_values
 from examples import display_known_schemas
-from examples import display_schema_info
 from examples import display_summary
 from examples import is_paused
 from examples import is_running
@@ -19,7 +18,6 @@ from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.func_api import sym_item
-from schema_mechanism.func_api import sym_schema
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
@@ -27,16 +25,12 @@ from schema_mechanism.share import GlobalParams
 from schema_mechanism.share import set_random_seed
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
-from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
-from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
-from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
-from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
-from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
-from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
 from schema_mechanism.strategies.evaluation import display_minmax
-from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
+from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.trace import ReplacingTrace
 
@@ -46,7 +40,7 @@ logger = logging.getLogger('examples.environments.wumpus_small_world')
 set_random_seed(RANDOM_SEED)
 
 MAX_EPISODES = 5000
-MAX_STEPS = 50
+MAX_STEPS = 150
 
 
 def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
@@ -58,22 +52,19 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     bare_schemas = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in env.actions]
     schema_memory = SchemaMemory(bare_schemas)
     schema_selection = SchemaSelection(
-        select_strategy=RandomizeBestSelectionStrategy(),
+        select_strategy=RandomizeBestSelectionStrategy(
+            match=AbsoluteDiffMatchStrategy(max_diff=0.05)
+        ),
         evaluation_strategy=CompositeEvaluationStrategy(
             strategies=[
-                TotalPrimitiveValueEvaluationStrategy(),
-                TotalDelegatedValueEvaluationStrategy(),
-                HabituationEvaluationStrategy(scaling_strategy=SigmoidScalingStrategy()),
-                ReliabilityEvaluationStrategy(max_penalty=0.8),
-                EpsilonGreedyEvaluationStrategy(epsilon=0.999, epsilon_min=0.05,
-                                                decay_strategy=ExponentialDecayStrategy(
-                                                    rate=1e-4,
-                                                    initial=1.0,
-                                                    minimum=0.0))
+                DefaultExploratoryEvaluationStrategy(
+                    epsilon=0.9999,
+                    epsilon_min=0.1,
+
+                ),
+                DefaultGoalPursuitEvaluationStrategy(),
             ],
-            post_process=[
-                display_minmax
-            ]
+            post_process=[display_minmax],
         )
     )
 
@@ -94,15 +85,15 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
         global_stats=GlobalStats()
     )
 
-    sm.params.set('backward_chains.max_len', 3)
+    sm.params.set('backward_chains.max_len', 5)
     sm.params.set('backward_chains.update_frequency', 0.01)
     sm.params.set('composite_actions.learn.min_baseline_advantage', 0.5)
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
-    sm.params.set('ext_context.positive_correlation_threshold', 0.8)
+    sm.params.set('ext_context.positive_correlation_threshold', 0.95)
     sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
     sm.params.set('ext_result.positive_correlation_threshold', 0.8)
-    sm.params.set('learning_rate', 0.1)
-    sm.params.set('reliability_threshold', 0.7)
+    sm.params.set('learning_rate', 0.01)
+    sm.params.set('reliability_threshold', 0.8)
 
     logger.info(sm.params)
 

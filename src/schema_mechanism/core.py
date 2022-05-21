@@ -2485,6 +2485,15 @@ def calc_value(o: Any) -> float:
     return calc_primitive_value(o) + calc_delegated_value(o)
 
 
+def advantage(o: Any) -> float:
+    """ Calculates the additional value this object has over a learned baseline. """
+    baseline_value = get_global_stats().baseline_value
+    # if not o:
+    #     return -baseline_value
+
+    return calc_value(o) - baseline_value
+
+
 default_delegated_value_helper = EligibilityTraceDelegatedValueHelper(
     discount_factor=0.5,
     eligibility_trace=ReplacingTrace(

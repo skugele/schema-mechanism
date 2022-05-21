@@ -271,11 +271,15 @@ class TestExponentialDecayStrategy(TestCommon):
     # noinspection PyUnboundLocalVariable
     @disable_test
     def test_playground(self):
-        strategy = ExponentialDecayStrategy(rate=0.1, initial=1.0, minimum=0.0)
+        strategy = ExponentialDecayStrategy(
+            rate=2.0e-4,
+            initial=1.0,
+            minimum=0.0
+        )
 
         values = np.ones(10)
-        for i in range(1000):
-            print(values)
+        for i in range(100000):
+            # print(values)
             values = strategy.decay(values)
             if np.allclose(np.zeros_like(values), values):
                 break

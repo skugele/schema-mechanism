@@ -41,7 +41,7 @@ set_random_seed(RANDOM_SEED)
 
 # global constants
 N_MACHINES = 25
-N_STEPS = 15_000
+N_STEPS = 5000
 
 
 class Machine:
@@ -278,7 +278,7 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
 
     sm.params.set('backward_chains.update_frequency', 0.01)
     sm.params.set('backward_chains.max_len', 5)
-    sm.params.set('learning_rate', 0.2)
+    sm.params.set('learning_rate', 0.01)
     sm.params.set('reliability_threshold', 0.8)
     sm.params.set('composite_actions.learn.min_baseline_advantage', 0.1)
 

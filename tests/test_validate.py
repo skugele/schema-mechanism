@@ -9,6 +9,8 @@ from schema_mechanism.validate import RangeValidator
 from schema_mechanism.validate import TypeValidator
 from schema_mechanism.validate import WhiteListValidator
 from test_share.test_func import common_test_setup
+from test_share.test_func import satisfies_equality_checks
+from test_share.test_func import satisfies_hash_checks
 
 
 class TestRangeValidator(unittest.TestCase):
@@ -68,6 +70,15 @@ class TestRangeValidator(unittest.TestCase):
 
         # test: value equal to an excluded value should raise a ValueError
         self.assertRaises(ValueError, lambda: self.validator(next(iter(self.exclude))))
+
+    def test_equals(self):
+        obj = RangeValidator(low=0.1, high=1.0, exclude=[self.high])
+        other = RangeValidator(low=2.0, high=5.0, exclude=[self.low])
+
+        self.assertTrue(satisfies_equality_checks(obj=obj, other=other, other_different_type=1.0))
+
+    def test_hash(self):
+        self.assertTrue(satisfies_hash_checks(obj=self.validator))
 
 
 class TestTypeValidator(unittest.TestCase):

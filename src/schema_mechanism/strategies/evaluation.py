@@ -21,6 +21,7 @@ from schema_mechanism.strategies.scaling import ScalingStrategy
 from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import equal_weights
+from schema_mechanism.util import repr_str
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,9 @@ class EvaluationStrategy(ABC):
                 values = operation(schemas=schemas, values=values)
 
         return values
+
+    def __repr__(self):
+        return repr_str(obj=self, attr_values=dict())
 
     @abstractmethod
     def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
@@ -201,6 +205,13 @@ class PendingFocusEvaluationStrategy(EvaluationStrategy):
         self._active_pending: Optional[Schema] = None
         self._n: int = 0
 
+    def __repr__(self):
+        attr_values = {
+            'max_value': self.max_value,
+            'decay_strategy': self.decay_strategy
+        }
+        return repr_str(obj=self, attr_values=attr_values)
+
     @property
     def max_value(self) -> float:
         return self._max_value
@@ -260,6 +271,13 @@ class ReliabilityEvaluationStrategy(EvaluationStrategy):
         self.max_penalty = max_penalty
         self.severity = severity
 
+    def __repr__(self):
+        attr_values = {
+            'max_penalty': self.max_penalty,
+            'severity': self.severity
+        }
+        return repr_str(obj=self, attr_values=attr_values)
+
     @property
     def max_penalty(self) -> float:
         return self._max_penalty
@@ -310,16 +328,29 @@ class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
 
     """
 
-    def __init__(self,
-                 epsilon: float = 0.99,
-                 epsilon_min: float = 0.0,
-                 decay_strategy: Optional[DecayStrategy] = None) -> None:
+    def __init__(
+            self,
+            epsilon: float = 0.99,
+            epsilon_min: float = 0.0,
+            decay_strategy: Optional[DecayStrategy] = None,
+            max_value=1.0
+    ) -> None:
         self.epsilon = epsilon
         self.epsilon_min = epsilon_min
         self.decay_strategy = decay_strategy
+        self.max_value = max_value
 
         if self.epsilon_min > self.epsilon:
             raise ValueError('Epsilon min must be less than or equal to epsilon')
+
+    def __repr__(self):
+        attr_values = {
+            'epsilon': self.epsilon,
+            'epsilon_min': self.epsilon_min,
+            'decay_strategy': self.decay_strategy,
+            'max_value': self.max_value,
+        }
+        return repr_str(obj=self, attr_values=attr_values)
 
     @property
     def epsilon(self) -> float:
@@ -365,16 +396,15 @@ class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
         if not is_exploratory:
             return values
 
-        # randomly select winning schema, setting its value to np.inf
+        # randomly select winning schema, setting its value to max value
         if pending:
             pending_components = pending.action.controller.components
             pending_indexes = [schemas.index(schema) for schema in set(schemas).intersection(pending_components)]
 
             # if pending, limit choice to pending schema's components
-            values[rng().choice(pending_indexes)] = np.inf
+            values[rng().choice(pending_indexes)] = self.max_value
         else:
-            # bypass epsilon greedy when schemas selected by a composite action's controller
-            values[rng().choice(len(schemas))] = np.inf
+            values[rng().choice(len(schemas))] = self.max_value
 
         return values
 
@@ -421,6 +451,13 @@ class HabituationEvaluationStrategy(EvaluationStrategy):
 
         self.scaling_strategy: ScalingStrategy = scaling_strategy
 
+    def __repr__(self):
+        attr_values = {
+            'trace': self.trace,
+            'scaling_strategy': self.scaling_strategy,
+        }
+        return repr_str(obj=self, attr_values=attr_values)
+
     def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         if not schemas:
             return np.array([])
@@ -455,6 +492,15 @@ class CompositeEvaluationStrategy(EvaluationStrategy):
         )
         self.strategy_alias = strategy_alias or ''
 
+    def __repr__(self):
+        attr_values = {
+            'strategies': self.strategies,
+            'weights': self.weights,
+            'post_process': self.post_process,
+            'strategy_alias': self.strategy_alias,
+        }
+        return repr_str(obj=self, attr_values=attr_values)
+
     @property
     def strategies(self) -> Collection[EvaluationStrategy]:
         return self._strategies
@@ -486,101 +532,129 @@ class CompositeEvaluationStrategy(EvaluationStrategy):
                    for weight, strategy in zip(self.weights, self.strategies))
 
 
-class DefaultExploratoryEvaluationStrategy(EvaluationStrategy):
-    """ The default exploratory evaluation strategy
+class DefaultExploratoryEvaluationStrategy(CompositeEvaluationStrategy):
+    """ A default exploratory evaluation strategy that includes randomized exploration and action-balancing strategies.
 
-        * “The exploration criterion boosts the importance of a schema to promote its activation for the sake of
-           what might be learned by that activation” (Drescher, 1991, p. 60)
+    “The exploration criterion boosts the importance of a schema to promote its activation for the sake of what might
+    be learned by that activation” (Drescher, 1991, p. 60)
 
     """
 
     def __init__(self,
-                 epsilon_initial: float = 0.99,
+                 epsilon: float = 0.99,
                  epsilon_min: float = 0.2,
-                 epsilon_decay_strategy: DecayStrategy = None
+                 epsilon_decay_rate: float = 0.9999,
+                 post_process: Sequence[EvaluationPostProcess] = None,
                  ):
-        """
-
-        :param epsilon_initial:
-        :param epsilon_min:
-        :param epsilon_decay_strategy:
-        """
         # TODO: add an evaluation strategy for the following
         # "a component of exploration value promotes underrepresented levels of actions, where a structure's level is
         # defined as follows: primitive items and actions are of level zero; any structure defined in terms of other
         # structures is of one greater level than the maximum of those structures' levels." (See Drescher, 1991, p. 67)
 
-        self.habituation_value_strategy = (
-            HabituationEvaluationStrategy(
-                scaling_strategy=SigmoidScalingStrategy()
-            ),
+        self._habituation_value_strategy = HabituationEvaluationStrategy(
+            scaling_strategy=SigmoidScalingStrategy()
         )
 
-        default_epsilon_decay = (
-            GeometricDecayStrategy(rate=0.9999)
+        self._epsilon_decay_strategy = GeometricDecayStrategy(rate=epsilon_decay_rate)
+        self._epsilon_greedy_value_strategy = EpsilonGreedyEvaluationStrategy(
+            epsilon=epsilon,
+            epsilon_min=epsilon_min,
+            decay_strategy=self._epsilon_decay_strategy
         )
 
-        self.epsilon_greedy_value_strategy = (
-            EpsilonGreedyEvaluationStrategy(
-                epsilon=epsilon_initial,
-                epsilon_min=epsilon_min,
-                decay_strategy=epsilon_decay_strategy or default_epsilon_decay
-            )
-        )
-
-        self._value_strategy = CompositeEvaluationStrategy(
+        super().__init__(
             strategies=[
-                self.habituation_value_strategy,
-                self.epsilon_greedy_value_strategy
-            ]
+                self._habituation_value_strategy,
+                self._epsilon_greedy_value_strategy
+            ],
+            post_process=post_process,
+            strategy_alias='default-exploratory-strategy'
         )
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
-        return self._value_strategy(schemas=schemas, pending=pending, **kwargs)
+    @property
+    def epsilon(self) -> float:
+        return self._epsilon_greedy_value_strategy.epsilon
+
+    @epsilon.setter
+    def epsilon(self, value: float) -> None:
+        self._epsilon_greedy_value_strategy.epsilon = value
+
+    @property
+    def epsilon_min(self) -> float:
+        return self._epsilon_greedy_value_strategy.epsilon_min
+
+    @epsilon_min.setter
+    def epsilon_min(self, value: float) -> None:
+        self._epsilon_greedy_value_strategy.epsilon_min = value
+
+    @property
+    def epsilon_decay_rate(self) -> float:
+        return self._epsilon_decay_strategy.rate
+
+    @epsilon_decay_rate.setter
+    def epsilon_decay_rate(self, value: float) -> None:
+        self._epsilon_decay_strategy.rate = value
 
 
-class DefaultGoalPursuitEvaluationStrategy(EvaluationStrategy):
-    def __init__(self,
-                 reliability_max_penalty: float = 1.0,
-                 reliability_severity: float = 0.1,
-                 pending_focus_max_value: float = 1.0,
-                 pending_focus_decay_strategy: DecayStrategy = None):
-        """
+class DefaultGoalPursuitEvaluationStrategy(CompositeEvaluationStrategy):
+    def __init__(
+            self,
+            reliability_max_penalty: float = 1.0,
+            pending_focus_max_value: float = 1.0,
+            pending_focus_decay_rate: float = 0.5,
+            post_process: Sequence[EvaluationPostProcess] = None,
+    ) -> None:
+        # basic item value functions
+        self._primitive_value_strategy = TotalPrimitiveValueEvaluationStrategy()
+        self._delegated_value_strategy = TotalDelegatedValueEvaluationStrategy()
 
-        :param reliability_max_penalty:
-        :param reliability_severity:
-        :param pending_focus_max_value:
-        :param pending_focus_decay_strategy:
-        """
-        self.primitive_value_strategy = TotalPrimitiveValueEvaluationStrategy()
-        self.delegated_value_strategy = TotalDelegatedValueEvaluationStrategy()
-        self.instrumental_value_strategy = InstrumentalValueEvaluationStrategy()
-        self.reliability_value_strategy = ReliabilityEvaluationStrategy(
-            max_penalty=reliability_max_penalty,
-            severity=reliability_severity)
+        # penalty to unreliable schemas
+        self._reliability_value_strategy = ReliabilityEvaluationStrategy(max_penalty=reliability_max_penalty)
 
-        default_pending_focus_decay_strategy = GeometricDecayStrategy(rate=0.5)
+        # composite-action-specific value functions
+        self._instrumental_value_strategy = InstrumentalValueEvaluationStrategy()
 
-        self.pending_focus_value_strategy = PendingFocusEvaluationStrategy(
+        self._pending_focus_decay_strategy = GeometricDecayStrategy(rate=pending_focus_decay_rate)
+        self._pending_focus_value_strategy = PendingFocusEvaluationStrategy(
             max_value=pending_focus_max_value,
-            decay_strategy=(
-                    pending_focus_decay_strategy or
-                    default_pending_focus_decay_strategy
-            )
+            decay_strategy=self._pending_focus_decay_strategy
         )
 
-        self.value_strategy = CompositeEvaluationStrategy(
+        super().__init__(
             strategies=[
-                self.primitive_value_strategy,
-                self.delegated_value_strategy,
-                self.instrumental_value_strategy,
-                self.reliability_value_strategy,
-                self.pending_focus_value_strategy
-            ]
+                self._delegated_value_strategy,
+                self._instrumental_value_strategy,
+                self._pending_focus_value_strategy,
+                self._primitive_value_strategy,
+                self._reliability_value_strategy,
+            ],
+            post_process=post_process,
+            strategy_alias='default-goal-pursuit-strategy'
         )
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
-        return self.value_strategy(schemas=schemas, pending=pending)
+    @property
+    def reliability_max_penalty(self) -> float:
+        return self._reliability_value_strategy.max_penalty
+
+    @reliability_max_penalty.setter
+    def reliability_max_penalty(self, value: float) -> None:
+        self._reliability_value_strategy.max_penalty = value
+
+    @property
+    def pending_focus_max_value(self) -> float:
+        return self._pending_focus_value_strategy.max_value
+
+    @pending_focus_max_value.setter
+    def pending_focus_max_value(self, value: float) -> None:
+        self._pending_focus_value_strategy.max_value = value
+
+    @property
+    def pending_focus_decay_rate(self) -> float:
+        return self._pending_focus_decay_strategy.rate
+
+    @pending_focus_decay_rate.setter
+    def pending_focus_decay_rate(self, value: float) -> None:
+        self._pending_focus_decay_strategy.rate = value
 
 
 ####################
@@ -594,6 +668,9 @@ def display_values(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
 
 
 def display_minmax(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
+    if len(values) == 0:
+        return values
+
     max_value = np.max(values)
     max_value_schema = schemas[np.flatnonzero(values == max_value)[0]]
     min_value = np.min(values)
