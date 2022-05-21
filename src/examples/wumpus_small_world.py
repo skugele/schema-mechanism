@@ -29,7 +29,6 @@ from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
-from schema_mechanism.strategies.evaluation import display_minmax
 from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.trace import ReplacingTrace
@@ -64,7 +63,7 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
                 ),
                 DefaultGoalPursuitEvaluationStrategy(),
             ],
-            post_process=[display_minmax],
+            # post_process=[display_minmax],
         )
     )
 

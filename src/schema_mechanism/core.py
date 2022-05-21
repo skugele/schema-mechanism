@@ -1873,8 +1873,11 @@ class Schema(Observer, Observable, UniqueIdMixin):
                 self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
 
         # update extended context stats
-        if all((self._extended_context, activated, selection_state)):
-            self._extended_context.update_all(selection_state=selection_state, success=succeeded, count=count)
+        if is_feature_enabled(SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE) and is_reliable(self):
+            logger.debug(f'update suppressed for schema {self} because it is reliable')
+        else:
+            if all((self._extended_context, activated, selection_state)):
+                self._extended_context.update_all(selection_state=selection_state, success=succeeded, count=count)
 
     def receive(self, source: ExtendedItemCollection, spin_off_type: SchemaSpinOffType, **kwargs) -> None:
         """ Supports the Schema class's implementation of the observer pattern.

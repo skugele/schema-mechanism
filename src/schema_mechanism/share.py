@@ -40,6 +40,11 @@ class SupportedFeature(Enum):
     #  of a reliable schema whose activation has just completed." (see Drescher, 1991, p. 73)
     ER_SUPPRESS_UPDATE_ON_EXPLAINED = 'ER_SUPPRESS_UPDATE_ON_EXPLAINED'
 
+    # Updates to reliable schemas' extended context item stats are suppressed when this feature is enabled. The
+    # rational for this is that once a schema is reliable additional context items are no longer needed. (This
+    # was not a feature of Drescher's original schema mechanism.)
+    EC_SUPPRESS_UPDATE_ON_RELIABLE = 'EC_SUPPRESS_UPDATE_ON_RELIABLE'
+
     # Supports the creation of result spin-off schemas incrementally. This was not supported in the original schema
     # mechanism because of the proliferation of composite results that result. It is allowed here to facilitate
     # comparison and experimentation.
@@ -156,6 +161,7 @@ class GlobalParams:
             SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA,
             SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE,
             SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED,
+            SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE,
         }
 
     def _set_validators(self):

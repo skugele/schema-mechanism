@@ -60,6 +60,15 @@ class TestSchema(TestCase):
         self.schema.register(self.obs)
         self.schema_ca.register(self.obs)
 
+        params = get_global_params()
+        features: set[SupportedFeature] = params.get('features')
+
+        if SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE in features:
+            features.remove(SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE)
+
+        if SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED in features:
+            features.remove(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
+
     def test_init(self):
         # Action CANNOT be None
         try:
@@ -397,6 +406,84 @@ class TestSchema(TestCase):
 
         # check item stats
         self.assertNotEqual(ext_result_before, ext_result_after)
+
+    def test_update_when_ec_suppress_update_on_reliable_disabled(self):
+        params = get_global_params()
+        features: set[SupportedFeature] = params.get('features')
+
+        # test case depends on this feature being disabled
+        if SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE in features:
+            features.remove(SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE)
+
+        reliable_schema = sym_schema('1,/A1/2,', schema_type=MockSchema, reliability=1.0)
+        unreliable_schema = sym_schema('3,/A2/4,', schema_type=MockSchema, reliability=0.0)
+
+        # sanity checks: reliable_schema should be reliable; unreliable_schema should be unreliable
+        self.assertTrue(is_reliable(reliable_schema))
+        self.assertFalse(is_reliable(unreliable_schema))
+
+        # test: update should always occur (regardless of explained) when EC_SUPPRESS_UPDATE_ON_RELIABLE is disabled
+        for schema in [reliable_schema, unreliable_schema]:
+            ext_context_before = deepcopy(schema.extended_context)
+            schema.update(
+                activated=True,
+                succeeded=True,
+                selection_state=sym_state('1,2,3'),
+                new=[self.item_pool.get('1')],
+                lost=[self.item_pool.get('4')],
+                explained=False,
+            )
+            ext_context_after = deepcopy(schema.extended_context)
+
+            # check item stats
+            self.assertNotEqual(ext_context_before, ext_context_after)
+
+    def test_update_when_ec_suppress_update_on_reliable_enabled(self):
+        params = get_global_params()
+        features: set[SupportedFeature] = params.get('features')
+
+        # test case depends on this feature being enabled
+        features.add(SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE)
+
+        schema = sym_schema('X,/A1/Y,', schema_type=MockSchema, reliability=1.0)
+
+        # sanity check: schema should be reliable
+        self.assertTrue(is_reliable(schema))
+
+        # test: extended context item stats not updated if result explained (by a reliable schema)
+        ext_context_before = deepcopy(schema.extended_context)
+        schema.update(
+            activated=True,
+            succeeded=True,
+            selection_state=sym_state('1,2,3'),
+            new=[self.item_pool.get('1')],
+            lost=[self.item_pool.get('4')],
+            explained=False,
+        )
+        ext_context_after = deepcopy(schema.extended_context)
+
+        # check item stats
+        self.assertEqual(ext_context_before, ext_context_after)
+
+        schema = sym_schema('A,/A2/B,', schema_type=MockSchema, reliability=0.0)
+
+        # sanity check: schema should be unreliable
+        self.assertFalse(is_reliable(schema))
+
+        # test: extended context item stats SHOULD be updated if schema not reliable
+        ext_context_before = deepcopy(schema.extended_context)
+        schema.update(
+            activated=True,
+            succeeded=True,
+            selection_state=sym_state('1,2,3'),
+            new=[self.item_pool.get('1')],
+            lost=[self.item_pool.get('4')],
+            explained=False,
+        )
+        ext_context_after = deepcopy(schema.extended_context)
+
+        # check item stats
+        self.assertNotEqual(ext_context_before, ext_context_after)
 
     def test_update_when_activated_and_successful(self):
         s_prev = sym_state('0,1,2,3')

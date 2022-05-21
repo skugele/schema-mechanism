@@ -135,6 +135,11 @@ class MockSchema(Schema):
             else self._mock_avg_duration
         )
 
+    @avg_duration.setter
+    def avg_duration(self, value: float) -> None:
+        self._avg_duration = value
+        # self._avg_duration = value
+
     @property
     def cost(self) -> float:
         return (
