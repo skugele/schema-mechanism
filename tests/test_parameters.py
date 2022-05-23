@@ -141,7 +141,7 @@ class TestGlobalParams(TestCase):
         self.assertTrue(satisfies_equality_checks(obj=params, other=other, other_different_type=1.0))
 
 
-class TestAccessorFunctions(TestCase):
+class TestSharedFunctions(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 

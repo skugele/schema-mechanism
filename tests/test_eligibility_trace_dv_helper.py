@@ -1,14 +1,17 @@
-import unittest
 from copy import deepcopy
+from unittest import TestCase
 
 import numpy as np
 
+from schema_mechanism.core import DelegatedValueHelper
 from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
 from schema_mechanism.core import calc_value
+from schema_mechanism.core import get_delegated_value_helper
 from schema_mechanism.core import get_global_params
 from schema_mechanism.core import items_from_state
 from schema_mechanism.core import new_state
 from schema_mechanism.core import reduce_to_most_specific_items
+from schema_mechanism.core import set_delegated_value_helper
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
@@ -24,7 +27,7 @@ from test_share.test_func import common_test_setup
 from test_share.test_func import satisfies_equality_checks
 
 
-class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
+class TestEligibilityTraceDelegatedValueHelper(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
@@ -606,3 +609,19 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         # test: verify that delegated value is now zero
         self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
         self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+
+
+class TestSharedFunctions(TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+    def test_global_instance_get_and_set_functions(self):
+        dv_helper: DelegatedValueHelper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=0.25,
+            eligibility_trace=ReplacingTrace(
+                decay_strategy=GeometricDecayStrategy(rate=0.75)
+            )
+        )
+        set_delegated_value_helper(dv_helper)
+
+        self.assertEqual(dv_helper, get_delegated_value_helper())

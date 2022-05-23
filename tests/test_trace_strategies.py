@@ -3,6 +3,8 @@ from unittest import TestCase
 import numpy as np
 
 from schema_mechanism.core import Action
+from schema_mechanism.core import get_action_trace
+from schema_mechanism.core import set_action_trace
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.trace import AccumulatingTrace
 from schema_mechanism.strategies.trace import ReplacingTrace
@@ -648,3 +650,16 @@ class TestReplacingTrace(TestCommon):
             trace_2.update(['A', 'B', 'C', 'D'])
 
         self.assertEqual(trace_1, trace_2)
+
+
+class TestSharedFunctions(TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+    def test_global_instance_get_and_set_functions(self):
+        trace: Trace[Action] = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+        )
+        set_action_trace(trace)
+
+        self.assertEqual(trace, get_action_trace())
