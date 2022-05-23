@@ -226,13 +226,19 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
 
         self._delegated_values: AssociativeArrayList[Item] = AssociativeArrayList()
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other) -> bool:
         if isinstance(other, EligibilityTraceDelegatedValueHelper):
-            return all((
-                self.discount_factor == other.discount_factor,
-                self.eligibility_trace == other.eligibility_trace,
-                self._delegated_values == other._delegated_values
-            ))
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.discount_factor == other.discount_factor,
+                        self.eligibility_trace == other.eligibility_trace,
+                        self._delegated_values == other._delegated_values
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     @property
@@ -462,12 +468,18 @@ class GlobalStats:
         self.baseline_value: float = initial_baseline_value
         self.n: int = 0
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other) -> bool:
         if isinstance(other, GlobalStats):
-            return all((
-                other.baseline_value == self.baseline_value,
-                other.n == self.n
-            ))
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        other.baseline_value == self.baseline_value,
+                        other.n == self.n
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     def update(self, selection_state: State, result_state: State) -> None:
@@ -630,14 +642,20 @@ class ECItemStats(ItemStats):
         self._n_fail_and_on = 0
         self._n_fail_and_off = 0
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other) -> bool:
         if isinstance(other, ECItemStats):
-            return all({
-                self._n_success_and_on == other._n_success_and_on,
-                self._n_success_and_off == other._n_success_and_off,
-                self._n_fail_and_on == other._n_fail_and_on,
-                self._n_fail_and_off == other._n_fail_and_off,
-            })
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self._n_success_and_on == other._n_success_and_on,
+                        self._n_success_and_off == other._n_success_and_off,
+                        self._n_fail_and_on == other._n_fail_and_on,
+                        self._n_fail_and_off == other._n_fail_and_off,
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     def __hash__(self):
@@ -766,14 +784,20 @@ class ERItemStats(ItemStats):
         self._n_off_and_activated = 0
         self._n_off_and_not_activated = 0
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other) -> bool:
         if isinstance(other, ERItemStats):
-            return all({
-                self._n_on_and_activated == other._n_on_and_activated,
-                self._n_on_and_not_activated == other._n_on_and_not_activated,
-                self._n_off_and_activated == other._n_off_and_activated,
-                self._n_off_and_not_activated == other._n_off_and_not_activated,
-            })
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self._n_on_and_activated == other._n_on_and_activated,
+                        self._n_on_and_not_activated == other._n_on_and_not_activated,
+                        self._n_off_and_activated == other._n_off_and_activated,
+                        self._n_off_and_not_activated == other._n_off_and_not_activated,
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     @property
@@ -1074,14 +1098,20 @@ class ExtendedItemCollection(Observable):
 
         return repr_str(self, attr_values)
 
-    def __eq__(self, other: Any):
+    def __eq__(self, other) -> bool:
         if isinstance(other, ExtendedItemCollection):
-            return all({
-                self._suppressed_items == other._suppressed_items,
-                self._relevant_items == other._relevant_items,
-                self._new_relevant_items == other._new_relevant_items,
-                self._stats == other._stats
-            })
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self._suppressed_items == other._suppressed_items,
+                        self._relevant_items == other._relevant_items,
+                        self._new_relevant_items == other._new_relevant_items,
+                        self._stats == other._stats
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
@@ -1675,11 +1705,17 @@ class Schema(Observer, Observable, UniqueIdMixin):
             return True
 
         if isinstance(other, Schema):
-            return all({s == o for s, o in
-                        [[self._context, other._context],
-                         [self._action, other._action],
-                         [self._result, other._result]]})
-
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self._context == other._context,
+                        self._action == other._action,
+                        self._result == other._result,
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
@@ -2101,13 +2137,19 @@ class SchemaTree:
     def __str__(self) -> str:
         return RenderTree(self._root, style=AsciiStyle()).by_attr(lambda s: str(s))
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other) -> bool:
         if isinstance(other, SchemaTree):
-            return all({
-                self._root == other._root,
-                self._nodes == other._nodes,
-                self._n_schemas == other._n_schemas
-            })
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self._root == other._root,
+                        self._nodes == other._nodes,
+                        self._n_schemas == other._n_schemas
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     @property

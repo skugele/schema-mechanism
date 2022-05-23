@@ -175,15 +175,21 @@ class AssociativeArrayList(Generic[T]):
     def __bool__(self) -> bool:
         return True
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other) -> bool:
         if isinstance(other, AssociativeArrayList):
-            return all((
-                self._pre_allocated == other._pre_allocated,
-                self._block_size == other._block_size,
-                self._indexes == other._indexes,
-                self._last_index == other._last_index,
-                np.array_equal(self._values, other._values),
-            ))
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self._pre_allocated == other._pre_allocated,
+                        self._block_size == other._block_size,
+                        self._indexes == other._indexes,
+                        self._last_index == other._last_index,
+                        np.array_equal(self._values, other._values),
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     @property

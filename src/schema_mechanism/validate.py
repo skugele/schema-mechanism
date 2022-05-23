@@ -53,11 +53,19 @@ class RangeValidator(Validator):
         except TypeError:
             raise ValueError(f'Value not supported: {value}')
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         if isinstance(other, RangeValidator):
-            return all((other.low == self.low,
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        other.low == self.low,
                         other.high == self.high,
-                        other.exclude == self.exclude))
+                        other.exclude == self.exclude
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     def __hash__(self) -> int:

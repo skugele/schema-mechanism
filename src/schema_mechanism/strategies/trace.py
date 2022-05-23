@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
-from typing import Any
 from typing import Collection
 from typing import Optional
 from typing import TypeVar
@@ -28,10 +27,16 @@ class Trace(AssociativeArrayList[T], ABC):
 
     def __eq__(self, other) -> bool:
         if isinstance(other, type(self)):
-            return all((
-                self.decay_strategy == other.decay_strategy,
-                AssociativeArrayList.__eq__(self, other)
-            ))
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.decay_strategy == other.decay_strategy,
+                        AssociativeArrayList.__eq__(self, other)
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     @abstractmethod
@@ -53,12 +58,18 @@ class AccumulatingTrace(Trace):
 
         self.active_increment: float = active_increment
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other) -> bool:
         if isinstance(other, AccumulatingTrace):
-            return all((
-                self.active_increment == other.active_increment,
-                super().__eq__(other)
-            ))
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.active_increment == other.active_increment,
+                        super().__eq__(other)
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     def update(self, active_set: Optional[Collection[T]] = None):
@@ -90,12 +101,18 @@ class ReplacingTrace(Trace):
 
         self.active_value = active_value
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other) -> bool:
         if isinstance(other, ReplacingTrace):
-            return all((
-                self.active_value == other.active_value,
-                super().__eq__(other)
-            ))
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.active_value == other.active_value,
+                        super().__eq__(other)
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     def update(self, active_set: Optional[Collection[T]] = None):

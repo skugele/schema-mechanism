@@ -31,12 +31,18 @@ class LinearDecayStrategy(DecayStrategy):
         self.minimum = minimum if minimum is not None else -np.inf
         self.rate = rate
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other) -> bool:
         if isinstance(other, LinearDecayStrategy):
-            return all((
-                self.minimum == other.minimum,
-                self.rate == other.rate
-            ))
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.minimum == other.minimum,
+                        self.rate == other.rate
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     @property
@@ -100,13 +106,19 @@ class ExponentialDecayStrategy(DecayStrategy):
         self.initial: float = initial
         self.minimum: float = minimum
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other) -> bool:
         if isinstance(other, ExponentialDecayStrategy):
-            return all((
-                self.rate == other.rate,
-                self.initial == other.initial,
-                self.minimum == other.minimum
-            ))
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.rate == other.rate,
+                        self.initial == other.initial,
+                        self.minimum == other.minimum
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     @property
