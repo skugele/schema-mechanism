@@ -9,19 +9,17 @@ from typing import runtime_checkable
 
 import numpy as np
 
-from schema_mechanism.core import Action
 from schema_mechanism.core import Schema
 from schema_mechanism.core import calc_delegated_value
 from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.core import get_action_trace
-from schema_mechanism.share import rng
 from schema_mechanism.strategies.decay import DecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.scaling import ScalingStrategy
 from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
-from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import equal_weights
 from schema_mechanism.util import repr_str
+from schema_mechanism.util import rng
 
 logger = logging.getLogger(__name__)
 
@@ -417,11 +415,8 @@ class HabituationEvaluationStrategy(EvaluationStrategy):
     """ An EvaluationStrategy that modulates the selection value of schemas based on the recency and frequency of their
     action's selection.
 
-     By default, it uses the global action trace that is accessible by the get/set_action_trace functions in the
-     core package. If this default behavior is overridden, then it is critical that the action trace used by this class
-     is the same action trace that is supplied to the SchemaMechanism, so that the actions encountered are properly
-     updated.
-
+     Internally, it uses the global action trace that is accessible by the get/set_action_trace functions in the
+     core package.
 
      The value of schemas with actions that have been chosen many times recently and/or frequently is decreased. This
      implements a form of "habituation" (see Drescher, 1991, Section 3.4.2). The intent of this strategy is to boost
@@ -437,23 +432,11 @@ class HabituationEvaluationStrategy(EvaluationStrategy):
 
     """
 
-    def __init__(self,
-                 scaling_strategy: ScalingStrategy,
-                 trace: Trace[Action] = None) -> None:
-        self.trace = (
-            get_action_trace()
-            if trace is None
-            else trace
-        )
-
-        if self.trace is None:
-            raise ValueError('Trace cannot be None.')
-
+    def __init__(self, scaling_strategy: ScalingStrategy) -> None:
         self.scaling_strategy: ScalingStrategy = scaling_strategy
 
     def __repr__(self):
         attr_values = {
-            'trace': self.trace,
             'scaling_strategy': self.scaling_strategy,
         }
         return repr_str(obj=self, attr_values=attr_values)
@@ -463,7 +446,8 @@ class HabituationEvaluationStrategy(EvaluationStrategy):
             return np.array([])
 
         actions = [s.action for s in schemas]
-        trace_values = self.trace.values[self.trace.indexes(actions)]
+        trace = get_action_trace()
+        trace_values = trace.values[trace.indexes(actions)]
         median_trace_value = np.median(trace_values)
 
         values = self.scaling_strategy.scale(trace_values - median_trace_value)

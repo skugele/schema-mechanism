@@ -36,11 +36,22 @@ class TestGlobalStats(TestCase):
             stats = GlobalStats(initial_baseline_value=initial_baseline_value)
             self.assertEqual(initial_baseline_value, stats.baseline_value)
 
-    def test_global_stats_accessor_functions(self):
+    def test_global_instance_get_and_set_functions(self):
         stats = GlobalStats()
         set_global_stats(stats)
 
         self.assertEqual(stats, get_global_stats())
+
+    def test_equals(self):
+        stats = GlobalStats()
+        stats.baseline_value = 1.23
+        stats.n = 4
+
+        other = GlobalStats()
+        other.baseline_value = 4.56
+        other.n = 17
+
+        self.assertTrue(satisfies_equality_checks(obj=stats, other=other, other_different_type=1.0))
 
     def test_update(self):
         # setting learning rate to 1.0 to simplify testing (baseline value update depends on learning rate)
@@ -62,13 +73,13 @@ class TestGlobalStats(TestCase):
             self.assertEqual(n + 1, stats.n)
             n = stats.n
 
-    def test_clear(self):
+    def test_reset(self):
         stats = GlobalStats()
         stats.n = 100.0
         stats.baseline_value = 7.25
 
         # test: clear should reset values to zero
-        stats.clear()
+        stats.reset()
         self.assertEqual(0, stats.n)
         self.assertEqual(0.0, stats.baseline_value)
 
@@ -101,8 +112,8 @@ class TestECItemStatistics(TestCase):
 
     def test_specificity_4(self):
         # test: an item that is On and Off equally should have assertion specificity of 0.5
-        self.item_stats.update(on=False, success=False, count=500)
-        self.item_stats.update(on=True, success=False, count=500)
+        self.item_stats.update(on=False, success=False, count=10)
+        self.item_stats.update(on=True, success=False, count=10)
         self.assertEqual(0.5, self.item_stats.specificity)
 
     def test_thresholds(self):
@@ -131,6 +142,22 @@ class TestECItemStatistics(TestCase):
         self.assertEqual(self.item_stats.n_fail_and_off, 8)
         self.assertEqual(self.item_stats.n_on, 40)
         self.assertEqual(self.item_stats.n_off, 10)
+
+    def test_reset(self):
+        self.item_stats.update(on=True, success=True, count=32)
+        self.item_stats.update(on=True, success=False, count=8)
+        self.item_stats.update(on=False, success=True, count=2)
+        self.item_stats.update(on=False, success=False, count=8)
+
+        self.item_stats.reset()
+
+        self.assertEqual(self.item_stats.n, 0)
+        self.assertEqual(self.item_stats.n_on, 0)
+        self.assertEqual(self.item_stats.n_off, 0)
+        self.assertEqual(self.item_stats.n_success_and_on, 0)
+        self.assertEqual(self.item_stats.n_success_and_off, 0)
+        self.assertEqual(self.item_stats.n_fail_and_on, 0)
+        self.assertEqual(self.item_stats.n_fail_and_off, 0)
 
     def test_drescher_correlation(self):
         params = get_global_params()
@@ -278,6 +305,24 @@ class TestERItemStatistics(TestCase):
         self.assertEqual(self.item_stats.n_off_and_not_activated, 8)
         self.assertEqual(self.item_stats.n_activated, 40)
         self.assertEqual(self.item_stats.n_not_activated, 10)
+
+    def test_reset(self):
+        self.item_stats.update(on=True, activated=True, count=32)
+        self.item_stats.update(on=True, activated=False, count=2)
+        self.item_stats.update(on=False, activated=True, count=8)
+        self.item_stats.update(on=False, activated=False, count=8)
+
+        self.item_stats.reset()
+
+        self.assertEqual(self.item_stats.n, 0)
+        self.assertEqual(self.item_stats.n_on, 0)
+        self.assertEqual(self.item_stats.n_off, 0)
+        self.assertEqual(self.item_stats.n_on_and_activated, 0)
+        self.assertEqual(self.item_stats.n_on_and_not_activated, 0)
+        self.assertEqual(self.item_stats.n_off_and_activated, 0)
+        self.assertEqual(self.item_stats.n_off_and_not_activated, 0)
+        self.assertEqual(self.item_stats.n_activated, 0)
+        self.assertEqual(self.item_stats.n_not_activated, 0)
 
     def test_eq(self):
         self.item_stats.update(on=True, activated=True)

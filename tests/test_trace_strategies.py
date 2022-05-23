@@ -9,6 +9,7 @@ from schema_mechanism.strategies.trace import ReplacingTrace
 from schema_mechanism.strategies.trace import Trace
 from test_share import disable_test
 from test_share.test_func import common_test_setup
+from test_share.test_func import satisfies_equality_checks
 
 
 class TestCommon(TestCase):
@@ -190,6 +191,141 @@ class TestAccumulatingTrace(TestCommon):
 
     def test_contains(self):
         self.assert_contains_functions_correctly(self.trace)
+
+    def test_equals(self):
+        trace = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.2,
+            pre_allocated=20,
+            block_size=5
+        )
+        other = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.75),
+            active_increment=0.2,
+            pre_allocated=100,
+            block_size=1
+        )
+
+        self.assertTrue(satisfies_equality_checks(obj=trace, other=other, other_different_type=1.0))
+
+        # test: traces with different decay strategies should not be equal
+        trace_1 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=5,
+            block_size=20
+        )
+        trace_2 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.6),
+            active_increment=1.0,
+            pre_allocated=5,
+            block_size=20
+        )
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: traces with different active increments should not be equal
+        trace_1 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=5,
+            block_size=20
+        )
+        trace_2 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=0.75,
+            pre_allocated=5,
+            block_size=20
+        )
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: traces with different pre-allocated should not be equal
+        trace_1 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=5,
+            block_size=20
+        )
+        trace_2 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=10,
+            block_size=20
+        )
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: traces with different block sizes should not be equal
+        trace_1 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_2 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=10,
+            block_size=20
+        )
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: traces with different indexes should not be equal
+        trace_1 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_2 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_1.update(['A', 'B', 'C'])
+        trace_2.update(['A', 'B', 'D'])
+
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: traces with different values should not be equal
+        trace_1 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_2 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_1.update(['A', 'B', 'C'])
+
+        trace_2.update(['A', 'B', 'C'])
+        trace_2.update(['A', 'B', 'C'])
+
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: these traces should be equal
+        trace_1 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_2 = AccumulatingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_increment=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+
+        # same number of updates, with same active sets
+        for _ in range(5):
+            trace_1.update(['A', 'B', 'C', 'D'])
+            trace_2.update(['A', 'B', 'C', 'D'])
+
+        self.assertEqual(trace_1, trace_2)
 
     def test_clear(self):
         self.assert_clear_functions_correctly(self.trace)
@@ -375,3 +511,140 @@ class TestReplacingTrace(TestCommon):
             np.testing.assert_array_equal(old_values, new_values)
 
             old_values = new_values
+
+    def test_equals(self):
+        trace = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.2,
+            pre_allocated=20,
+            block_size=5
+        )
+        other = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.75),
+            active_value=0.2,
+            pre_allocated=100,
+            block_size=1
+        )
+
+        self.assertTrue(satisfies_equality_checks(obj=trace, other=other, other_different_type=1.0))
+
+        # test: traces with different decay strategies should not be equal
+        trace_1 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=5,
+            block_size=20
+        )
+        trace_2 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.6),
+            active_value=1.0,
+            pre_allocated=5,
+            block_size=20
+        )
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: traces with different active increments should not be equal
+        trace_1 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=5,
+            block_size=20
+        )
+        trace_2 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=0.75,
+            pre_allocated=5,
+            block_size=20
+        )
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: traces with different pre-allocated should not be equal
+        trace_1 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=5,
+            block_size=20
+        )
+        trace_2 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=10,
+            block_size=20
+        )
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: traces with different block sizes should not be equal
+        trace_1 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_2 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=10,
+            block_size=20
+        )
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: traces with different indexes should not be equal
+        trace_1 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_2 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_1.update(['A', 'B', 'C'])
+        trace_2.update(['A', 'B', 'D'])
+
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: traces with different values should not be equal
+        trace_1 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_2 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_1.update(['A', 'B', 'C'])
+
+        trace_2.update(['A', 'B', 'C'])
+
+        # decays trace 2 so values will be different from trace 1
+        trace_2.update([])
+
+        self.assertNotEqual(trace_1, trace_2)
+
+        # test: these traces should be equal
+        trace_1 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+        trace_2 = ReplacingTrace(
+            decay_strategy=GeometricDecayStrategy(rate=0.5),
+            active_value=1.0,
+            pre_allocated=10,
+            block_size=5
+        )
+
+        # same number of updates, with same active sets
+        for _ in range(5):
+            trace_1.update(['A', 'B', 'C', 'D'])
+            trace_2.update(['A', 'B', 'C', 'D'])
+
+        self.assertEqual(trace_1, trace_2)

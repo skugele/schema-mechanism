@@ -17,22 +17,16 @@ from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
-from schema_mechanism.share import rng
-from schema_mechanism.share import set_random_seed
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
-from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
-from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
-from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
-from schema_mechanism.strategies.evaluation import InstrumentalValueEvaluationStrategy
-from schema_mechanism.strategies.evaluation import PendingFocusEvaluationStrategy
-from schema_mechanism.strategies.evaluation import ReliabilityEvaluationStrategy
-from schema_mechanism.strategies.evaluation import TotalDelegatedValueEvaluationStrategy
-from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
+from schema_mechanism.strategies.evaluation import display_minmax
 from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
-from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.util import Observable
+from schema_mechanism.util import rng
+from schema_mechanism.util import set_random_seed
 
 logger = logging.getLogger('examples.environments.multi_arm_bandits')
 
@@ -40,8 +34,8 @@ logger = logging.getLogger('examples.environments.multi_arm_bandits')
 set_random_seed(RANDOM_SEED)
 
 # global constants
-N_MACHINES = 25
-N_STEPS = 5000
+N_MACHINES = 5
+N_STEPS = 15000
 
 
 class Machine:
@@ -244,29 +238,18 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
             match=AbsoluteDiffMatchStrategy(max_diff=0.01)),
         evaluation_strategy=CompositeEvaluationStrategy(
             strategies=[
-                TotalPrimitiveValueEvaluationStrategy(),
-                TotalDelegatedValueEvaluationStrategy(),
-                InstrumentalValueEvaluationStrategy(),
-                PendingFocusEvaluationStrategy(
-                    max_value=1.0,
-                    decay_strategy=ExponentialDecayStrategy(rate=0.1, minimum=-1.0)
-                ),
-                ReliabilityEvaluationStrategy(),
-                HabituationEvaluationStrategy(
-                    scaling_strategy=SigmoidScalingStrategy()
-                ),
-                EpsilonGreedyEvaluationStrategy(
+                DefaultExploratoryEvaluationStrategy(
                     epsilon=0.9999,
                     epsilon_min=0.1,
-                    decay_strategy=ExponentialDecayStrategy(
-                        rate=1.0e-4,
-                        initial=1.0,
-                        minimum=0.0
-                    )
+                    epsilon_decay_rate=0.9999,
+                    # post_process=[display_minmax],
+                ),
+                DefaultGoalPursuitEvaluationStrategy(
+                    # post_process=[display_minmax]
                 ),
             ],
-            weights=[0.1, 0.4, 0.05, 0.05, 0.1, 0.15, 0.15],
-            # post_process=[display_values, display_minmax]
+            weights=[0.6, 0.4],
+            post_process=[display_minmax],
         )
     )
 

@@ -11,12 +11,12 @@ from schema_mechanism.core import DummyController
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
+from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import SchemaMemory
-from schema_mechanism.share import GlobalParams
 from test_share import disable_test
 from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
@@ -29,7 +29,7 @@ class TestShared(unittest.TestCase):
         common_test_setup()
 
         # setting learning rate to 1.0 to simplify testing
-        GlobalParams().set('learning_rate', 1.0)
+        get_global_params().set('learning_rate', 1.0)
 
         # construct a SchemaTree for testing proximity to goal states
         self.s1 = sym_schema('/A1/', schema_type=MockSchema, reliability=0.0, avg_duration=np.inf)

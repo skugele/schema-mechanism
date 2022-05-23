@@ -1,4 +1,5 @@
 import unittest
+from copy import deepcopy
 
 import numpy as np
 
@@ -10,7 +11,6 @@ from schema_mechanism.core import new_state
 from schema_mechanism.core import reduce_to_most_specific_items
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
-from schema_mechanism.share import GlobalParams
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.decay import ImmediateDecayStrategy
 from schema_mechanism.strategies.decay import LinearDecayStrategy
@@ -21,6 +21,7 @@ from schema_mechanism.util import pairwise
 from test_share.test_classes import MockCompositeItem
 from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
+from test_share.test_func import satisfies_equality_checks
 
 
 class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
@@ -159,7 +160,7 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         self.assertAlmostEqual(calc_value(sym_state('9')), dv_helper.delegated_value(self.item_a))
 
     def test_pos_primitive_value_states_produce_pos_delegated_value(self):
-        GlobalParams().set('learning_rate', 0.1)
+        get_global_params().set('learning_rate', 0.1)
 
         for _ in range(100):
             self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('7'))
@@ -167,7 +168,7 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         self.assertGreater(self.dv_helper.delegated_value(self.item_a), 0.0)
 
     def test_pos_delegated_value_states_produce_pos_delegated_value(self):
-        GlobalParams().set('learning_rate', 0.1)
+        get_global_params().set('learning_rate', 0.1)
 
         for _ in range(100):
             self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('3'))
@@ -175,7 +176,7 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         self.assertGreater(self.dv_helper.delegated_value(self.item_a), 0.0)
 
     def test_neg_primitive_value_states_produce_neg_delegated_value(self):
-        GlobalParams().set('learning_rate', 0.1)
+        get_global_params().set('learning_rate', 0.1)
 
         for _ in range(100):
             self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('4'))
@@ -183,7 +184,7 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         self.assertLess(self.dv_helper.delegated_value(self.item_a), 0.0)
 
     def test_neg_delegated_value_states_produce_neg_delegated_value(self):
-        GlobalParams().set('learning_rate', 0.1)
+        get_global_params().set('learning_rate', 0.1)
 
         for _ in range(100):
             self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('2'))
@@ -191,7 +192,7 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
         self.assertLess(self.dv_helper.delegated_value(self.item_a), 0.0)
 
     def test_zero_value_states_produce_zero_delegated_value(self):
-        GlobalParams().set('learning_rate', 0.1)
+        get_global_params().set('learning_rate', 0.1)
 
         for _ in range(100):
             self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('1'))
@@ -439,7 +440,7 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
                 active_value=1.0
             )
         )
-        GlobalParams().set('learning_rate', 1.0)
+        get_global_params().set('learning_rate', 1.0)
 
         # sanity check: item should have no delegated value initially
         self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
@@ -477,7 +478,7 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
                 decay_strategy=ImmediateDecayStrategy(minimum=0.0)
             )
         )
-        GlobalParams().set('learning_rate', 1.0)
+        get_global_params().set('learning_rate', 1.0)
 
         # sanity check: item should have no delegated value initially
         self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
@@ -515,7 +516,7 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
                 decay_strategy=GeometricDecayStrategy(rate=0.5)
             )
         )
-        GlobalParams().set('learning_rate', 1.0)
+        get_global_params().set('learning_rate', 1.0)
 
         # sanity check: item should have no delegated value initially
         self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
@@ -547,6 +548,40 @@ class TestEligibilityTraceDelegatedValueHelper(unittest.TestCase):
 
         self.assertEqual(eff_value * trace_values[0], self.dv_helper.delegated_value(self.item_a))
         self.assertEqual(eff_value * trace_values[1], self.dv_helper.delegated_value(self.item_b))
+
+    def test_equals(self):
+        delegated_value_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=0.7,
+            eligibility_trace=AccumulatingTrace(
+                decay_strategy=GeometricDecayStrategy(rate=0.9)
+            )
+        )
+        other = EligibilityTraceDelegatedValueHelper(
+            discount_factor=0.8,
+            eligibility_trace=ReplacingTrace(
+                decay_strategy=GeometricDecayStrategy(rate=0.5)
+            )
+        )
+
+        self.assertTrue(satisfies_equality_checks(
+            obj=delegated_value_helper,
+            other=other,
+            other_different_type=1.0)
+        )
+
+        # test: these delegated value helpers should be equal
+        shared_trace = ReplacingTrace(decay_strategy=GeometricDecayStrategy(rate=0.5))
+
+        for discount_factor in np.linspace(0.01, 0.99):
+            delegated_value_helper = EligibilityTraceDelegatedValueHelper(
+                discount_factor=discount_factor,
+                eligibility_trace=deepcopy(shared_trace)
+            )
+            other = EligibilityTraceDelegatedValueHelper(
+                discount_factor=discount_factor,
+                eligibility_trace=deepcopy(shared_trace)
+            )
+            self.assertEqual(delegated_value_helper, other)
 
     def test_reset(self):
 

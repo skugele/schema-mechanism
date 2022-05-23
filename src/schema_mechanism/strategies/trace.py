@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from typing import Any
 from typing import Collection
 from typing import Optional
 from typing import TypeVar
@@ -14,7 +15,7 @@ from schema_mechanism.util import AssociativeArrayList
 T = TypeVar('T')
 
 
-class Trace(ABC, AssociativeArrayList[T]):
+class Trace(AssociativeArrayList[T], ABC):
     """
 
         See Sutton and Barto, 2018, Chapter 12.)
@@ -24,6 +25,14 @@ class Trace(ABC, AssociativeArrayList[T]):
         super().__init__(**kwargs)
 
         self.decay_strategy: DecayStrategy = decay_strategy
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, type(self)):
+            return all((
+                self.decay_strategy == other.decay_strategy,
+                AssociativeArrayList.__eq__(self, other)
+            ))
+        return False if other is None else NotImplemented
 
     @abstractmethod
     def update(self, active_set: Optional[Collection[T]] = None) -> None:
@@ -43,6 +52,14 @@ class AccumulatingTrace(Trace):
         super().__init__(decay_strategy=decay_strategy, **kwargs)
 
         self.active_increment: float = active_increment
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, AccumulatingTrace):
+            return all((
+                self.active_increment == other.active_increment,
+                super().__eq__(other)
+            ))
+        return False if other is None else NotImplemented
 
     def update(self, active_set: Optional[Collection[T]] = None):
         active_set = np.array(active_set) if active_set is not None else np.array([])
@@ -72,6 +89,14 @@ class ReplacingTrace(Trace):
         super().__init__(decay_strategy=decay_strategy, **kwargs)
 
         self.active_value = active_value
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, ReplacingTrace):
+            return all((
+                self.active_value == other.active_value,
+                super().__eq__(other)
+            ))
+        return False if other is None else NotImplemented
 
     def update(self, active_set: Optional[Collection[T]] = None):
         active_set = np.array(active_set) if active_set is not None else np.array([])

@@ -45,17 +45,11 @@ class DrescherCorrelationTest:
             n_a_and_x = table[0]
             n_a_and_not_x = table[2]
 
-            if n_x == 0 or n_not_x == 0:
-                return 0.0
-
             # calculate conditional probabilities
             pr_a_given_x = n_a_and_x / n_x
             pr_a_given_not_x = n_a_and_not_x / n_not_x
 
             pr_a = pr_a_given_x + pr_a_given_not_x
-
-            if pr_a == 0:
-                return 0.0
 
             # the part-to-part ratio Pr(A | X) : Pr(A | not X)
             ratio = pr_a_given_x / pr_a
@@ -81,17 +75,11 @@ class DrescherCorrelationTest:
             n_not_a_and_x = table[1]
             n_not_a_and_not_x = table[3]
 
-            if n_x == 0 or n_not_x == 0:
-                return 0.0
-
             # calculate conditional probabilities
             pr_not_a_given_x = n_not_a_and_x / n_x
             pr_not_a_given_not_x = n_not_a_and_not_x / n_not_x
 
             pr_not_a = pr_not_a_given_x + pr_not_a_given_not_x
-
-            if pr_not_a == 0:
-                return 0.0
 
             # the part-to-part ratio between Pr(not A | X) : Pr(not A | not X)
             ratio = pr_not_a_given_x / pr_not_a
@@ -128,7 +116,7 @@ class BarnardExactCorrelationTest(ItemCorrelationTest):
 class FisherExactCorrelationTest:
 
     @classmethod
-    @lru_cache(maxsize=100000)
+    @lru_cache(maxsize=1000)
     def positive_corr_statistic(cls, table: CorrelationTable) -> float:
         """
 
@@ -140,7 +128,7 @@ class FisherExactCorrelationTest:
         return 1.0 - p_value
 
     @classmethod
-    @lru_cache(maxsize=100000)
+    @lru_cache(maxsize=1000)
     def negative_corr_statistic(cls, table: CorrelationTable) -> float:
         """
 

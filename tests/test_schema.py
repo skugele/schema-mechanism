@@ -47,6 +47,15 @@ class TestSchema(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
+        params = get_global_params()
+        features: set[SupportedFeature] = params.get('features')
+
+        if SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE in features:
+            features.remove(SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE)
+
+        if SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED in features:
+            features.remove(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
+
         self.item_pool = ItemPool()
 
         # populate pool
@@ -59,15 +68,6 @@ class TestSchema(TestCase):
         self.obs = MockObserver()
         self.schema.register(self.obs)
         self.schema_ca.register(self.obs)
-
-        params = get_global_params()
-        features: set[SupportedFeature] = params.get('features')
-
-        if SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE in features:
-            features.remove(SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE)
-
-        if SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED in features:
-            features.remove(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED)
 
     def test_init(self):
         # Action CANNOT be None

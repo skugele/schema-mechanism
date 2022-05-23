@@ -6,9 +6,9 @@ from typing import runtime_checkable
 import numpy as np
 
 from schema_mechanism.core import Schema
-from schema_mechanism.share import rng
 from schema_mechanism.strategies.match import EqualityMatchStrategy
 from schema_mechanism.strategies.match import MatchStrategy
+from schema_mechanism.util import rng
 
 logger = logging.getLogger('schema_mechanism.strategies.selection')
 

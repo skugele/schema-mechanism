@@ -1,5 +1,6 @@
 from abc import ABC
 from abc import abstractmethod
+from typing import Any
 from typing import Optional
 
 import numpy as np
@@ -29,6 +30,14 @@ class LinearDecayStrategy(DecayStrategy):
 
         self.minimum = minimum if minimum is not None else -np.inf
         self.rate = rate
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, LinearDecayStrategy):
+            return all((
+                self.minimum == other.minimum,
+                self.rate == other.rate
+            ))
+        return False if other is None else NotImplemented
 
     @property
     def minimum(self) -> float:
@@ -61,6 +70,11 @@ class GeometricDecayStrategy(DecayStrategy):
 
         self.rate = rate
 
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, GeometricDecayStrategy):
+            return self.rate == other.rate
+        return False if other is None else NotImplemented
+
     @property
     def rate(self) -> float:
         return self._rate
@@ -86,6 +100,15 @@ class ExponentialDecayStrategy(DecayStrategy):
         self.initial: float = initial
         self.minimum: float = minimum
 
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, ExponentialDecayStrategy):
+            return all((
+                self.rate == other.rate,
+                self.initial == other.initial,
+                self.minimum == other.minimum
+            ))
+        return False if other is None else NotImplemented
+
     @property
     def rate(self) -> float:
         return self._rate
@@ -108,6 +131,11 @@ class ExponentialDecayStrategy(DecayStrategy):
 
 class NoDecayStrategy(DecayStrategy):
 
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, NoDecayStrategy):
+            return True
+        return False if other is None else NotImplemented
+
     def decay(self, values: np.ndarray, step_size: float = 1.0) -> np.ndarray:
         if step_size < 0.0:
             raise ValueError('Step size must be non-negative')
@@ -120,6 +148,11 @@ class ImmediateDecayStrategy(DecayStrategy):
         super().__init__()
 
         self.minimum: float = minimum
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, ImmediateDecayStrategy):
+            return self.minimum == other.minimum
+        return False if other is None else NotImplemented
 
     def decay(self, values: np.ndarray, step_size: float = 1.0) -> np.ndarray:
         if step_size < 0.0:

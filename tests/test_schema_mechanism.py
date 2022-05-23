@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -18,9 +19,9 @@ from schema_mechanism.func_api import sym_schema
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
+from schema_mechanism.parameters import GlobalParams
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
-from schema_mechanism.share import GlobalParams
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
@@ -93,12 +94,25 @@ class TestSchemaMechanism(TestCase):
         )
 
         # test: attributes should have been set properly in initializer
-        self.assertIs(self.schema_memory, schema_mechanism.schema_memory)
-        self.assertIs(self.schema_selection, schema_mechanism.schema_selection)
-        self.assertIs(delegated_value_helper, schema_mechanism.delegated_value_helper)
-        self.assertIs(action_trace, schema_mechanism.action_trace)
-        self.assertIs(global_stats, schema_mechanism.stats)
-        self.assertIs(global_params, schema_mechanism.params)
+        self.assertEqual(self.schema_memory, schema_mechanism.schema_memory)
+        self.assertEqual(self.schema_selection, schema_mechanism.schema_selection)
+        self.assertEqual(delegated_value_helper, schema_mechanism.delegated_value_helper)
+        self.assertEqual(global_stats, schema_mechanism.stats)
+        self.assertEqual(global_params, schema_mechanism.params)
+
+        # note: action trace should NOT be equal to passed parameters because the initializer adds primitive actions
+        # to the action trace; however, they SHOULD be equal otherwise
+
+        # clear added values to compare other trace attributes for equality
+        action_trace_copy = deepcopy(schema_mechanism.action_trace)
+        action_trace_copy.clear()
+
+        # test: basic parameters and type should be identical between action traces
+        self.assertEqual(action_trace, action_trace_copy)
+
+        # test: all primitive actions should have been added to the action trace
+        primitive_actions = {schema.action for schema in self.schema_memory}
+        self.assertSetEqual(set(primitive_actions), set(schema_mechanism.action_trace.keys()))
 
         # test: verify that primitive items were added to the item pool
         item_pool = ItemPool()
@@ -113,10 +127,23 @@ class TestSchemaMechanism(TestCase):
             schema_selection=self.schema_selection
         )
 
-        self.assertIs(default_delegated_value_helper, schema_mechanism.delegated_value_helper)
-        self.assertIs(default_action_trace, schema_mechanism.action_trace)
-        self.assertIs(default_global_stats, schema_mechanism.stats)
-        self.assertIs(default_global_params, schema_mechanism.params)
+        self.assertEqual(default_delegated_value_helper, schema_mechanism.delegated_value_helper)
+        self.assertEqual(default_global_stats, schema_mechanism.stats)
+        self.assertEqual(default_global_params, schema_mechanism.params)
+
+        # note: action trace should NOT be equal to passed parameters because the initializer adds primitive actions
+        # to the action trace; however, they SHOULD be equal otherwise
+
+        # clear added values to compare other trace attributes for equality
+        action_trace_copy = deepcopy(schema_mechanism.action_trace)
+        action_trace_copy.clear()
+
+        # test: basic parameters and type should be identical between action traces
+        self.assertEqual(default_action_trace, action_trace_copy)
+
+        # test: all primitive actions should have been added to the action trace
+        primitive_actions = {schema.action for schema in self.schema_memory}
+        self.assertSetEqual(set(primitive_actions), set(schema_mechanism.action_trace.keys()))
 
     def test_serialize(self):
         with TemporaryDirectory() as tmp_dir:

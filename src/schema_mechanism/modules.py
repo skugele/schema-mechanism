@@ -35,7 +35,9 @@ from schema_mechanism.core import default_delegated_value_helper
 from schema_mechanism.core import default_global_params
 from schema_mechanism.core import default_global_stats
 from schema_mechanism.core import get_action_trace
+from schema_mechanism.core import get_delegated_value_helper
 from schema_mechanism.core import get_global_params
+from schema_mechanism.core import get_global_stats
 from schema_mechanism.core import is_feature_enabled
 from schema_mechanism.core import is_reliable
 from schema_mechanism.core import lost_state
@@ -44,15 +46,15 @@ from schema_mechanism.core import set_action_trace
 from schema_mechanism.core import set_delegated_value_helper
 from schema_mechanism.core import set_global_params
 from schema_mechanism.core import set_global_stats
-from schema_mechanism.share import GlobalParams
+from schema_mechanism.parameters import GlobalParams
 from schema_mechanism.share import SupportedFeature
-from schema_mechanism.share import rng
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
 from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.selection import SelectionStrategy
 from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import Observer
+from schema_mechanism.util import rng
 
 logger = logging.getLogger(__name__)
 
@@ -598,38 +600,30 @@ class SchemaMechanism:
         self._schema_memory: SchemaMemory = schema_memory
         self._schema_selection: SchemaSelection = schema_selection
 
-        self._params: GlobalParams = (
-            default_global_params
-            if global_params is None
-            else global_params
-        )
-        set_global_params(self._params)
+        if global_params:
+            set_global_params(global_params)
+        else:
+            set_global_params(default_global_params)
 
-        self._stats: GlobalStats = (
-            default_global_stats
-            if global_stats is None
-            else global_stats
-        )
-        set_global_stats(self._stats)
+        if global_stats:
+            set_global_stats(global_stats)
+        else:
+            set_global_stats(default_global_stats)
 
-        self._delegated_value_helper: DelegatedValueHelper = (
-            default_delegated_value_helper
-            if delegated_value_helper is None
-            else delegated_value_helper
-        )
-        set_delegated_value_helper(self._delegated_value_helper)
+        if delegated_value_helper:
+            set_delegated_value_helper(delegated_value_helper)
+        else:
+            set_delegated_value_helper(default_delegated_value_helper)
 
-        self._action_trace: Trace[Action] = (
-            default_action_trace
-            if action_trace is None
-            else action_trace
-        )
-        set_action_trace(self._action_trace)
+        if action_trace:
+            set_action_trace(action_trace)
+        else:
+            set_action_trace(default_action_trace)
 
         # initialize traces
         # TODO: Is this needed? What happens if I don't do this???
         built_in_actions = {schema.action for schema in self.schema_memory}
-        self._action_trace.add(built_in_actions)
+        get_action_trace().add(built_in_actions)
 
         # pool references (used primarily for serialization)
         self._item_pool: ItemPool = ItemPool()
@@ -649,11 +643,11 @@ class SchemaMechanism:
 
     @property
     def delegated_value_helper(self) -> DelegatedValueHelper:
-        return self._delegated_value_helper
+        return get_delegated_value_helper()
 
     @property
     def action_trace(self) -> Trace[Action]:
-        return self._action_trace
+        return get_action_trace()
 
     @property
     def params(self) -> GlobalParams:
@@ -661,7 +655,7 @@ class SchemaMechanism:
 
         :return: a reference to the GlobalParams
         """
-        return self._params
+        return get_global_params()
 
     @property
     def stats(self) -> GlobalStats:
@@ -669,7 +663,7 @@ class SchemaMechanism:
 
         :return: a reference to the GlobalStats
         """
-        return self._stats
+        return get_global_stats()
 
     def select(self, state: State, **_kwargs) -> SelectionDetails:
         applicable_schemas = self.schema_memory.all_applicable(state)
@@ -688,11 +682,11 @@ class SchemaMechanism:
         actions = [pending_details.schema.action for pending_details in terminated_pending_details]
         actions.append(selected_schema.action)
 
-        self._action_trace.update(actions)
-        self._delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
+        self.action_trace.update(actions)
+        self.delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
 
         # updates global statistics
-        self._stats.update(selection_state=selection_state, result_state=result_state)
+        self.stats.update(selection_state=selection_state, result_state=result_state)
 
 
 def create_spin_off(schema: Schema, spin_off_type: SchemaSpinOffType, item: Item) -> Schema:

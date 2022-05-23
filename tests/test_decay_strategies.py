@@ -11,6 +11,7 @@ from schema_mechanism.strategies.decay import LinearDecayStrategy
 from schema_mechanism.strategies.decay import NoDecayStrategy
 from test_share import disable_test
 from test_share.test_func import common_test_setup
+from test_share.test_func import satisfies_equality_checks
 
 
 class TestCommon(TestCase):
@@ -125,6 +126,54 @@ class TestLinearDecayStrategy(TestCommon):
     def test_common(self):
         self.assert_all_common_functionality(self.strategy)
 
+    def test_equals(self):
+        linear_strategy = LinearDecayStrategy(
+            rate=0.001,
+            minimum=0.0
+        )
+        other = LinearDecayStrategy(
+            rate=0.002,
+            minimum=0.1
+        )
+
+        self.assertTrue(satisfies_equality_checks(obj=linear_strategy, other=other, other_different_type=1.0))
+
+        # test: strategies with different rates are not equal
+        linear_strategy_1 = LinearDecayStrategy(
+            rate=0.001,
+            minimum=0.0
+        )
+        linear_strategy_2 = LinearDecayStrategy(
+            rate=0.017,
+            minimum=0.0
+        )
+
+        self.assertNotEqual(linear_strategy_1, linear_strategy_2)
+
+        # test: strategies with different minimums are not equal
+        linear_strategy_1 = LinearDecayStrategy(
+            rate=0.001,
+            minimum=0.0
+        )
+        linear_strategy_2 = LinearDecayStrategy(
+            rate=0.001,
+            minimum=0.37
+        )
+
+        self.assertNotEqual(linear_strategy_1, linear_strategy_2)
+
+        # test: these strategies should be equal
+        linear_strategy_1 = LinearDecayStrategy(
+            rate=0.001,
+            minimum=0.37
+        )
+        linear_strategy_2 = LinearDecayStrategy(
+            rate=0.001,
+            minimum=0.37
+        )
+
+        self.assertEqual(linear_strategy_1, linear_strategy_2)
+
     def test_decay_produces_expected_results(self):
         # test: expected values should be returned from different step sizes
         expected_values = [1.0 - step * self.strategy.rate for step in range(0, 10)]
@@ -178,6 +227,24 @@ class TestGeometricDecayStrategy(TestCommon):
 
     def test_decay_to_zero(self):
         self.assert_decay_continues_to_limit(self.strategy, limit=0.0)
+
+    def test_equals(self):
+        geometric_strategy = GeometricDecayStrategy(rate=0.001)
+        other = GeometricDecayStrategy(rate=0.002)
+
+        self.assertTrue(satisfies_equality_checks(obj=geometric_strategy, other=other, other_different_type=1.0))
+
+        # test: strategies with different rates are not equal
+        geometric_strategy_1 = GeometricDecayStrategy(rate=0.001)
+        geometric_strategy_2 = GeometricDecayStrategy(rate=0.017)
+
+        self.assertNotEqual(geometric_strategy_1, geometric_strategy_2)
+
+        # test: these strategies should be equal
+        geometric_strategy_1 = GeometricDecayStrategy(rate=0.017)
+        geometric_strategy_2 = GeometricDecayStrategy(rate=0.017)
+
+        self.assertEqual(geometric_strategy_1, geometric_strategy_2)
 
     # noinspection PyUnboundLocalVariable
     @disable_test
@@ -268,6 +335,76 @@ class TestExponentialDecayStrategy(TestCommon):
             self.assert_decay_continues_to_limit(
                 ExponentialDecayStrategy(rate=2.0, initial=1.0, minimum=minimum), limit=minimum)
 
+    def test_equals(self):
+        exponential_strategy = ExponentialDecayStrategy(
+            rate=2.0e-4,
+            initial=1.6,
+            minimum=0.1
+        )
+        other = ExponentialDecayStrategy(
+            rate=2.0e-3,
+            initial=1.2,
+            minimum=0.2
+        )
+
+        self.assertTrue(satisfies_equality_checks(obj=exponential_strategy, other=other, other_different_type=1.0))
+
+        # test: strategies with different rates are not equal
+        exponential_strategy_1 = ExponentialDecayStrategy(
+            rate=2.0e-4,
+            initial=1.0,
+            minimum=0.0
+        )
+        exponential_strategy_2 = ExponentialDecayStrategy(
+            rate=2.0e-2,
+            initial=1.0,
+            minimum=0.0
+        )
+
+        self.assertNotEqual(exponential_strategy_1, exponential_strategy_2)
+
+        # test: strategies with different initial values are not equal
+        exponential_strategy_1 = ExponentialDecayStrategy(
+            rate=2.0e-4,
+            initial=1.0,
+            minimum=0.0
+        )
+        exponential_strategy_2 = ExponentialDecayStrategy(
+            rate=2.0e-4,
+            initial=0.6,
+            minimum=0.0
+        )
+
+        self.assertNotEqual(exponential_strategy_1, exponential_strategy_2)
+
+        # test: strategies with different minimum values are not equal
+        exponential_strategy_1 = ExponentialDecayStrategy(
+            rate=2.0e-4,
+            initial=1.0,
+            minimum=0.0
+        )
+        exponential_strategy_2 = ExponentialDecayStrategy(
+            rate=2.0e-4,
+            initial=1.0,
+            minimum=-3.0
+        )
+
+        self.assertNotEqual(exponential_strategy_1, exponential_strategy_2)
+
+        # test: these strategies should be equal
+        exponential_strategy_1 = ExponentialDecayStrategy(
+            rate=2.0e-4,
+            initial=1.0,
+            minimum=-3.0
+        )
+        exponential_strategy_2 = ExponentialDecayStrategy(
+            rate=2.0e-4,
+            initial=1.0,
+            minimum=-3.0
+        )
+
+        self.assertEqual(exponential_strategy_1, exponential_strategy_2)
+
     # noinspection PyUnboundLocalVariable
     @disable_test
     def test_playground(self):
@@ -306,6 +443,16 @@ class TestNoDecayStrategy(TestCommon):
             output_values = self.strategy.decay(self.ONES, step_size=step_size)
             np.testing.assert_array_equal(self.ONES, output_values)
 
+        # test: negative step sizes should raise a ValueError
+        self.assertRaises(ValueError, lambda: self.strategy.decay(self.ONES, step_size=-1e-10))
+        self.assertRaises(ValueError, lambda: self.strategy.decay(self.ONES, step_size=-1e10))
+
+    def test_equals(self):
+        no_decay_strategy = NoDecayStrategy()
+        other = NoDecayStrategy()
+
+        self.assertTrue(satisfies_equality_checks(obj=no_decay_strategy, other=other, other_different_type=1.0))
+
 
 class TestImmediateDecayStrategy(TestCommon):
     def setUp(self) -> None:
@@ -341,3 +488,21 @@ class TestImmediateDecayStrategy(TestCommon):
         for step_size in range(1, 10):
             output_values = self.strategy.decay(self.ONES, step_size=step_size)
             np.testing.assert_array_equal(self.strategy.minimum * self.ONES, output_values)
+
+    def test_equals(self):
+        immediate_decay_strategy = ImmediateDecayStrategy(minimum=-0.35)
+        other = ImmediateDecayStrategy(minimum=-0.2)
+
+        self.assertTrue(satisfies_equality_checks(obj=immediate_decay_strategy, other=other, other_different_type=1.0))
+
+        # test: strategies with different minimum values should not be equal
+        immediate_decay_strategy_1 = ImmediateDecayStrategy(minimum=-0.35)
+        immediate_decay_strategy_2 = ImmediateDecayStrategy(minimum=-0.25)
+
+        self.assertNotEqual(immediate_decay_strategy_1, immediate_decay_strategy_2)
+
+        # test: these strategies should be equal
+        immediate_decay_strategy_1 = ImmediateDecayStrategy(minimum=0.15)
+        immediate_decay_strategy_2 = ImmediateDecayStrategy(minimum=0.15)
+
+        self.assertEqual(immediate_decay_strategy_1, immediate_decay_strategy_2)

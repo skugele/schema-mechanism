@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import importlib
 import itertools
 import logging
+import random
+from abc import ABC
 from abc import ABCMeta
+from abc import abstractmethod
 from collections import Collection
 from collections import defaultdict
 from collections.abc import Iterable
@@ -11,12 +13,10 @@ from itertools import tee
 from typing import Any
 from typing import Generic
 from typing import Optional
-from typing import Type
 from typing import TypeVar
 from typing import Union
 
 import numpy as np
-import sklearn.metrics as sk_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -39,19 +39,19 @@ class UniqueIdMixin:
         return cls._last_uid
 
 
-class Observer:
+class Observer(ABC):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
+    @abstractmethod
     def receive(self, **kwargs) -> None:
         """ Receive update from observer.
 
         :return: None
         """
-        raise NotImplementedError('Observer\'s receive method is missing an implementation.')
 
 
-class Observable:
+class Observable(ABC):
     """ An observable subject. """
 
     def __init__(self, **kwargs) -> None:
@@ -132,7 +132,7 @@ class AssociativeArrayList(Generic[T]):
         self._block_size = block_size
 
         # map of hashable objects to their values array index
-        self._indexes: dict[T, int] = defaultdict(self._missing_index)
+        self._indexes: dict[T, int] = dict()
 
         self._values = np.zeros(pre_allocated, dtype=np.float64)
 
@@ -174,6 +174,17 @@ class AssociativeArrayList(Generic[T]):
     # overrides the default behavior of using __len__ to determine truthiness
     def __bool__(self) -> bool:
         return True
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, AssociativeArrayList):
+            return all((
+                self._pre_allocated == other._pre_allocated,
+                self._block_size == other._block_size,
+                self._indexes == other._indexes,
+                self._last_index == other._last_index,
+                np.array_equal(self._values, other._values),
+            ))
+        return False if other is None else NotImplemented
 
     @property
     def block_size(self) -> int:
@@ -248,13 +259,12 @@ class AssociativeArrayList(Generic[T]):
         indexes = np.array([self._indexes[k] for k in keys if k in self._indexes])
         return indexes
 
-    def _missing_index(self) -> int:
-        next_index = self._last_index
-        self._last_index += 1
-        return next_index
-
 
 class DefaultDictWithKeyFactory(defaultdict):
+    """ A subclass of defaultdict that supports defaults parameterized by the missing keys.
+
+    """
+
     # noinspection PyArgumentList
     def __missing__(self, key):
         if self.default_factory is None:
@@ -262,11 +272,6 @@ class DefaultDictWithKeyFactory(defaultdict):
         else:
             ret = self[key] = self.default_factory(key)
             return ret
-
-
-def cosine_sims(v: np.ndarray, state: Iterable[np.ndarray]) -> np.ndarray:
-    """ Calculates the cosine similarities between a vector v and a set of state vectors. """
-    return sk_metrics.pairwise.cosine_similarity(v.reshape(1, -1), state)
 
 
 def repr_str(obj: Any, attr_values: dict[str, Any]) -> str:
@@ -285,13 +290,42 @@ def pairwise(iterable):
     return zip(a, b)
 
 
-def dynamic_type(module_name: str, class_name: str) -> Type[Any]:
-    module = importlib.import_module(module_name)
-    return getattr(module, class_name)
-
-
 def equal_weights(n: int) -> np.ndarray:
     if n < 0:
         raise ValueError('n must be a positive integer')
 
     return np.ones(n) / n
+
+
+_seed: Optional[int] = None
+
+
+def set_random_seed(seed: int) -> None:
+    global _seed
+    _seed = seed
+
+    random.seed(_seed)
+
+
+def get_random_seed() -> Optional[int]:
+    return _seed
+
+
+_rng: Optional[np.random.Generator] = None
+
+
+def rng():
+    global _rng
+    global _seed
+
+    seed = get_random_seed()
+    if not _rng:
+        logger.warning(f'Initializing random number generator using seed="{seed}".')
+        logger.warning(
+            f'For reproducibility, you should also set "PYTHONHASHSEED={seed}" in your environment variables.')
+
+        # setting globals
+        _rng = np.random.default_rng(seed)
+        _seed = seed
+
+    return _rng

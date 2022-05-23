@@ -15,7 +15,6 @@ from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
-from schema_mechanism.share import GlobalParams
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
@@ -224,8 +223,9 @@ class TestExtendedResult(TestCase):
 
         i1_stats = self.er.stats[i1]
 
-        pos_threshold = GlobalParams().get('ext_result.positive_correlation_threshold')
-        neg_threshold = GlobalParams().get('ext_result.negative_correlation_threshold')
+        params = get_global_params()
+        pos_threshold = params.get('ext_result.positive_correlation_threshold')
+        neg_threshold = params.get('ext_result.negative_correlation_threshold')
 
         self.assertTrue(i1_stats.positive_correlation_stat > pos_threshold)
         self.assertTrue(i1_stats.negative_correlation_stat <= neg_threshold)

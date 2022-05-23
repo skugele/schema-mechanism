@@ -9,6 +9,7 @@ from collections import defaultdict
 from collections import deque
 from collections.abc import Collection
 from collections.abc import Iterator
+from copy import deepcopy
 from datetime import datetime
 from enum import Enum
 from functools import singledispatch
@@ -29,9 +30,11 @@ from anytree import LevelOrderIter
 from anytree import NodeMixin
 from anytree import RenderTree
 
-from schema_mechanism.share import GlobalParams
+from schema_mechanism.parameters import GlobalParams
 from schema_mechanism.share import SupportedFeature
+from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import CorrelationTable
+from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.correlation_test import ItemCorrelationTest
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
@@ -46,6 +49,10 @@ from schema_mechanism.util import Singleton
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import pairwise
 from schema_mechanism.util import repr_str
+from schema_mechanism.validate import MultiValidator
+from schema_mechanism.validate import RangeValidator
+from schema_mechanism.validate import SupportedFeatureValidator
+from schema_mechanism.validate import TypeValidator
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +225,15 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         self.eligibility_trace: Trace[Item] = eligibility_trace
 
         self._delegated_values: AssociativeArrayList[Item] = AssociativeArrayList()
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, EligibilityTraceDelegatedValueHelper):
+            return all((
+                self.discount_factor == other.discount_factor,
+                self.eligibility_trace == other.eligibility_trace,
+                self._delegated_values == other._delegated_values
+            ))
+        return False if other is None else NotImplemented
 
     @property
     def discount_factor(self) -> float:
@@ -446,6 +462,14 @@ class GlobalStats:
         self.baseline_value: float = initial_baseline_value
         self.n: int = 0
 
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, GlobalStats):
+            return all((
+                other.baseline_value == self.baseline_value,
+                other.n == self.n
+            ))
+        return False if other is None else NotImplemented
+
     def update(self, selection_state: State, result_state: State) -> None:
         """ Updates the global statistics based on the selection and result states.
 
@@ -462,7 +486,7 @@ class GlobalStats:
         # updates baseline
         self.baseline_value += lr * (calc_primitive_value(result_state) - self.baseline_value)
 
-    def clear(self):
+    def reset(self):
         self.baseline_value = 0.0
         self.n = 0
 
@@ -724,6 +748,12 @@ class ECItemStats(ItemStats):
     def as_table(self) -> CorrelationTable:
         return self.n_success_and_on, self.n_fail_and_on, self.n_success_and_off, self.n_fail_and_off
 
+    def reset(self) -> None:
+        self._n_success_and_on = 0
+        self._n_fail_and_on = 0
+        self._n_success_and_off = 0
+        self._n_fail_and_off = 0
+
 
 class ERItemStats(ItemStats):
     """ Extended result item-level statistics """
@@ -766,6 +796,10 @@ class ERItemStats(ItemStats):
         return self._n_on_and_activated + self._n_on_and_not_activated
 
     @property
+    def n(self) -> int:
+        return self.n_on + self.n_off
+
+    @property
     def n_off(self) -> int:
         return self._n_off_and_activated + self._n_off_and_not_activated
 
@@ -805,6 +839,12 @@ class ERItemStats(ItemStats):
 
         elif not on and not activated:
             self._n_off_and_not_activated += count
+
+    def reset(self) -> None:
+        self._n_on_and_activated = 0
+        self._n_on_and_not_activated = 0
+        self._n_off_and_activated = 0
+        self._n_off_and_not_activated = 0
 
     def as_table(self) -> CorrelationTable:
         return (self.n_on_and_activated,
@@ -2510,18 +2550,93 @@ default_action_trace = AccumulatingTrace(
     active_increment=0.25
 )
 
-default_global_stats = GlobalStats()
-default_global_params = GlobalParams()
 
-_delegated_value_helper: Optional[DelegatedValueHelper] = default_delegated_value_helper
-_action_trace: Optional[Trace[Action]] = default_action_trace
-_global_stats: GlobalStats = default_global_stats
-_global_params: GlobalParams = default_global_params
+def get_default_global_params() -> GlobalParams:
+    params = GlobalParams()
+
+    # determines step size for incremental updates (e.g., this is used for delegated value updates)
+    params.set(name='learning_rate', value=0.01, validator=RangeValidator(0.0, 1.0))
+
+    # item correlation test used for determining relevance of extended context items
+    params.set(
+        name='ext_context.correlation_test',
+        value=DrescherCorrelationTest,
+        validator=TypeValidator([ItemCorrelationTest])
+    )
+
+    # item correlation test used for determining relevance of extended result items
+    params.set(
+        name='ext_result.correlation_test',
+        value=CorrelationOnEncounter,
+        validator=TypeValidator([ItemCorrelationTest])
+    )
+
+    # thresholds for determining the relevance of extended context items
+    #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
+    params.set(name='ext_context.positive_correlation_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
+    params.set(name='ext_context.negative_correlation_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
+
+    # thresholds for determining the relevance of extended result items
+    #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
+    params.set(name='ext_result.positive_correlation_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
+    params.set(name='ext_result.negative_correlation_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
+
+    # success threshold used for determining that a schema is reliable
+    #     from 0.0 [schema has never succeeded] to 1.0 [schema always succeeds]
+    params.set(name='reliability_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
+
+    # used by backward_chains (supports composite action) - determines the maximum chain length
+    params.set(
+        name='backward_chains.max_len',
+        value=4,
+        validator=MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
+    )
+
+    # the probability of updating (via backward chains) the components associated with a composite action controller
+    params.set(
+        name='backward_chains.update_frequency',
+        value=0.01,
+        validator=RangeValidator(0.0, 1.0)
+    )
+
+    # composite actions are created for novel result states that have values that are greater than the baseline
+    # value by AT LEAST this amount
+    params.set(
+        name='composite_actions.learn.min_baseline_advantage',
+        value=0.25,
+        validator=TypeValidator([float])
+    )
+
+    # set default features
+    default_features = {
+        SupportedFeature.COMPOSITE_ACTIONS,
+        SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA,
+        SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE,
+        SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED,
+        SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE,
+    }
+
+    params.set(
+        name='features',
+        value=default_features,
+        validator=SupportedFeatureValidator()
+    )
+
+    return params
+
+
+default_global_params = get_default_global_params()
+default_global_stats = GlobalStats()
+
+_delegated_value_helper: Optional[DelegatedValueHelper] = None
+_action_trace: Optional[Trace[Action]] = None
+_global_params: Optional[GlobalParams] = None
+_global_stats: Optional[GlobalStats] = None
 
 
 def set_delegated_value_helper(delegated_value_helper: DelegatedValueHelper) -> None:
     global _delegated_value_helper
-    _delegated_value_helper = delegated_value_helper
+    _delegated_value_helper = deepcopy(delegated_value_helper)
 
 
 def get_delegated_value_helper() -> DelegatedValueHelper:
@@ -2530,29 +2645,35 @@ def get_delegated_value_helper() -> DelegatedValueHelper:
 
 def set_action_trace(action_trace: Trace[Action]) -> None:
     global _action_trace
-    _action_trace = action_trace
+    _action_trace = deepcopy(action_trace)
 
 
 def get_action_trace() -> Trace[Action]:
     return _action_trace
 
 
+def set_global_stats(global_stats: GlobalStats) -> None:
+    global _global_stats
+    _global_stats = deepcopy(global_stats)
+
+
+def get_global_stats() -> GlobalStats:
+    return _global_stats
+
+
 def set_global_params(global_params: GlobalParams) -> None:
     global _global_params
-    _global_params = global_params
+    _global_params = deepcopy(global_params)
 
 
 def get_global_params() -> GlobalParams:
     return _global_params
 
 
-def set_global_stats(global_params: GlobalStats) -> None:
-    global _global_stats
-    _global_stats = global_params
-
-
-def get_global_stats() -> GlobalStats:
-    return _global_stats
+set_delegated_value_helper(default_delegated_value_helper)
+set_action_trace(default_action_trace)
+set_global_params(default_global_params)
+set_global_stats(default_global_stats)
 
 
 def is_feature_enabled(feature: SupportedFeature) -> bool:

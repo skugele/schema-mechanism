@@ -8,6 +8,8 @@ from typing import Any
 from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SchemaPool
+from schema_mechanism.core import default_global_params
+from schema_mechanism.core import set_global_params
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +17,8 @@ logger = logging.getLogger(__name__)
 def common_test_setup():
     # configure logger
     logging.config.fileConfig('config/logging.conf')
+
+    set_global_params(default_global_params)
 
     # clear any objects added to pools in previous test cases
     ItemPool().clear()
@@ -158,7 +162,6 @@ def satisfies_equality_checks(obj: Any, other: Any, other_different_type: Any) -
         is_eq_consistent(x=obj, y=copy_),
         is_eq_with_null_is_false(obj),
         is_eq_returns_not_implemented_given_object_of_different_type(x=obj, y=other_different_type),
-        obj != other
     })
 
 

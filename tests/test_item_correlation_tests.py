@@ -1,16 +1,18 @@
 import itertools
 import time
-import unittest
+from unittest import TestCase
 
 import test_share
 from schema_mechanism.strategies.correlation_test import BarnardExactCorrelationTest
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
+from schema_mechanism.strategies.correlation_test import negative_correlation
+from schema_mechanism.strategies.correlation_test import positive_correlation
 from test_share.test_func import common_test_setup
 
 
-class TestCorrelationOnEncounter(unittest.TestCase):
+class TestCorrelationOnEncounter(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
@@ -39,7 +41,7 @@ class TestCorrelationOnEncounter(unittest.TestCase):
                 self.assertEqual(0.0, self.correlation_test.negative_corr_statistic(table))
 
 
-class TestDrescherCorrelationTest(unittest.TestCase):
+class TestDrescherCorrelationTest(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
@@ -74,7 +76,7 @@ class TestDrescherCorrelationTest(unittest.TestCase):
         print(f'Time for {n_iter} Drescher ratio correlation tests: {elapsed_time}s')
 
 
-class TestBarnardExactTest(unittest.TestCase):
+class TestBarnardExactTest(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
@@ -109,7 +111,7 @@ class TestBarnardExactTest(unittest.TestCase):
         print(f'Time for {n_iter} Barnard exact correlation tests: {elapsed_time}s')
 
 
-class TestFisherExactTest(unittest.TestCase):
+class TestFisherExactTest(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
@@ -142,3 +144,28 @@ class TestFisherExactTest(unittest.TestCase):
             elapsed_time += end - start
 
         print(f'Time for {n_iter} Fisher exact correlation tests: {elapsed_time}s')
+
+
+class TestUtilityFunctions(TestCase):
+    def setUp(self):
+        common_test_setup()
+
+    def test_positive_correlation(self):
+        table = (100, 1, 1, 20)
+        test = DrescherCorrelationTest()
+
+        # test: threshold below 0.9541 should return True
+        self.assertTrue(positive_correlation(table=table, test=test, threshold=0.94))
+
+        # test: threshold above 0.9541 should return False
+        self.assertFalse(positive_correlation(table=table, test=test, threshold=0.96))
+
+    def test_negative_correlation(self):
+        table = (1, 100, 20, 1)
+        test = DrescherCorrelationTest()
+
+        # test: threshold below 0.9541 should return True
+        self.assertTrue(negative_correlation(table=table, test=test, threshold=0.94))
+
+        # test: threshold above 0.9541 should return False
+        self.assertFalse(negative_correlation(table=table, test=test, threshold=0.96))

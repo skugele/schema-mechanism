@@ -8,6 +8,8 @@ from typing import Type
 
 import numpy as np
 
+from schema_mechanism.share import SupportedFeature
+
 logger = logging.getLogger(__name__)
 
 
@@ -15,7 +17,6 @@ class Validator(ABC):
     @abstractmethod
     def __call__(self, value: Any) -> None:
         """ Generates a ValueError if validation fails. """
-        pass
 
 
 class AcceptAllValidator(Validator):
@@ -23,12 +24,15 @@ class AcceptAllValidator(Validator):
         pass
 
     def __eq__(self, other) -> bool:
-        return isinstance(other, AcceptAllValidator)
+        if isinstance(other, AcceptAllValidator):
+            return True
+        return False if None else NotImplemented
 
     def __hash__(self) -> int:
         return hash(self.__class__.__name__)
 
 
+# TODO: This class could be enhanced to support any object type that is orderable
 class RangeValidator(Validator):
 
     def __init__(self,
@@ -114,14 +118,8 @@ class BlackListValidator(Validator):
             raise ValueError('BlackListValidator\'s reject_set cannot be empty.')
 
     def __call__(self, value: Any) -> None:
-        try:
-            valid = True if value not in self.reject_set else False
-
-        # this will occur if the value is not hashable
-        except TypeError:
-            valid = False
-
-        if not valid:
+        # TypeError will be raised if value is not hashable
+        if value in self.reject_set:
             raise ValueError(f'Value not supported: {value}.')
 
     def __eq__(self, other) -> bool:
@@ -140,14 +138,8 @@ class WhiteListValidator(Validator):
             raise ValueError('WhiteListValidator\'s accept_set cannot be empty.')
 
     def __call__(self, value: Any) -> None:
-        try:
-            valid = False if value not in self.accept_set else True
-
-        # this will occur if the value is not hashable
-        except TypeError:
-            valid = False
-
-        if not valid:
+        # TypeError will be raised if value is not hashable
+        if value not in self.accept_set:
             raise ValueError(f'Value not supported: {value}.')
 
     def __eq__(self, other) -> bool:
@@ -199,9 +191,30 @@ class ElementWiseValidator(Validator):
     def __eq__(self, other) -> bool:
         if isinstance(other, ElementWiseValidator):
             return self.validator == other.validator
+        return False if None else NotImplemented
 
     def __hash__(self) -> int:
         return hash(self.__class__.__name__ + str(self.validator))
+
+
+class SupportedFeatureValidator(Validator):
+    def __call__(self, features: Optional[Iterable[SupportedFeature]]) -> None:
+        features = set(features)
+        for value in features:
+            if not isinstance(value, SupportedFeature):
+                raise ValueError(f'Unsupported feature: {value}')
+
+        if (SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE in features and
+                SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA not in features):
+            raise ValueError(f'The feature EC_MOST_SPECIFIC_ON_MULTIPLE requires EC_DEFER_TO_MORE_SPECIFIC_SCHEMA')
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, SupportedFeatureValidator):
+            return True
+        return False if None else NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.__class__.__name__)
 
 
 NULL_VALIDATOR = AcceptAllValidator()

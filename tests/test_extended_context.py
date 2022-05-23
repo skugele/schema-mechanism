@@ -23,7 +23,6 @@ from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
-from schema_mechanism.share import GlobalParams
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
@@ -320,7 +319,8 @@ class TestExtendedContext(TestCase):
 
     def test_defer_update_to_spin_offs(self):
         # SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA enabled
-        GlobalParams().get('features').add(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+        params = get_global_params()
+        params.get('features').add(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
 
         update_state_1 = sym_state('4,6,8')
         update_state_2 = sym_state('3,6')
@@ -440,8 +440,9 @@ class TestExtendedContext(TestCase):
 
         i1_stats = self.ec.stats[i1]
 
-        pos_threshold = GlobalParams().get('ext_context.positive_correlation_threshold')
-        neg_threshold = GlobalParams().get('ext_context.negative_correlation_threshold')
+        params = get_global_params()
+        pos_threshold = params.get('ext_context.positive_correlation_threshold')
+        neg_threshold = params.get('ext_context.negative_correlation_threshold')
 
         self.assertTrue(i1_stats.positive_correlation_stat > pos_threshold)
         self.assertTrue(i1_stats.negative_correlation_stat <= neg_threshold)

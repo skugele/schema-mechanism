@@ -4,6 +4,7 @@ from unittest import TestCase
 import numpy as np
 
 from schema_mechanism.util import BoundedSet
+from schema_mechanism.util import DefaultDictWithKeyFactory
 from schema_mechanism.util import equal_weights
 from test_share.test_classes import MockObservable
 from test_share.test_classes import MockObserver
@@ -128,3 +129,49 @@ class TestFunctions(unittest.TestCase):
                 self.assertAlmostEqual(1.0, sum(weights))
         except ValueError as e:
             self.fail(f'Unexpected exception: {str(e)}')
+
+
+# a default factory method used for testing DefaultDictWithKeyFactory
+def default_key_factory(key):
+    return f'missing {key}'
+
+
+class TestDefaultDictWithKeyFactory(TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+    def test_init(self):
+        dict_with_factory = DefaultDictWithKeyFactory(default_key_factory)
+
+        # test: default factory should have been set properly by initializer
+        self.assertIs(default_key_factory, dict_with_factory.default_factory)
+
+        # test: dictionary should be initially empty
+        self.assertEqual(0, len(dict_with_factory))
+
+    def test_default_factory(self):
+        dict_with_factory = DefaultDictWithKeyFactory(default_key_factory)
+
+        # test: non-missing keys should return previously set values
+        dict_with_factory['key1'] = 'value1'
+        dict_with_factory['key2'] = 'value2'
+        dict_with_factory['key3'] = 'value3'
+
+        self.assertEqual('value1', dict_with_factory['key1'])
+        self.assertEqual('value2', dict_with_factory['key2'])
+        self.assertEqual('value3', dict_with_factory['key3'])
+
+        # test: missing values should be supplied by key factory (in this case, the return value of default_key_factory
+        for key in ['key4', 'key5', 'key6']:
+            len_before_lookup = len(dict_with_factory)
+            self.assertEqual(default_key_factory(key), dict_with_factory[key])
+            len_after_lookup = len(dict_with_factory)
+
+            # test: the size of the dictionary should have been increased by one
+            self.assertEqual(len_before_lookup + 1, len_after_lookup)
+
+    def test_without_default_factory(self):
+        # test: KeyError should be raised if a default factory is not set
+        dict_without_factory = DefaultDictWithKeyFactory()
+
+        self.assertRaises(KeyError, lambda: dict_without_factory['missing'])

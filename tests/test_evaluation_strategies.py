@@ -20,9 +20,10 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import calc_delegated_value
 from schema_mechanism.core import calc_primitive_value
 from schema_mechanism.core import get_action_trace
+from schema_mechanism.core import get_global_params
+from schema_mechanism.core import set_action_trace
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
-from schema_mechanism.share import GlobalParams
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
@@ -380,7 +381,7 @@ class TestInstrumentalValueEvaluationStrategy(TestCommon):
         self.assertFalse(np.array_equal(result, np.zeros_like(schemas)))
 
     def test_proximity_scaling(self):
-        GlobalParams().set('learning_rate', 1.0)
+        get_global_params().set('learning_rate', 1.0)
 
         _ = [sym_item(str(i), primitive_value=0.0) for i in range(1, 6)]
         goal = sym_item('6', item_type=MockSymbolicItem, primitive_value=100.0, avg_accessible_value=10.0)
@@ -415,7 +416,7 @@ class TestInstrumentalValueEvaluationStrategy(TestCommon):
         self.assertTrue(np.allclose(expected_result, actual_result))
 
     def test_cost_deduction(self):
-        GlobalParams().set('learning_rate', 1.0)
+        get_global_params().set('learning_rate', 1.0)
 
         _ = [sym_item(str(i), primitive_value=0.0) for i in range(1, 6)]
         goal = sym_item('6', item_type=MockSymbolicItem, primitive_value=100.0, avg_accessible_value=10.0)
@@ -952,13 +953,27 @@ class TestHabituationEvaluationStrategy(TestCommon):
 
         self.assertTrue(np.array_equal(expected, actual))
 
+        set_action_trace(self.trace)
+
         self.strategy = HabituationEvaluationStrategy(
-            trace=self.trace,
             scaling_strategy=SigmoidScalingStrategy()
         )
 
     def test_common(self):
         self.assert_all_common_functionality(self.strategy)
+
+    def test_init(self):
+        scaling_strategy = SigmoidScalingStrategy(
+            range_scale=1.0,
+            vertical_shift=0.75
+        )
+
+        habituation_strategy = HabituationEvaluationStrategy(
+            scaling_strategy=scaling_strategy
+        )
+
+        # test: attributes should have been set properly
+        self.assertEqual(scaling_strategy, habituation_strategy.scaling_strategy)
 
     def test_single_action(self):
         # test: single action should have zero value
@@ -1010,7 +1025,6 @@ class TestHabituationEvaluationStrategy(TestCommon):
 
     def test_repr(self):
         attr_values = {
-            'trace': self.strategy.trace,
             'scaling_strategy': self.strategy.scaling_strategy,
         }
 
