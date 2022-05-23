@@ -35,10 +35,10 @@ class TestSchemaMemory(TestCase):
         common_test_setup()
 
         params = get_global_params()
-        params.set('backward_chains.update_frequency', 1.0)
+        params.set('composite_actions.update_frequency', 1.0)
 
         # always create composite actions for novel results
-        params.set('composite_actions.learn.min_baseline_advantage', -np.inf)
+        params.set('composite_actions.min_baseline_advantage', -np.inf)
 
         s1 = sym_schema('/A1/')
         s2 = sym_schema('/A2/')

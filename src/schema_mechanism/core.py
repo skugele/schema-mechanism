@@ -1996,7 +1996,7 @@ class ReadOnlySchemaPool(SchemaPool):
 
 def is_reliable(schema: Schema, threshold: Optional[float] = None) -> bool:
     params = get_global_params()
-    threshold = threshold or params.get('reliability_threshold')
+    threshold = threshold or params.get('schema.reliability_threshold')
     return schema.reliability != np.NAN and schema.reliability >= threshold
 
 
@@ -2583,18 +2583,18 @@ def get_default_global_params() -> GlobalParams:
 
     # success threshold used for determining that a schema is reliable
     #     from 0.0 [schema has never succeeded] to 1.0 [schema always succeeds]
-    params.set(name='reliability_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
+    params.set(name='schema.reliability_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
 
     # used by backward_chains (supports composite action) - determines the maximum chain length
     params.set(
-        name='backward_chains.max_len',
+        name='composite_actions.backward_chains.max_length',
         value=4,
         validator=MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
     )
 
     # the probability of updating (via backward chains) the components associated with a composite action controller
     params.set(
-        name='backward_chains.update_frequency',
+        name='composite_actions.update_frequency',
         value=0.01,
         validator=RangeValidator(0.0, 1.0)
     )
@@ -2602,7 +2602,7 @@ def get_default_global_params() -> GlobalParams:
     # composite actions are created for novel result states that have values that are greater than the baseline
     # value by AT LEAST this amount
     params.set(
-        name='composite_actions.learn.min_baseline_advantage',
+        name='composite_actions.min_baseline_advantage',
         value=0.25,
         validator=TypeValidator([float])
     )

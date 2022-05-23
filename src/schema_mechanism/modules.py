@@ -192,8 +192,9 @@ class SchemaMemory(Observer):
         # update composite action controllers
         controllers = CompositeAction.all_satisfied_by(result_state)
         for c in controllers:
-            if rng().uniform(0.0, 1.0) < params.get('backward_chains.update_frequency'):
-                chains = self.backward_chains(c.goal_state, max_len=params.get('backward_chains.max_len'))
+            if rng().uniform(0.0, 1.0) < params.get('composite_actions.update_frequency'):
+                chains = self.backward_chains(goal_state=c.goal_state,
+                                              max_len=params.get('composite_actions.backward_chains.max_length'))
                 c.update(chains)
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
@@ -301,7 +302,7 @@ class SchemaMemory(Observer):
 
         Note: Composite actions will only be generated if the CompositeAction feature is enabled and the "advantage"
         (value - baseline) of the spin_off_schema's result is sufficient. The minimum advantage is determined by the
-        global parameter composite_actions.learn.min_baseline_advantage.
+        global parameter composite_actions.min_baseline_advantage.
 
         :param source: the schema from which this spin-off schema originated
         :param spin_off: the spin-off schema
@@ -309,7 +310,7 @@ class SchemaMemory(Observer):
 
         :return: True if a new composite action is needed; False otherwise.
         """
-        min_advantage = get_global_params().get('composite_actions.learn.min_baseline_advantage')
+        min_advantage = get_global_params().get('composite_actions.min_baseline_advantage')
 
         return all((
             is_feature_enabled(SupportedFeature.COMPOSITE_ACTIONS),
@@ -526,7 +527,7 @@ class SchemaSelection:
             goal_state = action.goal_state
 
             # TODO: not sure if this is a good way to do this
-            max_duration = 1.5 * params.get('backward_chains.max_len')
+            max_duration = 1.5 * params.get('composite_actions.backward_chains.max_length')
 
             # sanity check
             assert action.is_composite()

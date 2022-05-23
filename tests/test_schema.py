@@ -970,7 +970,7 @@ class TestSchemaFunctions(TestCase):
         reliability_threshold = 0.5
 
         params = get_global_params()
-        params.set('reliability_threshold', reliability_threshold)
+        params.set('schema.reliability_threshold', reliability_threshold)
 
         schema = sym_schema('1,2/A1/3,4', schema_type=MockSchema)
 

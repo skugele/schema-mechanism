@@ -259,11 +259,13 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
         schema_selection=schema_selection,
     )
 
-    sm.params.set('backward_chains.update_frequency', 0.01)
-    sm.params.set('backward_chains.max_len', 5)
     sm.params.set('learning_rate', 0.01)
-    sm.params.set('reliability_threshold', 0.8)
-    sm.params.set('composite_actions.learn.min_baseline_advantage', 0.1)
+
+    sm.params.set('composite_actions.update_frequency', 0.01)
+    sm.params.set('composite_actions.backward_chains.max_length', 5)
+    sm.params.set('composite_actions.min_baseline_advantage', 0.1)
+
+    sm.params.set('schema.reliability_threshold', 0.8)
 
     # item correlation test used for determining relevance of extended context items
     sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
