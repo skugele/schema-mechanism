@@ -928,8 +928,12 @@ class ReadOnlyERItemStats(ERItemStats):
 
 # A single immutable object that is meant to be used for all item instances that have never had stats updates
 NULL_SCHEMA_STATS = ReadOnlySchemaStats()
+
 NULL_EC_ITEM_STATS = ReadOnlyECItemStats()
 NULL_ER_ITEM_STATS = ReadOnlyERItemStats()
+
+FROZEN_EC_ITEM_STATS = ReadOnlyECItemStats()
+FROZEN_ER_ITEM_STATS = ReadOnlyERItemStats()
 
 
 class CompositeItem(Item):
@@ -1193,13 +1197,29 @@ class ExtendedResult(ExtendedItemCollection):
 
     def update(self, item: Item, on: bool, activated=False, count: int = 1) -> None:
         item_stats = self._stats[item]
+        if item_stats is FROZEN_ER_ITEM_STATS:
+            return
+
         if item_stats is NULL_ER_ITEM_STATS:
             self._stats[item] = item_stats = ERItemStats()
 
         item_stats.update(on=on, activated=activated, count=count)
 
-        if item not in self.suppressed_items:
-            self._check_for_relevance(item, item_stats)
+        positive_correlation_exists = item_stats.positive_correlation
+        negative_correlation_exists = item_stats.negative_correlation
+        correlation_exists = positive_correlation_exists or negative_correlation_exists
+
+        item_is_relevant = self._check_for_relevance(
+            item=item,
+            positive_correlation_exists=positive_correlation_exists
+        )
+
+        if item_is_relevant:
+            self.update_relevant_items(item)
+
+        if (is_feature_enabled(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+                and correlation_exists):
+            self._stats[item] = FROZEN_ER_ITEM_STATS
 
     def update_all(self, activated: bool, new: Collection[Item], lost: Collection[Item], count: int = 1) -> None:
 
@@ -1220,14 +1240,12 @@ class ExtendedResult(ExtendedItemCollection):
         if self.new_relevant_items:
             self.notify_all(spin_off_type=SchemaSpinOffType.RESULT)
 
-    def _check_for_relevance(self, item: Item, item_stats: ERItemStats) -> None:
-        if item_stats.positive_correlation:
-            if item not in self.relevant_items:
-                self.update_relevant_items(item)
+    def _check_for_relevance(self, item: Item, positive_correlation_exists: bool) -> bool:
+        if item in self.suppressed_items or item in self.relevant_items:
+            return False
 
-        # TODO: freeze updates?
-        elif item_stats.negative_correlation:
-            pass
+        if positive_correlation_exists:
+            return True
 
 
 class ExtendedContext(ExtendedItemCollection):
@@ -1264,13 +1282,31 @@ class ExtendedContext(ExtendedItemCollection):
 
     def update(self, item: Item, on: bool, success: bool, count: int = 1) -> None:
         item_stats = self._stats[item]
+        if item_stats is FROZEN_EC_ITEM_STATS:
+            return
+
         if item_stats is NULL_EC_ITEM_STATS:
             self._stats[item] = item_stats = ECItemStats()
 
-        item_stats.update(on, success, count)
+        item_stats.update(on=on, success=success, count=count)
 
-        if item not in self.suppressed_items:
-            self._check_for_relevance(item, item_stats)
+        positive_correlation_exists = item_stats.positive_correlation
+        negative_correlation_exists = item_stats.negative_correlation
+        correlation_exists = positive_correlation_exists or negative_correlation_exists
+
+        specificity = item_stats.specificity
+
+        item_is_relevant = self._check_for_relevance(
+            item=item,
+            positive_correlation_exists=positive_correlation_exists,
+            specificity=specificity
+        )
+        if item_is_relevant:
+            self._pending_relevant_items.add(item)
+
+        if (is_feature_enabled(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+                and correlation_exists):
+            self._stats[item] = FROZEN_EC_ITEM_STATS
 
     def update_all(self, selection_state: State, success: bool, count: int = 1) -> None:
         # bypass updates when a more specific spinoff schema exists
@@ -1321,22 +1357,24 @@ class ExtendedContext(ExtendedItemCollection):
         self._pending_relevant_items.clear()
         self._pending_max_specificity = -np.inf
 
-    def _check_for_relevance(self, item: Item, item_stats: ECItemStats) -> None:
-        if not item_stats.positive_correlation or item in self.relevant_items:
-            return
+    def _check_for_relevance(self, item: Item, positive_correlation_exists: bool, specificity: float) -> bool:
+        if (item in self.suppressed_items
+                or item in self.relevant_items
+                or not positive_correlation_exists):
+            return False
 
         # if enabled, this enhancement allows only a single relevant item per update (the most "specific").
         if is_feature_enabled(SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE):
             # item is less specific than earlier item; suppress it on this update.
-            if item_stats.specificity < self._pending_max_specificity:
-                return
+            if specificity < self._pending_max_specificity:
+                return False
 
             # item is the most specific so far; replace previous pending item assertion.
             else:
                 self._pending_relevant_items.clear()
-                self._pending_max_specificity = max(self._pending_max_specificity, item_stats.specificity)
+                self._pending_max_specificity = max(self._pending_max_specificity, specificity)
 
-        self._pending_relevant_items.add(item)
+        return True
 
 
 class Controller:
@@ -2656,6 +2694,7 @@ def get_default_global_params() -> GlobalParams:
         SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE,
         SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED,
         SupportedFeature.EC_SUPPRESS_UPDATE_ON_RELIABLE,
+        SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION,
     }
 
     params.set(

@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from schema_mechanism.core import ExtendedResult
+from schema_mechanism.core import FROZEN_ER_ITEM_STATS
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_ER_ITEM_STATS
 from schema_mechanism.core import SchemaSpinOffType
@@ -15,6 +16,7 @@ from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.persistence import deserialize
 from schema_mechanism.persistence import serialize
+from schema_mechanism.share import SupportedFeature
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
@@ -75,6 +77,28 @@ class TestExtendedResult(TestCase):
                               item_stats.n_off_and_activated,
                               item_stats.n_off_and_not_activated]:
                     self.assertEqual(0, value)
+
+    def test_update_with_item_stats_freeze_enabled(self):
+        params = get_global_params()
+
+        # this test requires FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION to be enabled
+        features = params.get('features')
+        features.add(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+
+        item = sym_item('1')
+
+        self.er.update(item=item, on=True, activated=True, count=10)
+        self.er.update(item=item, on=False, activated=False, count=10)
+
+        self.assertIn(item, self.er.new_relevant_items)
+        self.assertIs(self.er.stats[item], FROZEN_ER_ITEM_STATS)
+
+        stats_before = deepcopy(self.er.stats[item])
+        self.er.update(item=item, on=False, activated=False, count=10)
+        stats_after = deepcopy(self.er.stats[item])
+
+        # test: no item stats updates should occur after item frozen
+        self.assertEqual(stats_before, stats_after)
 
     def test_update_all(self):
         # ExtendedResult.update_all (3 cases -> new items, lost items, and new_relevant_items calling notify_all)

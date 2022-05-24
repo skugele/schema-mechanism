@@ -11,6 +11,7 @@ from unittest.mock import patch
 import numpy as np
 
 from schema_mechanism.core import ExtendedContext
+from schema_mechanism.core import FROZEN_EC_ITEM_STATS
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_EC_ITEM_STATS
 from schema_mechanism.core import SchemaSpinOffType
@@ -94,6 +95,28 @@ class TestExtendedContext(TestCase):
                               item_stats.n_fail_and_on,
                               item_stats.n_fail_and_off]:
                     self.assertEqual(0, value)
+
+    def test_update_with_item_stats_freeze_enabled(self):
+        params = get_global_params()
+
+        # this test requires FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION to be enabled
+        features = params.get('features')
+        features.add(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+
+        item = sym_item('1')
+
+        self.ec.update(item=item, on=True, success=True, count=10)
+        self.ec.update(item=item, on=False, success=False, count=10)
+
+        self.assertIn(item, self.ec.pending_relevant_items)
+        self.assertIs(self.ec.stats[item], FROZEN_EC_ITEM_STATS)
+
+        stats_before = deepcopy(self.ec.stats[item])
+        self.ec.update(item=item, on=False, success=False, count=10)
+        stats_after = deepcopy(self.ec.stats[item])
+
+        # test: no item stats updates should occur after item frozen
+        self.assertEqual(stats_before, stats_after)
 
     def test_update_all_1(self):
         state = tuple(sample(range(self.N_ITEMS), k=10))

@@ -33,3 +33,7 @@ class SupportedFeature(Enum):
     # mechanism because of the proliferation of composite results that result. It is allowed here to facilitate
     # comparison and experimentation.
     ER_INCREMENTAL_RESULTS = 'ER_INCREMENTAL_RESULTS'
+
+    # Item stats updates are frozen as soon as a correlation (positive or negative) is detected. This is a performance
+    # enhancement intended to reduce the number of items for which stats much be maintained.
+    FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION = 'FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION'
