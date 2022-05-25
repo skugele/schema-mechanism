@@ -926,14 +926,36 @@ class ReadOnlyERItemStats(ERItemStats):
         raise NotImplementedError('Update not implemented for readonly view.')
 
 
+class FrozenECItemStats(ECItemStats):
+    def __init__(self):
+        super().__init__()
+
+    def __str__(self):
+        return 'FROZEN'
+
+    def update(self, on: bool, activated: bool, count: int = 1) -> None:
+        pass
+
+
+class FrozenERItemStats(ERItemStats):
+    def __init__(self):
+        super().__init__()
+
+    def __str__(self):
+        return 'FROZEN'
+
+    def update(self, on: bool, activated: bool, count: int = 1) -> None:
+        pass
+
+
 # A single immutable object that is meant to be used for all item instances that have never had stats updates
 NULL_SCHEMA_STATS = ReadOnlySchemaStats()
 
 NULL_EC_ITEM_STATS = ReadOnlyECItemStats()
 NULL_ER_ITEM_STATS = ReadOnlyERItemStats()
 
-FROZEN_EC_ITEM_STATS = ReadOnlyECItemStats()
-FROZEN_ER_ITEM_STATS = ReadOnlyERItemStats()
+FROZEN_EC_ITEM_STATS = FrozenECItemStats()
+FROZEN_ER_ITEM_STATS = FrozenERItemStats()
 
 
 class CompositeItem(Item):
@@ -1208,6 +1230,7 @@ class ExtendedResult(ExtendedItemCollection):
         positive_correlation_exists = item_stats.positive_correlation
         negative_correlation_exists = item_stats.negative_correlation
         correlation_exists = positive_correlation_exists or negative_correlation_exists
+        no_progress = self._check_for_no_progress(item_stats)
 
         item_is_relevant = self._check_for_relevance(
             item=item,
@@ -1217,8 +1240,9 @@ class ExtendedResult(ExtendedItemCollection):
         if item_is_relevant:
             self.update_relevant_items(item)
 
+        should_freeze_item_stats = correlation_exists or no_progress
         if (is_feature_enabled(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
-                and correlation_exists):
+                and should_freeze_item_stats):
             self._stats[item] = FROZEN_ER_ITEM_STATS
 
     def update_all(self, activated: bool, new: Collection[Item], lost: Collection[Item], count: int = 1) -> None:
@@ -1246,6 +1270,9 @@ class ExtendedResult(ExtendedItemCollection):
 
         if positive_correlation_exists:
             return True
+
+    def _check_for_no_progress(self, item_stats: ERItemStats) -> bool:
+        return False
 
 
 class ExtendedContext(ExtendedItemCollection):
@@ -1293,6 +1320,7 @@ class ExtendedContext(ExtendedItemCollection):
         positive_correlation_exists = item_stats.positive_correlation
         negative_correlation_exists = item_stats.negative_correlation
         correlation_exists = positive_correlation_exists or negative_correlation_exists
+        no_progress = self._check_for_no_progress(item_stats)
 
         specificity = item_stats.specificity
 
@@ -1301,11 +1329,13 @@ class ExtendedContext(ExtendedItemCollection):
             positive_correlation_exists=positive_correlation_exists,
             specificity=specificity
         )
+
         if item_is_relevant:
             self._pending_relevant_items.add(item)
 
+        should_freeze_item_stats = correlation_exists or no_progress
         if (is_feature_enabled(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
-                and correlation_exists):
+                and should_freeze_item_stats):
             self._stats[item] = FROZEN_EC_ITEM_STATS
 
     def update_all(self, selection_state: State, success: bool, count: int = 1) -> None:
@@ -1375,6 +1405,9 @@ class ExtendedContext(ExtendedItemCollection):
                 self._pending_max_specificity = max(self._pending_max_specificity, specificity)
 
         return True
+
+    def _check_for_no_progress(self, item_stats: ECItemStats) -> bool:
+        return False
 
 
 class Controller:
