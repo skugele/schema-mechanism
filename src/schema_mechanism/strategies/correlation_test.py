@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from functools import cache
-from functools import lru_cache
 from typing import Protocol
 from typing import runtime_checkable
 
@@ -116,7 +115,7 @@ class BarnardExactCorrelationTest(ItemCorrelationTest):
 class FisherExactCorrelationTest:
 
     @classmethod
-    @lru_cache(maxsize=1000)
+    @cache
     def positive_corr_statistic(cls, table: CorrelationTable) -> float:
         """
 
@@ -128,7 +127,7 @@ class FisherExactCorrelationTest:
         return 1.0 - p_value
 
     @classmethod
-    @lru_cache(maxsize=1000)
+    @cache
     def negative_corr_statistic(cls, table: CorrelationTable) -> float:
         """
 
@@ -144,6 +143,7 @@ class CorrelationOnEncounter:
     event_threshold: int = 1
 
     @classmethod
+    @cache
     def positive_corr_statistic(cls, table: CorrelationTable) -> float:
         """ Returns the part-to-part ratio Pr(A | X) : Pr(A | not X)
 
@@ -155,6 +155,7 @@ class CorrelationOnEncounter:
         return 1.0 if table[0] >= cls.event_threshold else 0.0
 
     @classmethod
+    @cache
     def negative_corr_statistic(cls, table: CorrelationTable) -> float:
         """ Returns the part-to-part ratio Pr(not A | X) : Pr(not A | not X)
 
