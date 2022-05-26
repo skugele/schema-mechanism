@@ -150,11 +150,20 @@ class DelegatedValueHelper(ABC):
     """
 
     @abstractmethod
-    def delegated_value(self, item: Item) -> float:
-        """ Returns the delegated value for the requested item.
+    def get_delegated_value(self, item: Item) -> float:
+        """ Gets the delegated value for the requested item.
 
         :param item: the item for which the delegated value will be returned.
         :return: the item's current delegated value
+        """
+
+    @abstractmethod
+    def set_delegated_value(self, item: Item, value: float) -> None:
+        """ Sets the delegated value for the requested item.
+
+        (For a discussion of delegated value see Drescher 1991, p. 63.)
+
+        :return: None
         """
 
     @abstractmethod
@@ -257,7 +266,7 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
 
         self._discount_factor = value
 
-    def delegated_value(self, item: Item) -> float:
+    def get_delegated_value(self, item: Item) -> float:
         """ Returns the delegated value for the requested item.
 
         (For a discussion of delegated value see Drescher 1991, p. 63.)
@@ -266,6 +275,16 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         """
         index = self._delegated_values.indexes([item], add_missing=True)[0]
         return self._delegated_values.values[index]
+
+    def set_delegated_value(self, item: Item, value: float) -> None:
+        """ Sets the delegated value for this item.
+
+        (For a discussion of delegated value see Drescher 1991, p. 63.)
+
+        :return: None
+        """
+        index = self._delegated_values.indexes([item], add_missing=True)[0]
+        self._delegated_values.values[index] = value
 
     # TODO: the determination of active items from states should be removed from this method
     # TODO:    * remove selection_state and result_state parameters
@@ -330,14 +349,19 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
 class Item(ABC):
     def __init__(self,
                  source: Any,
-                 primitive_value: Optional[float] = 0.0,
-                 delegated_value_helper: DelegatedValueHelper = None,
+                 primitive_value: Optional[float] = None,
+                 delegated_value: Optional[float] = None,
                  **kwargs) -> None:
         super().__init__()
 
         self._source = source
-        self._primitive_value: float = primitive_value
-        self._delegated_value_helper: DelegatedValueHelper = delegated_value_helper
+        self._primitive_value: float = 0.0 if primitive_value is None else primitive_value
+
+        # initializes the delegated value. (The delegated value will change over time, unlike primitive value.)
+        initial_delegated_value: float = 0.0 if delegated_value is None else delegated_value
+
+        dv_helper = get_delegated_value_helper()
+        dv_helper.set_delegated_value(item=self, value=initial_delegated_value)
 
     @abstractmethod
     def __hash__(self) -> int:
@@ -375,7 +399,8 @@ class Item(ABC):
 
     @property
     def delegated_value(self) -> float:
-        return self._delegated_value_helper.delegated_value(self) if self._delegated_value_helper else 0.0
+        dv_helper = get_delegated_value_helper()
+        return dv_helper.get_delegated_value(self) if dv_helper else 0.0
 
     @abstractmethod
     def is_on(self, state: State, **kwargs) -> bool:
@@ -391,8 +416,8 @@ class SymbolicItem(Item):
 
     def __init__(self,
                  source: str,
-                 primitive_value: float = None,
-                 delegated_value_helper: DelegatedValueHelper = None,
+                 primitive_value: float = 0.0,
+                 delegated_value: float = 0.0,
                  **kwargs):
         if not isinstance(source, str):
             raise ValueError(f'Source for symbolic item must be a str, not {type(source)}')
@@ -400,7 +425,7 @@ class SymbolicItem(Item):
         super().__init__(
             source=source,
             primitive_value=primitive_value,
-            delegated_value_helper=delegated_value_helper,
+            delegated_value=delegated_value,
             **kwargs
         )
 
@@ -933,7 +958,7 @@ class FrozenECItemStats(ECItemStats):
     def __str__(self):
         return 'FROZEN'
 
-    def update(self, on: bool, activated: bool, count: int = 1) -> None:
+    def update(self, on: bool, success: bool, count: int = 1) -> None:
         pass
 
 
@@ -963,8 +988,8 @@ class CompositeItem(Item):
 
     def __init__(self,
                  source: Collection[StateElement],
-                 primitive_value: float = None,
-                 delegated_value_helper: DelegatedValueHelper = None,
+                 primitive_value: Optional[float] = None,
+                 delegated_value: Optional[float] = None,
                  **kwargs) -> None:
 
         self._validate_source(source)
@@ -978,10 +1003,18 @@ class CompositeItem(Item):
             else primitive_value
         )
 
+        # by default, delegated value is initialized to the sum over non-composite item delegated values, but this
+        # can be overridden. (Note that the delegated value may change over time as the agent learns from experience.)
+        delegated_value = (
+            sum(item.delegated_value for item in self._items)
+            if delegated_value is None
+            else delegated_value
+        )
+
         super().__init__(
             source=frozenset(source),
-            delegated_value_helper=delegated_value_helper,
-            primitive_value=primitive_value
+            primitive_value=primitive_value,
+            delegated_value=delegated_value,
         )
 
     def __contains__(self, element: StateElement) -> bool:
@@ -2060,14 +2093,6 @@ class SchemaPool(metaclass=Singleton):
     def __iter__(self) -> Iterator[Schema]:
         yield from SchemaPool._schemas.values()
 
-    def __getstate__(self) -> dict[str, Any]:
-        return {'_schemas': SchemaPool._schemas}
-
-    def __setstate__(self, state: dict[str:Any]) -> None:
-        sp = SchemaPool()
-        for key in state:
-            setattr(sp, key, state[key])
-
     @property
     def schemas(self) -> Collection[Schema]:
         return SchemaPool._schemas.values()
@@ -2485,32 +2510,41 @@ class ItemPool(metaclass=Singleton):
         ItemPool._composite_items.clear()
 
     @singledispatchmethod
-    def get(self, source: Any, /, *, item_type: Optional[Type[Item]] = None, **kwargs) -> Optional[Item]:
+    def get(
+            self,
+            source: Any, /, *,
+            item_type: Optional[Type[Item]] = None,
+            read_only: bool = False,
+            **kwargs
+    ) -> Optional[Item]:
         raise NotImplementedError(f'Source type is not supported.')
 
     @get.register
-    def _(self, source: StateElement, /, *, item_type: Optional[Type[Item]] = SymbolicItem, **kwargs) -> Optional[Item]:
-        read_only = kwargs.get('read_only', False)
+    def _(
+            self,
+            source: StateElement, /, *,
+            item_type: Optional[Type[Item]] = SymbolicItem,
+            read_only: bool = False,
+            **kwargs
+    ) -> Optional[Item]:
         item_type = item_type
 
         obj = ItemPool._items.get(source)
 
         # create new item and add to pool if not found and not read_only
         if not obj and not read_only:
-            # inject the DelegatedValueHelper dependency into Item initializer if not set directly by caller
-            if 'delegated_value_helper' not in kwargs:
-                kwargs['delegated_value_helper'] = get_delegated_value_helper()
-
             obj = ItemPool._items[source] = item_type(source=source, **kwargs)
 
         return obj
 
     @get.register
-    def _(self,
-          source: frozenset, /, *,
-          item_type: Optional[Type[CompositeItem]] = None,
-          **kwargs) -> Optional[CompositeItem]:
-        read_only = kwargs.get('read_only', False)
+    def _(
+            self,
+            source: frozenset, /, *,
+            item_type: Optional[Type[CompositeItem]] = None,
+            read_only: bool = False,
+            **kwargs
+    ) -> Optional[CompositeItem]:
         item_type = item_type or CompositeItem
 
         key = frozenset(source)
@@ -2518,10 +2552,6 @@ class ItemPool(metaclass=Singleton):
 
         # create new item and add to pool if not found and not read_only
         if not obj and not read_only:
-            # inject the DelegatedValueHelper dependency into Item initializer if not set directly by caller
-            if 'delegated_value_helper' not in kwargs:
-                kwargs['delegated_value_helper'] = get_delegated_value_helper()
-
             obj = ItemPool._composite_items[key] = item_type(source=key, **kwargs)
 
         return obj
@@ -2644,9 +2674,6 @@ def calc_value(o: Any) -> float:
 def advantage(o: Any) -> float:
     """ Calculates the additional value this object has over a learned baseline. """
     baseline_value = get_global_stats().baseline_value
-    # if not o:
-    #     return -baseline_value
-
     return calc_value(o) - baseline_value
 
 
@@ -2784,10 +2811,17 @@ def get_global_params() -> GlobalParams:
     return _global_params
 
 
-set_delegated_value_helper(default_delegated_value_helper)
-set_action_trace(default_action_trace)
-set_global_params(default_global_params)
-set_global_stats(default_global_stats)
+if not _delegated_value_helper:
+    set_delegated_value_helper(default_delegated_value_helper)
+
+if not _action_trace:
+    set_action_trace(default_action_trace)
+
+if not _global_params:
+    set_global_params(default_global_params)
+
+if not _global_stats:
+    set_global_stats(default_global_stats)
 
 
 def is_feature_enabled(feature: SupportedFeature) -> bool:

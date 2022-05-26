@@ -1,5 +1,4 @@
 anytree==2.8.0
-dill==0.3.4
 lark==1.1.1
 numpy==1.21.4
 pynput==1.7.6

@@ -6,6 +6,7 @@ from random import sample
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
+import test_share
 from schema_mechanism.core import ExtendedResult
 from schema_mechanism.core import FROZEN_ER_ITEM_STATS
 from schema_mechanism.core import ItemPool
@@ -14,8 +15,6 @@ from schema_mechanism.core import SchemaSpinOffType
 from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
-from schema_mechanism.persistence import deserialize
-from schema_mechanism.persistence import serialize
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
@@ -91,6 +90,29 @@ class TestExtendedResult(TestCase):
         self.er.update(item=item, on=False, activated=False, count=10)
 
         self.assertIn(item, self.er.new_relevant_items)
+        self.assertIs(self.er.stats[item], FROZEN_ER_ITEM_STATS)
+
+        stats_before = deepcopy(self.er.stats[item])
+        self.er.update(item=item, on=False, activated=False, count=10)
+        stats_after = deepcopy(self.er.stats[item])
+
+        # test: no item stats updates should occur after item frozen
+        self.assertEqual(stats_before, stats_after)
+
+    @test_share.disable_test
+    def test_update_with_no_progress_and_item_stats_freeze_enabled(self):
+        params = get_global_params()
+
+        # this test requires FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION to be enabled
+        features = params.get('features')
+        features.add(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+
+        item = sym_item('1')
+
+        self.er.update(item=item, on=True, activated=True, count=500)
+        self.er.update(item=item, on=False, activated=True, count=500)
+
+        self.assertNotIn(item, self.er.new_relevant_items)
         self.assertIs(self.er.stats[item], FROZEN_ER_ITEM_STATS)
 
         stats_before = deepcopy(self.er.stats[item])
@@ -188,6 +210,13 @@ class TestExtendedResult(TestCase):
         self.assertNotIn(observer, self.er.observers)
 
     def test_relevant_items_1(self):
+        params = get_global_params()
+        features: set[SupportedFeature] = params.get('features')
+
+        # removing these features to simplify testing (otherwise, stats would revert to zero for every relevant item)
+        features.remove(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+        features.remove(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+
         items = [sym_item(str(i)) for i in range(5)]
 
         i1 = items[0]
@@ -237,6 +266,13 @@ class TestExtendedResult(TestCase):
         self.assertEqual(0, len(self.er.new_relevant_items))
 
     def test_relevant_items_2(self):
+        params = get_global_params()
+        features: set[SupportedFeature] = params.get('features')
+
+        # removing these features to simplify testing (otherwise, stats would revert to zero for every relevant item)
+        features.remove(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+        features.remove(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+
         i1 = sym_item('100')
 
         self.assertIn(i1, self.er.suppressed_items)
@@ -258,6 +294,7 @@ class TestExtendedResult(TestCase):
         self.assertEqual(0, len(self.er.relevant_items))
         self.assertNotIn(i1, self.er.relevant_items)
 
+    @test_share.disable_test
     def test_serialize(self):
         # update extended result before serialize
         items = [sym_item(str(i)) for i in range(10)]

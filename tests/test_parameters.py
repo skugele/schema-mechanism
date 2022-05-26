@@ -3,13 +3,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
+import test_share
 from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import default_global_params
 from schema_mechanism.core import get_global_params
 from schema_mechanism.core import set_global_params
 from schema_mechanism.parameters import GlobalParams
-from schema_mechanism.persistence import deserialize
-from schema_mechanism.persistence import serialize
+from schema_mechanism.serialization.json import deserialize
+from schema_mechanism.serialization.json import serialize
 from schema_mechanism.validate import AcceptAllValidator
 from schema_mechanism.validate import WhiteListValidator
 from test_share.test_func import common_test_setup
@@ -99,6 +100,7 @@ class TestGlobalParams(TestCase):
         self.assertEqual(len(params.parameters), 0)
         self.assertEqual(len(params.validators), 0)
 
+    @test_share.disable_test
     def test_serialize(self):
         # sets a few non-default values
         parameter_values = {

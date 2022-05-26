@@ -5,7 +5,9 @@ from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaTreeNode
+from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.func_api import sym_assert
@@ -236,6 +238,15 @@ class TestFunctionalApi(unittest.TestCase):
         self.assertIs(NULL_STATE_ASSERT, schema.context)
         self.assertEqual(Action('A1'), schema.action)
         self.assertEqual(sym_assert('(3,4),5'), schema.result)
+
+        # test: verify that multiple calls with the same schema string return the same object
+        for str_repr in ['/A1/', '1,/A1/', '1,2/A1/', '/A1/1,', '/A1/1,2', '1,/A1/3,', '1,2/A1/3,4', '/A1/(3,4),5']:
+            self.assertIs(sym_schema(str_repr), sym_schema(str_repr))
+
+        schema_1 = sym_schema('/play/')
+        schema_2 = SchemaPool().get(SchemaUniqueKey(context=None, action=Action('play'), result=None))
+
+        self.assertIs(schema_1, schema_2)
 
     def test_sym_schema_with_composite_actions(self):
         # primitive schemas with composite actions

@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import numpy as np
 
+import test_share
 from schema_mechanism.core import ExtendedContext
 from schema_mechanism.core import FROZEN_EC_ITEM_STATS
 from schema_mechanism.core import ItemPool
@@ -22,8 +23,8 @@ from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_items
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
-from schema_mechanism.persistence import deserialize
-from schema_mechanism.persistence import serialize
+from schema_mechanism.serialization.json import deserialize
+from schema_mechanism.serialization.json import serialize
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
@@ -96,7 +97,7 @@ class TestExtendedContext(TestCase):
                               item_stats.n_fail_and_off]:
                     self.assertEqual(0, value)
 
-    def test_update_with_item_stats_freeze_enabled(self):
+    def test_update_with_positive_correlation_and_item_stats_freeze_enabled(self):
         params = get_global_params()
 
         # this test requires FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION to be enabled
@@ -109,6 +110,51 @@ class TestExtendedContext(TestCase):
         self.ec.update(item=item, on=False, success=False, count=10)
 
         self.assertIn(item, self.ec.pending_relevant_items)
+        self.assertIs(self.ec.stats[item], FROZEN_EC_ITEM_STATS)
+
+        stats_before = deepcopy(self.ec.stats[item])
+        self.ec.update(item=item, on=False, success=False, count=10)
+        stats_after = deepcopy(self.ec.stats[item])
+
+        # test: no item stats updates should occur after item frozen
+        self.assertEqual(stats_before, stats_after)
+
+    def test_update_with_negative_correlation_and_item_stats_freeze_enabled(self):
+        params = get_global_params()
+
+        # this test requires FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION to be enabled
+        features = params.get('features')
+        features.add(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+
+        item = sym_item('1')
+
+        self.ec.update(item=item, on=True, success=False, count=10)
+        self.ec.update(item=item, on=False, success=True, count=10)
+
+        self.assertNotIn(item, self.ec.pending_relevant_items)
+        self.assertIs(self.ec.stats[item], FROZEN_EC_ITEM_STATS)
+
+        stats_before = deepcopy(self.ec.stats[item])
+        self.ec.update(item=item, on=False, success=False, count=10)
+        stats_after = deepcopy(self.ec.stats[item])
+
+        # test: no item stats updates should occur after item frozen
+        self.assertEqual(stats_before, stats_after)
+
+    @test_share.disable_test
+    def test_update_with_no_progress_and_item_stats_freeze_enabled(self):
+        params = get_global_params()
+
+        # this test requires FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION to be enabled
+        features = params.get('features')
+        features.add(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+
+        item = sym_item('1')
+
+        self.ec.update(item=item, on=True, success=True, count=500)
+        self.ec.update(item=item, on=True, success=False, count=500)
+
+        self.assertNotIn(item, self.ec.pending_relevant_items)
         self.assertIs(self.ec.stats[item], FROZEN_EC_ITEM_STATS)
 
         stats_before = deepcopy(self.ec.stats[item])
@@ -172,6 +218,11 @@ class TestExtendedContext(TestCase):
     def test_update_all_without_ec_defer_to_more_specific(self):
         params = get_global_params()
         features: set[SupportedFeature] = params.get('features')
+
+        # removing this feature to simplify testing (otherwise, stats would revert to zero for every relevant item)
+        features.remove(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+
+        # this test case requires the removal of this feature
         features.remove(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
 
         success_values = [True, False]
@@ -370,8 +421,9 @@ class TestExtendedContext(TestCase):
         # the EC_MOST_SPECIFIC_ON_MULTIPLE feature must be enabled for this test
         features.add(SupportedFeature.EC_MOST_SPECIFIC_ON_MULTIPLE)
 
-        # removing this feature to simplify testing (otherwise, stats would revert to zero for every relevant item)
+        # removing these features to simplify testing (otherwise, stats would revert to zero for every relevant item)
         features.remove(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+        features.remove(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
 
         item_1, item_2 = sym_item('1'), sym_item('2')
 
@@ -398,6 +450,13 @@ class TestExtendedContext(TestCase):
         self.assertNotIn(observer, self.ec.observers)
 
     def test_relevant_items_1(self):
+        params = get_global_params()
+        features: set[SupportedFeature] = params.get('features')
+
+        # removing these features to simplify testing (otherwise, stats would revert to zero for every relevant item)
+        features.remove(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+        features.remove(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+
         items = [sym_item(str(i)) for i in range(5)]
 
         i1 = items[0]
@@ -453,6 +512,13 @@ class TestExtendedContext(TestCase):
         self.assertEqual(0, len(self.ec.new_relevant_items))
 
     def test_relevant_items_2(self):
+        params = get_global_params()
+        features: set[SupportedFeature] = params.get('features')
+
+        # removing these features to simplify testing (otherwise, stats would revert to zero for every relevant item)
+        features.remove(SupportedFeature.EC_DEFER_TO_MORE_SPECIFIC_SCHEMA)
+        features.remove(SupportedFeature.FREEZE_ITEM_STATS_UPDATES_ON_CORRELATION)
+
         i1 = sym_item('100')
 
         self.assertIn(i1, self.ec.suppressed_items)
@@ -475,6 +541,7 @@ class TestExtendedContext(TestCase):
         self.assertEqual(0, len(self.ec.relevant_items))
         self.assertNotIn(i1, self.ec.relevant_items)
 
+    @test_share.disable_test
     def test_serialize(self):
         # update extended context before serialize
         items = [sym_item(str(i)) for i in range(10)]

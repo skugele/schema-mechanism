@@ -48,12 +48,10 @@ class MockItem(Item, ABC):
     def __init__(self,
                  source: Any,
                  primitive_value: Optional[float] = None,
-                 avg_accessible_value: Optional[float] = None,
                  delegated_value: Optional[float] = None,
                  **kwargs):
         super().__init__(source, primitive_value, **kwargs)
 
-        self._mock_avg_accessible_value = avg_accessible_value
         self._mock_delegated_value = delegated_value
 
 

@@ -3,7 +3,6 @@ from unittest import TestCase
 
 import numpy as np
 
-from schema_mechanism.core import DelegatedValueHelper
 from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
 from schema_mechanism.core import calc_value
 from schema_mechanism.core import get_delegated_value_helper
@@ -83,7 +82,7 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
 
             # test: delegated values should be initialized to zero
             for item in [sym_item(str(v)) for v in range(100)]:
-                self.assertEqual(0.0, dv_helper.delegated_value(item))
+                self.assertEqual(0.0, dv_helper.get_delegated_value(item))
 
         except Exception as e:
             self.fail(f'Unexpected exception raised from dv helper initializer: {str(e)}')
@@ -112,7 +111,7 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         self.dv_helper.update(selection_state=selection_state, result_state=result_state)
 
         target = self.dv_helper.effective_state_value(selection_state=selection_state, result_state=result_state)
-        self.assertEqual(target, self.dv_helper.delegated_value(self.item_a))
+        self.assertEqual(target, self.dv_helper.get_delegated_value(self.item_a))
 
     def test_item_on_in_last_selection_state(self):
         # test: an item that was on in the most recent selection state should receive higher delegated value than
@@ -127,8 +126,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         for selection_state, result_state in pairwise(states):
             self.dv_helper.update(selection_state=selection_state, result_state=result_state)
 
-        dv_a = self.dv_helper.delegated_value(self.item_a)
-        dv_b = self.dv_helper.delegated_value(self.item_b)
+        dv_a = self.dv_helper.get_delegated_value(self.item_a)
+        dv_b = self.dv_helper.get_delegated_value(self.item_b)
 
         self.assertGreater(dv_a, dv_b)
 
@@ -146,9 +145,9 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
 
         last_diff = np.inf
         for _ in range(1000):
-            before = dv_helper.delegated_value(self.item_a)
+            before = dv_helper.get_delegated_value(self.item_a)
             dv_helper.update(selection_state=sym_state('A,7'), result_state=sym_state('9'))
-            after = dv_helper.delegated_value(self.item_a)
+            after = dv_helper.get_delegated_value(self.item_a)
 
             # test: the difference in dv before and after update should gradually decrease
             diff = after - before
@@ -160,7 +159,7 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         self.assertAlmostEqual(0.0, float(last_diff))
 
         # test: undiscounted delegated value should converge to target state value
-        self.assertAlmostEqual(calc_value(sym_state('9')), dv_helper.delegated_value(self.item_a))
+        self.assertAlmostEqual(calc_value(sym_state('9')), dv_helper.get_delegated_value(self.item_a))
 
     def test_pos_primitive_value_states_produce_pos_delegated_value(self):
         get_global_params().set('learning_rate', 0.1)
@@ -168,7 +167,7 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         for _ in range(100):
             self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('7'))
 
-        self.assertGreater(self.dv_helper.delegated_value(self.item_a), 0.0)
+        self.assertGreater(self.dv_helper.get_delegated_value(self.item_a), 0.0)
 
     def test_pos_delegated_value_states_produce_pos_delegated_value(self):
         get_global_params().set('learning_rate', 0.1)
@@ -176,7 +175,7 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         for _ in range(100):
             self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('3'))
 
-        self.assertGreater(self.dv_helper.delegated_value(self.item_a), 0.0)
+        self.assertGreater(self.dv_helper.get_delegated_value(self.item_a), 0.0)
 
     def test_neg_primitive_value_states_produce_neg_delegated_value(self):
         get_global_params().set('learning_rate', 0.1)
@@ -184,7 +183,7 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         for _ in range(100):
             self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('4'))
 
-        self.assertLess(self.dv_helper.delegated_value(self.item_a), 0.0)
+        self.assertLess(self.dv_helper.get_delegated_value(self.item_a), 0.0)
 
     def test_neg_delegated_value_states_produce_neg_delegated_value(self):
         get_global_params().set('learning_rate', 0.1)
@@ -192,7 +191,7 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         for _ in range(100):
             self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('2'))
 
-        self.assertLess(self.dv_helper.delegated_value(self.item_a), 0.0)
+        self.assertLess(self.dv_helper.get_delegated_value(self.item_a), 0.0)
 
     def test_zero_value_states_produce_zero_delegated_value(self):
         get_global_params().set('learning_rate', 0.1)
@@ -200,7 +199,7 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         for _ in range(100):
             self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('1'))
 
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_a))
 
     def test_pv_results_in_greater_target_than_dv_of_same_magnitude(self):
         # 3 -> dv only
@@ -215,8 +214,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
             self.dv_helper.update(selection_state=sym_state('B'), result_state=sym_state('7'))
 
         # test: item B should have greater delegated value than A
-        dv_a = self.dv_helper.delegated_value(self.item_a)
-        dv_b = self.dv_helper.delegated_value(self.item_b)
+        dv_a = self.dv_helper.get_delegated_value(self.item_a)
+        dv_b = self.dv_helper.get_delegated_value(self.item_b)
 
         self.assertLess(dv_a, dv_b)
 
@@ -368,19 +367,19 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
 
     def test_update_no_change_if_no_new_items_in_result_state(self):
         # sanity check: item should have no delegated value initially
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_b))
 
         # test: items' delegated values should not change if the state elements did not change
         self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('A'))
 
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_b))
 
         self.dv_helper.update(selection_state=sym_state('B,C'), result_state=sym_state('B,C'))
 
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_b))
 
     def test_effective_state_value_with_overlapping_items(self):
         # these test cases feature states corresponding to composite and non-composite items that share elements
@@ -421,16 +420,16 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         # test: items that were not On in a recent selection state should not have their delegated value updated
 
         # sanity check: item should have no delegated value initially
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_b))
 
         self.dv_helper.update(selection_state=sym_state('A'), result_state=sym_state('B,C'))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_b))
 
         self.dv_helper.update(selection_state=sym_state('B'), result_state=sym_state('1,C'))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_b))
 
     def test_update_undiscounted_full_trace_decay(self):
         # simplifying this test. discount factor = 1.0 => present and future values equal;
@@ -446,8 +445,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         get_global_params().set('learning_rate', 1.0)
 
         # sanity check: item should have no delegated value initially
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_b))
 
         selection_state = sym_state('1,2')
         result_state = sym_state('B,C')
@@ -457,8 +456,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         # test: items' delegated values after single update should be the effective state value of result state
         self.dv_helper.update(selection_state=selection_state, result_state=result_state)
 
-        self.assertEqual(eff_value, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(eff_value, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(eff_value, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(eff_value, self.dv_helper.get_delegated_value(self.item_b))
 
         selection_state = sym_state('1,2')
         result_state = sym_state('D,E')
@@ -468,8 +467,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         # test: delegated values should be replaced by new state's eff. value on 2nd update (w/ learning rate  = 1.0)
         self.dv_helper.update(selection_state=selection_state, result_state=result_state)
 
-        self.assertEqual(eff_value, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(eff_value, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(eff_value, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(eff_value, self.dv_helper.get_delegated_value(self.item_b))
 
     def test_update_discounted_full_trace_decay(self):
         # simplifying this test. trace decay = 0.0 => full trace decay between updates;
@@ -484,8 +483,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         get_global_params().set('learning_rate', 1.0)
 
         # sanity check: item should have no delegated value initially
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_b))
 
         selection_state = sym_state('1,2')
         result_state = sym_state('B,C')
@@ -495,8 +494,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         # test: items' delegated values after single update should be the effective state value of result state
         self.dv_helper.update(selection_state=selection_state, result_state=result_state)
 
-        self.assertEqual(eff_value, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(eff_value, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(eff_value, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(eff_value, self.dv_helper.get_delegated_value(self.item_b))
 
         selection_state = sym_state('1,2')
         result_state = sym_state('D,E')
@@ -506,8 +505,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         # test: delegated values should be replaced by new state's eff. value on 2nd update (w/ learning rate  = 1.0)
         self.dv_helper.update(selection_state=selection_state, result_state=result_state)
 
-        self.assertEqual(eff_value, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(eff_value, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(eff_value, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(eff_value, self.dv_helper.get_delegated_value(self.item_b))
 
     def test_update_undiscounted_partial_trace_decay(self):
         # simplifying this test. trace decay = 0.5 => 1/2 value decays away each call
@@ -522,8 +521,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         get_global_params().set('learning_rate', 1.0)
 
         # sanity check: item should have no delegated value initially
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_b))
 
         selection_state = sym_state('1,2')
         result_state = sym_state('B,C')
@@ -533,8 +532,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         # test: items' delegated values after single update should be the effective state value of result state
         self.dv_helper.update(selection_state=selection_state, result_state=result_state)
 
-        self.assertEqual(eff_value, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(eff_value, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(eff_value, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(eff_value, self.dv_helper.get_delegated_value(self.item_b))
 
         selection_state = sym_state('1,2')
         result_state = sym_state('D,E')
@@ -549,8 +548,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         indexes = e_trace.indexes([self.item_a, self.item_b])
         trace_values = e_trace.values[indexes]
 
-        self.assertEqual(eff_value * trace_values[0], self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(eff_value * trace_values[1], self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(eff_value * trace_values[0], self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(eff_value * trace_values[1], self.dv_helper.get_delegated_value(self.item_b))
 
     def test_equals(self):
         delegated_value_helper = EligibilityTraceDelegatedValueHelper(
@@ -586,6 +585,12 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
             )
             self.assertEqual(delegated_value_helper, other)
 
+            # test: should still be equal after same updates
+            delegated_value_helper.update(selection_state=sym_state('1'), result_state=sym_state('2'))
+            other.update(selection_state=sym_state('1'), result_state=sym_state('2'))
+
+            self.assertEqual(delegated_value_helper, other)
+
     def test_reset(self):
 
         states = [
@@ -597,8 +602,8 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         for selection_state, result_state in pairwise(states):
             self.dv_helper.update(selection_state=selection_state, result_state=result_state)
 
-        dv_a = self.dv_helper.delegated_value(self.item_a)
-        dv_b = self.dv_helper.delegated_value(self.item_b)
+        dv_a = self.dv_helper.get_delegated_value(self.item_a)
+        dv_b = self.dv_helper.get_delegated_value(self.item_b)
 
         # sanity check: updates should have increased these values
         self.assertGreater(dv_a, 0.0)
@@ -607,21 +612,28 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
         self.dv_helper.reset()
 
         # test: verify that delegated value is now zero
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_a))
-        self.assertEqual(0.0, self.dv_helper.delegated_value(self.item_b))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_a))
+        self.assertEqual(0.0, self.dv_helper.get_delegated_value(self.item_b))
 
 
 class TestSharedFunctions(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-    def test_global_instance_get_and_set_functions(self):
-        dv_helper: DelegatedValueHelper = EligibilityTraceDelegatedValueHelper(
-            discount_factor=0.25,
-            eligibility_trace=ReplacingTrace(
-                decay_strategy=GeometricDecayStrategy(rate=0.75)
-            )
-        )
-        set_delegated_value_helper(dv_helper)
+        self.items = [
+            sym_item('1', primitive_value=0.0),
+            sym_item('2', primitive_value=0.75, delegated_value=-0.25),
+            sym_item('3', primitive_value=-1.0, delegated_value=1.0),
+        ]
 
-        self.assertEqual(dv_helper, get_delegated_value_helper())
+    def test_global_instance_get_and_set_functions(self):
+        delegated_value_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=1.0,
+            eligibility_trace=ReplacingTrace(
+                decay_strategy=NoDecayStrategy())
+        )
+        delegated_value_helper.update(selection_state=sym_state('1'), result_state=sym_state('2,3'))
+        set_delegated_value_helper(delegated_value_helper)
+
+        copy_of_helper = get_delegated_value_helper()
+        self.assertEqual(delegated_value_helper, copy_of_helper)

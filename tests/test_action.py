@@ -3,6 +3,8 @@ from unittest import TestCase
 from schema_mechanism.core import Action
 from schema_mechanism.core import NULL_CONTROLLER
 from schema_mechanism.core import NULL_STATE_ASSERT
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from test_share.test_func import common_test_setup
 from test_share.test_func import satisfies_equality_checks
 from test_share.test_func import satisfies_hash_checks
@@ -46,3 +48,19 @@ class TestAction(TestCase):
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.a))
+
+    def test_serialize(self):
+        # test: encoding/decoding of Actions with labels (should result in Actions with the same labels)
+        action = Action(label='test action')
+        json_str = encode(action)
+        recovered = decode(json_str)
+
+        self.assertIsInstance(recovered, Action)
+        self.assertEqual(action.label, recovered.label)
+
+        # test: encoding/decoding of Actions without labels (may result in actions with different uids)
+        action = Action()
+        json_str = encode(action)
+        recovered = decode(json_str)
+
+        self.assertIsInstance(recovered, Action)

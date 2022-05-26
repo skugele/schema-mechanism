@@ -10,6 +10,7 @@ from collections import Collection
 from collections import defaultdict
 from collections.abc import Iterable
 from itertools import tee
+from pathlib import Path
 from typing import Any
 from typing import Generic
 from typing import Optional
@@ -335,3 +336,13 @@ def rng():
         _seed = seed
 
     return _rng
+
+
+def check_writable(path: Path, overwrite: bool) -> None:
+    if path.exists() and not overwrite:
+        raise ValueError(f'File {path} already exists. Use overwrite to replace.')
+
+
+def check_readable(path: Path) -> None:
+    if not (path.exists() and path.is_file()):
+        raise ValueError(f'Unable to deserialize non-existent or unreadable file: {path}')

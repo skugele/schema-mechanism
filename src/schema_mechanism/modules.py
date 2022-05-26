@@ -622,7 +622,6 @@ class SchemaMechanism:
             set_action_trace(default_action_trace)
 
         # initialize traces
-        # TODO: Is this needed? What happens if I don't do this???
         built_in_actions = {schema.action for schema in self.schema_memory}
         get_action_trace().add(built_in_actions)
 
@@ -632,7 +631,15 @@ class SchemaMechanism:
 
         # ensure that all primitive items exist in the ItemPool
         for item in items:
-            self._item_pool.get(item.source)
+            if item not in self._item_pool:
+                _ = self._item_pool.get(
+                    item.source,
+                    primitive_value=item.primitive_value,
+                    delegated_value=item.delegated_value
+                )
+
+            # ensure that item's initial delegated value was added to delegated value helper
+            self.delegated_value_helper.set_delegated_value(item, item.delegated_value)
 
     @property
     def schema_memory(self) -> SchemaMemory:

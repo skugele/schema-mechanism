@@ -4,7 +4,7 @@ from distutils.core import setup
 
 setup(
     name='SchemaMechanism',
-    version='0.1',
+    version='0.1.0',
     description='A Python version of Drescher\'s Schema Mechanism',
     author='Sean Kugele',
     author_email='seankugele@gmail.com',
@@ -13,7 +13,6 @@ setup(
     python_requires='>=3.9',
     install_requires=[
         'anytree==2.8.0',
-        'dill==0.3.4',
         'lark==1.1.1',
         'numpy==1.21.4',
         'pynput==1.7.6'

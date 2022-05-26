@@ -3,21 +3,23 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from schema_mechanism.persistence import check_readable
-from schema_mechanism.persistence import check_writable
-from schema_mechanism.persistence import deserialize
-from schema_mechanism.persistence import get_serialization_filename
-from schema_mechanism.persistence import serialize
+from schema_mechanism.core import Action
+from schema_mechanism.func_api import sym_item
+from schema_mechanism.serialization import get_serialization_filename
+from schema_mechanism.serialization.json import deserialize
+from schema_mechanism.serialization.json import serialize
+from schema_mechanism.util import check_readable
+from schema_mechanism.util import check_writable
 from test_share.test_func import common_test_setup
 
 
-class TestPersistence(TestCase):
+class TestSerialization(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
     def test_check_writable(self):
         with TemporaryDirectory() as tmp_dir:
-            path = Path(os.path.join(tmp_dir, 'test-file-persistence-check_writable.sav'))
+            path = Path(os.path.join(tmp_dir, 'test-file-serialization-check_writable.sav'))
 
             # create file that would be written to
             path.touch()
@@ -33,7 +35,7 @@ class TestPersistence(TestCase):
 
     def test_check_readable(self):
         with TemporaryDirectory() as tmp_dir:
-            path = Path(os.path.join(tmp_dir, 'test-file-persistence-check_readable.sav'))
+            path = Path(os.path.join(tmp_dir, 'test-file-serialization-check_readable.sav'))
 
             # sanity check: file SHOULD NOT exist
             self.assertFalse(path.exists())
@@ -55,26 +57,39 @@ class TestPersistence(TestCase):
         expected_version = 'v1.0'
         expected_prefix = 'P'
         expected_suffix = 'S'
+        expected_additional_element = 'A'
 
-        filename = get_serialization_filename(object_name=expected_object_name,
-                                              version=expected_version,
-                                              prefix=expected_prefix,
-                                              suffix=expected_suffix,
-                                              format_string='{prefix}-{object_name}-{version}-{unique_id}-{suffix}')
+        filename = get_serialization_filename(
+            object_name=expected_object_name,
+            version=expected_version,
+            prefix=expected_prefix,
+            suffix=expected_suffix,
+            additional_element=expected_additional_element,
+            format_string='{prefix}-{object_name}-{version}-{additional_element}-{suffix}')
 
-        prefix, object_name, version, unique_id, suffix = filename.split('-')
+        prefix, object_name, version, additional_element, suffix = filename.split('-')
 
         self.assertEqual(expected_prefix, prefix)
         self.assertEqual(expected_object_name, object_name)
         self.assertEqual(expected_version, version)
-        self.assertGreater(len(unique_id), 0)
+        self.assertEqual(expected_additional_element, additional_element)
         self.assertEqual(expected_suffix, suffix)
 
+        # test: check that defaults should produce expected results
+        default_prefix = 'schema_mechanism'
+        default_suffix = 'sav'
+        default_version = '0.0.0'
+
+        filename = get_serialization_filename(object_name=object_name)
+
+        self.assertEqual(f'{default_prefix}-{object_name}-v{default_version}.{default_suffix}', filename)
+
     def test_serialize_and_deserialize(self):
-        original = [101, '101', None, [], {1, 2, 3}, {'one': 1, 'two': 2}]
+        # try serializing/deserializing an object containing both built-in and custom types
+        original = [101, '101', None, [], {'one': 1, 'two': 2}, sym_item('1'), [Action('test action')]]
 
         with TemporaryDirectory() as tmp_dir:
-            path = Path(os.path.join(tmp_dir, 'test-file-persistence-serialize_and_deserialize.sav'))
+            path = Path(os.path.join(tmp_dir, 'test-file-serialization-serialize_and_deserialize.sav'))
 
             # sanity check: file SHOULD NOT exist before serialize
             self.assertFalse(path.exists())
@@ -82,7 +97,7 @@ class TestPersistence(TestCase):
             # test: deserialize should raise a ValueError if file does not exist
             self.assertRaises(ValueError, lambda: deserialize(path=path))
 
-            serialize(obj=original, path=path, overwrite=False)
+            serialize(original, path=path, overwrite=False)
 
             # sanity check: file SHOULD exist after serialize
             self.assertTrue(path.exists())
@@ -91,10 +106,10 @@ class TestPersistence(TestCase):
             self.assertListEqual(original, deserialize(path))
 
             # test: a ValueError SHOULD be raised when trying to overwrite file if overwrite is False
-            self.assertRaises(ValueError, lambda: serialize(obj=original, path=path, overwrite=False))
+            self.assertRaises(ValueError, lambda: serialize(original, path=path, overwrite=False))
 
             # test: a ValueError SHOULD NOT be raised when trying to overwrite file if overwrite is True
             try:
-                serialize(obj=original, path=path, overwrite=True)
+                serialize(original, path=path, overwrite=True)
             except ValueError as e:
                 self.fail(f'Unexpected ValueError was raised: {e}')

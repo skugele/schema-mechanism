@@ -4,13 +4,15 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
+import test_share
 from schema_mechanism.core import Action
 from schema_mechanism.core import ReadOnlySchemaPool
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
+from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state_assert
-from schema_mechanism.persistence import deserialize
-from schema_mechanism.persistence import serialize
+from schema_mechanism.serialization.json import deserialize
+from schema_mechanism.serialization.json import serialize
 from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
 from test_share.test_func import file_was_written
@@ -55,6 +57,27 @@ class TestSchemaPool(TestCase):
         self.assertEqual(2, len(self.schema_pool))
         self.assertNotEqual(s1, s2)
 
+    def test_schemas(self):
+
+        # schemas created via sym_schema are added to the SchemaPool internally
+        schemas = {
+            sym_schema('W,/A1/1,'),
+            sym_schema('X,/A2/2,'),
+            sym_schema('Y,/A3/3,'),
+            sym_schema('Z,/A4/4,'),
+        }
+
+        schemas_in_pool = {schema for schema in SchemaPool().schemas}
+
+        # test: collection of schemas returned from SchemaPool() should match the set that was registered with pool
+        self.assertSetEqual(schemas, schemas_in_pool)
+
+    def test_schemas_when_empty(self):
+        SchemaPool().clear()
+
+        # test: empty collection should be returned from SchemaPool().schemas when SchemaPool() is empty
+        self.assertSetEqual(set(), {schema for schema in SchemaPool().schemas})
+
     def test_contains(self):
         for action_id in range(100):
             key = SchemaUniqueKey(context=sym_state_assert('1,2'),
@@ -76,6 +99,7 @@ class TestSchemaPool(TestCase):
                                           result=sym_state_assert('4,5'))
         self.assertNotIn(key_not_in_pool, self.schema_pool)
 
+    @test_share.disable_test
     def test_serialize(self):
         # add a few schemas to the pool before serialization
         n_schemas = 100

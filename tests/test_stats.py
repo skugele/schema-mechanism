@@ -1,4 +1,5 @@
 from copy import copy
+from copy import deepcopy
 from time import time
 from unittest import TestCase
 
@@ -7,6 +8,8 @@ import numpy as np
 import test_share
 from schema_mechanism.core import ECItemStats
 from schema_mechanism.core import ERItemStats
+from schema_mechanism.core import FrozenECItemStats
+from schema_mechanism.core import FrozenERItemStats
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import ReadOnlyECItemStats
@@ -572,3 +575,48 @@ class TestReadOnlyERItemStats(TestCase):
     def test_update(self):
         item_stats = ReadOnlyERItemStats()
         self.assertRaises(NotImplementedError, lambda: item_stats.update(True, True))
+
+
+class TestFrozenECItemStats(TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+        self.item_stats = FrozenECItemStats()
+
+    def test_update(self):
+        # test: frozen item stats should not change after update
+        item_stats_before_update = deepcopy(self.item_stats)
+
+        self.item_stats.update(on=True, success=True)
+        self.item_stats.update(on=True, success=False)
+        self.item_stats.update(on=False, success=True)
+        self.item_stats.update(on=False, success=False)
+
+        item_stats_after_update = deepcopy(self.item_stats)
+
+        self.assertEqual(item_stats_before_update, item_stats_after_update)
+
+    def test_str(self):
+        self.assertEqual('FROZEN', str(self.item_stats))
+
+
+class TestFrozenERItemStats(TestCase):
+    def setUp(self) -> None:
+        common_test_setup()
+
+        self.item_stats = FrozenERItemStats()
+
+    def test_update(self):
+        item_stats_before_update = deepcopy(self.item_stats)
+
+        self.item_stats.update(on=True, activated=True)
+        self.item_stats.update(on=True, activated=False)
+        self.item_stats.update(on=False, activated=True)
+        self.item_stats.update(on=False, activated=False)
+
+        item_stats_after_update = deepcopy(self.item_stats)
+
+        self.assertEqual(item_stats_before_update, item_stats_after_update)
+
+    def test_str(self):
+        self.assertEqual('FROZEN', str(self.item_stats))

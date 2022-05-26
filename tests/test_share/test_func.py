@@ -2,6 +2,7 @@ import logging
 import logging.config
 from collections import Hashable
 from copy import copy
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,7 @@ def common_test_setup():
     # configure logger
     logging.config.fileConfig('config/logging.conf')
 
-    set_global_params(default_global_params)
+    set_global_params(deepcopy(default_global_params))
 
     # clear any objects added to pools in previous test cases
     ItemPool().clear()
