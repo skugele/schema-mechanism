@@ -1,12 +1,10 @@
 import itertools
-import os
 from copy import deepcopy
-from pathlib import Path
 from random import sample
-from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 import test_share
+from schema_mechanism.core import ERItemStats
 from schema_mechanism.core import ExtendedResult
 from schema_mechanism.core import FROZEN_ER_ITEM_STATS
 from schema_mechanism.core import ItemPool
@@ -15,11 +13,12 @@ from schema_mechanism.core import SchemaSpinOffType
 from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state_assert
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
-from test_share.test_func import file_was_written
 
 
 class TestExtendedResult(TestCase):
@@ -294,28 +293,33 @@ class TestExtendedResult(TestCase):
         self.assertEqual(0, len(self.er.relevant_items))
         self.assertNotIn(i1, self.er.relevant_items)
 
-    @test_share.disable_test
-    def test_serialize(self):
-        # update extended result before serialize
-        items = [sym_item(str(i)) for i in range(10)]
+    def test_encode_and_decode(self):
+        extended_result = ExtendedResult(
+            suppressed_items=[
+                sym_item('A'),
+                sym_item('B'),
+            ],
+            relevant_items=[
+                sym_item('C'),
+                sym_item('D'),
+            ],
+            stats={
+                sym_item('A'): ERItemStats(
+                    n_on_and_activated=1,
+                    n_on_and_not_activated=2,
+                    n_off_and_activated=3,
+                    n_off_and_not_activated=4,
+                ),
+                sym_item('B'): ERItemStats(
+                    n_on_and_activated=100,
+                    n_on_and_not_activated=250,
+                    n_off_and_activated=65,
+                    n_off_and_not_activated=9,
+                ),
+            }
+        )
 
-        for item in items:
-            self.er.update(item, on=False, activated=True, count=100)
-            self.er.update(item, on=False, activated=False, count=200)
-            self.er.update(item, on=True, activated=False, count=50)
-            self.er.update(item, on=True, activated=True, count=100)
+        encoded_obj = encode(extended_result)
+        decoded_obj: ExtendedResult = decode(encoded_obj)
 
-        with TemporaryDirectory() as tmp_dir:
-            path = Path(os.path.join(tmp_dir, 'test-file-extended_result-serialize.sav'))
-
-            # sanity check: file SHOULD NOT exist
-            self.assertFalse(path.exists())
-
-            serialize(self.er, path)
-
-            # test: file SHOULD exist after call to save
-            self.assertTrue(file_was_written(path))
-
-            recovered: ExtendedResult = deserialize(path)
-
-            self.assertEqual(self.er, recovered)
+        self.assertEqual(extended_result, decoded_obj)

@@ -18,6 +18,7 @@ from functools import singledispatchmethod
 from time import time
 from typing import Any
 from typing import Hashable
+from typing import Iterable
 from typing import NamedTuple
 from typing import Optional
 from typing import Protocol
@@ -1004,17 +1005,25 @@ NULL_STATE_ASSERT = StateAssertion()
 
 
 class ExtendedItemCollection(Observable):
-    def __init__(self, suppressed_items: Collection[Item] = None, null_member: ItemStats = None):
+    def __init__(
+            self,
+            suppressed_items: Collection[Item] = None,
+            relevant_items: Iterable[Item] = None,
+            stats: dict[Item, ItemStats] = None,
+            null_member: ItemStats = None,
+    ) -> None:
         super().__init__()
+
+        self._suppressed_items: frozenset[Item] = frozenset(suppressed_items) if suppressed_items else frozenset()
+        self._relevant_items: set[Item] = set(relevant_items) if relevant_items else set()
+
+        self._stats: dict[Any, ItemStats] = defaultdict(self._get_null_stats)
+        if stats:
+            self._stats.update(stats)
 
         self._null_member = null_member
 
-        self._suppressed_items: frozenset[Item] = frozenset(suppressed_items) or frozenset()
-
-        self._relevant_items: set[Item] = set()
         self._new_relevant_items: set[Item] = set()
-
-        self._stats: dict[Any, ItemStats] = defaultdict(self._get_null_stats)
 
     def __str__(self) -> str:
         name = self.__class__.__name__
@@ -1121,8 +1130,18 @@ class ExtendedResult(ExtendedItemCollection):
             chains of schemas
     """
 
-    def __init__(self, suppressed_items: Collection[Item]) -> None:
-        super().__init__(suppressed_items=suppressed_items, null_member=NULL_ER_ITEM_STATS)
+    def __init__(
+            self,
+            suppressed_items: Collection[Item] = None,
+            relevant_items: Iterable[Item] = None,
+            stats: dict[Item, ItemStats] = None,
+    ) -> None:
+        super().__init__(
+            suppressed_items=suppressed_items,
+            relevant_items=relevant_items,
+            stats=stats,
+            null_member=NULL_ER_ITEM_STATS
+        )
 
     @property
     def stats(self) -> dict[Item, ERItemStats]:
@@ -1202,8 +1221,18 @@ class ExtendedContext(ExtendedItemCollection):
             conditions for turning Off a synthetic item (see Drescher, 1991, Section 4.2.2)
     """
 
-    def __init__(self, suppressed_items: Collection[Item]) -> None:
-        super().__init__(suppressed_items=suppressed_items, null_member=NULL_EC_ITEM_STATS)
+    def __init__(
+            self,
+            suppressed_items: Collection[Item] = None,
+            relevant_items: Iterable[Item] = None,
+            stats: dict[Item, ItemStats] = None,
+    ) -> None:
+        super().__init__(
+            suppressed_items=suppressed_items,
+            relevant_items=relevant_items,
+            stats=stats,
+            null_member=NULL_EC_ITEM_STATS
+        )
 
         self._pending_relevant_items = set()
         self._pending_max_specificity = -np.inf

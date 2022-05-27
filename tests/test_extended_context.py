@@ -11,6 +11,7 @@ from unittest.mock import patch
 import numpy as np
 
 import test_share
+from schema_mechanism.core import ECItemStats
 from schema_mechanism.core import ExtendedContext
 from schema_mechanism.core import FROZEN_EC_ITEM_STATS
 from schema_mechanism.core import ItemPool
@@ -25,6 +26,8 @@ from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.serialization.json import deserialize
 from schema_mechanism.serialization.json import serialize
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
@@ -540,6 +543,37 @@ class TestExtendedContext(TestCase):
         self.assertEqual(0, len(self.ec.pending_relevant_items))
         self.assertEqual(0, len(self.ec.relevant_items))
         self.assertNotIn(i1, self.ec.relevant_items)
+
+    def test_encode_and_decode(self):
+        extended_context = ExtendedContext(
+            suppressed_items=[
+                sym_item('A'),
+                sym_item('B'),
+            ],
+            relevant_items=[
+                sym_item('C'),
+                sym_item('D'),
+            ],
+            stats={
+                sym_item('A'): ECItemStats(
+                    n_success_and_on=1,
+                    n_success_and_off=2,
+                    n_fail_and_on=3,
+                    n_fail_and_off=4,
+                ),
+                sym_item('B'): ECItemStats(
+                    n_success_and_on=100,
+                    n_success_and_off=250,
+                    n_fail_and_on=65,
+                    n_fail_and_off=9,
+                ),
+            }
+        )
+
+        encoded_obj = encode(extended_context)
+        decoded_obj: ExtendedContext = decode(encoded_obj)
+
+        self.assertEqual(extended_context, decoded_obj)
 
     @test_share.disable_test
     def test_serialize(self):

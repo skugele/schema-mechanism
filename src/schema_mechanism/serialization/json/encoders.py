@@ -7,6 +7,10 @@ from schema_mechanism.core import Action
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import ECItemStats
 from schema_mechanism.core import ERItemStats
+from schema_mechanism.core import ExtendedContext
+from schema_mechanism.core import ExtendedResult
+from schema_mechanism.core import FrozenECItemStats
+from schema_mechanism.core import FrozenERItemStats
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import SchemaStats
 from schema_mechanism.core import StateAssertion
@@ -126,6 +130,63 @@ def encode_er_item_stats(er_item_stats: ERItemStats) -> dict:
 #     }
 #     return attrs
 
+def encode_frozen_ec_item_stats(ec_item_stats: FrozenECItemStats) -> dict:
+    if not isinstance(ec_item_stats, FrozenECItemStats):
+        raise TypeError(f"Object of type '{type(ec_item_stats)}' is not JSON serializable")
+
+    attrs = {
+        '__type__': 'FrozenECItemStats',
+    }
+    return attrs
+
+
+def encode_frozen_er_item_stats(er_item_stats: FrozenERItemStats) -> dict:
+    if not isinstance(er_item_stats, FrozenERItemStats):
+        raise TypeError(f"Object of type '{type(er_item_stats)}' is not JSON serializable")
+
+    attrs = {
+        '__type__': 'FrozenERItemStats',
+    }
+    return attrs
+
+
+def encode_extended_context(extended_context: ExtendedContext) -> dict:
+    if not isinstance(extended_context, ExtendedContext):
+        raise TypeError(f"Object of type '{type(extended_context)}' is not JSON serializable")
+
+    encoded_stats = dict()
+    if extended_context.stats:
+        for key, value in extended_context.stats.items():
+            encoded_key = str(encode(key))
+            encoded_stats[encoded_key] = value
+
+    attrs = {
+        '__type__': 'ExtendedContext',
+        'suppressed_items': list(extended_context.suppressed_items),
+        'relevant_items': list(extended_context.relevant_items),
+        'stats': encoded_stats
+    }
+    return attrs
+
+
+def encode_extended_result(extended_result: ExtendedResult) -> dict:
+    if not isinstance(extended_result, ExtendedResult):
+        raise TypeError(f"Object of type '{type(extended_result)}' is not JSON serializable")
+
+    encoded_stats = dict()
+    if extended_result.stats:
+        for key, value in extended_result.stats.items():
+            encoded_key = str(encode(key))
+            encoded_stats[encoded_key] = value
+
+    attrs = {
+        '__type__': 'ExtendedResult',
+        'suppressed_items': list(extended_result.suppressed_items),
+        'relevant_items': list(extended_result.relevant_items),
+        'stats': encoded_stats
+    }
+    return attrs
+
 
 encoder_map: dict[Type, Callable] = {
     Action: encode_action,
@@ -136,6 +197,10 @@ encoder_map: dict[Type, Callable] = {
     SchemaStats: encode_schema_stats,
     ECItemStats: encode_ec_item_stats,
     ERItemStats: encode_er_item_stats,
+    FrozenECItemStats: encode_frozen_ec_item_stats,
+    FrozenERItemStats: encode_frozen_er_item_stats,
+    ExtendedContext: encode_extended_context,
+    ExtendedResult: encode_extended_result,
 }
 
 

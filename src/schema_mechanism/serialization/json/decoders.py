@@ -6,7 +6,14 @@ from schema_mechanism.core import Action
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import ECItemStats
 from schema_mechanism.core import ERItemStats
+from schema_mechanism.core import ExtendedContext
+from schema_mechanism.core import ExtendedResult
+from schema_mechanism.core import FROZEN_EC_ITEM_STATS
+from schema_mechanism.core import FROZEN_ER_ITEM_STATS
+from schema_mechanism.core import FrozenECItemStats
+from schema_mechanism.core import FrozenERItemStats
 from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import Item
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SchemaStats
 from schema_mechanism.core import StateAssertion
@@ -48,6 +55,40 @@ def decode_er_item_stats(obj_dict: dict) -> ERItemStats:
     return ERItemStats(**obj_dict)
 
 
+def decode_frozen_ec_item_stats(obj_dict: dict) -> FrozenECItemStats:
+    return FROZEN_EC_ITEM_STATS
+
+
+def decode_frozen_er_item_stats(obj_dict: dict) -> FrozenERItemStats:
+    return FROZEN_ER_ITEM_STATS
+
+
+def decode_extended_context(obj_dict: dict) -> ExtendedContext:
+    stats: dict[Item, ECItemStats] = dict()
+    if 'stats' in obj_dict:
+        encoded_stats: dict[str, ECItemStats] = obj_dict.pop('stats')
+        for encoded_key, item_stats in encoded_stats.items():
+            decoded_key_as_str: str = encoded_key.replace('\\', '')
+
+            item: Item = decode(decoded_key_as_str)
+            stats[item] = item_stats
+
+    return ExtendedContext(stats=stats, **obj_dict)
+
+
+def decode_extended_result(obj_dict: dict) -> ExtendedResult:
+    stats: dict[Item, ERItemStats] = dict()
+    if 'stats' in obj_dict:
+        encoded_stats: dict[str, ERItemStats] = obj_dict.pop('stats')
+        for encoded_key, item_stats in encoded_stats.items():
+            decoded_key_as_str: str = encoded_key.replace('\\', '')
+
+            item: Item = decode(decoded_key_as_str)
+            stats[item] = item_stats
+
+    return ExtendedResult(stats=stats, **obj_dict)
+
+
 decoder_map: dict[str, Callable] = {
     'Action': decode_action,
     'SymbolicItem': decode_symbolic_item,
@@ -57,6 +98,10 @@ decoder_map: dict[str, Callable] = {
     'SchemaStats': decode_schema_stats,
     'ECItemStats': decode_ec_item_stats,
     'ERItemStats': decode_er_item_stats,
+    'FrozenECItemStats': decode_frozen_ec_item_stats,
+    'FrozenERItemStats': decode_frozen_er_item_stats,
+    'ExtendedContext': decode_extended_context,
+    'ExtendedResult': decode_extended_result,
 }
 
 

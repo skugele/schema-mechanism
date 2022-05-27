@@ -785,6 +785,12 @@ class TestFrozenECItemStats(TestCase):
     def test_str(self):
         self.assertEqual('FROZEN', str(self.item_stats))
 
+    def test_encode_and_decode(self):
+        encoded_obj = encode(self.item_stats)
+        decoded_obj: FrozenECItemStats = decode(encoded_obj)
+
+        self.assertEqual(self.item_stats, decoded_obj)
+
 
 class TestFrozenERItemStats(TestCase):
     def setUp(self) -> None:
@@ -806,3 +812,9 @@ class TestFrozenERItemStats(TestCase):
 
     def test_str(self):
         self.assertEqual('FROZEN', str(self.item_stats))
+
+    def test_encode_and_decode(self):
+        encoded_obj = encode(self.item_stats)
+        decoded_obj: FrozenERItemStats = decode(encoded_obj)
+
+        self.assertEqual(self.item_stats, decoded_obj)
