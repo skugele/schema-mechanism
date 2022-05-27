@@ -1668,6 +1668,13 @@ class Schema(Observer, Observable, UniqueIdMixin):
                  action: Action,
                  context: Optional[StateAssertion] = None,
                  result: Optional[StateAssertion] = None,
+                 extended_context: Optional[ExtendedContext] = None,
+                 extended_result: Optional[ExtendedResult] = None,
+                 schema_stats: Optional[SchemaStats] = None,
+                 overriding_conditions: Optional[StateAssertion] = None,
+                 avg_duration: Optional[float] = None,
+                 cost: Optional[float] = None,
+                 creation_time: Optional[float] = None,
                  **kwargs):
         super().__init__()
 
@@ -1678,37 +1685,37 @@ class Schema(Observer, Observable, UniqueIdMixin):
         if self.action is None:
             raise ValueError('Action cannot be None')
 
-        self._stats: SchemaStats = SchemaStats()
-
         self._is_bare = not (context or result)
 
+        # bare schemas do not have an extended context
         self._extended_context: ExtendedContext = (
             None
             if self._is_bare else
-            ExtendedContext(suppressed_items=self._context.items)
+            extended_context or ExtendedContext(suppressed_items=self._context.items)
         )
 
+        # only bare schemas have an extended result
         self._extended_result: ExtendedResult = (
-            ExtendedResult(suppressed_items=self._result.items)
-            if self._is_bare or is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) else
+            extended_result or ExtendedResult(suppressed_items=self._result.items)
+            if self._is_bare else
             None
         )
 
-        # TODO: Need to update overriding conditions.
-        self._overriding_conditions: Optional[StateAssertion] = None
-
         # This observer registration is used to notify the schema when a relevant item has been detected in its
         # extended context or extended result
-        if not self._is_bare:
+        if self._extended_context:
             self._extended_context.register(self)
 
-        if self._is_bare or is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
+        if self._extended_result:
             self._extended_result.register(self)
 
-        self._avg_duration: Optional[float] = None
-        self._cost: Optional[float] = 1.0
+        self._stats: SchemaStats = schema_stats or SchemaStats()
 
-        self._creation_time = time()
+        # TODO: Need to update overriding conditions.
+        self._overriding_conditions: Optional[StateAssertion] = overriding_conditions
+        self._avg_duration: Optional[float] = 1.0 if avg_duration is None else avg_duration
+        self._cost: Optional[float] = 1.0 if cost is None else cost
+        self._creation_time = time() if creation_time is None else creation_time
 
     def __eq__(self, other) -> bool:
         # SchemaPool should be used for all item creation, so this should be an optimization

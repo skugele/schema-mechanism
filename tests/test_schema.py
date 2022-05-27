@@ -1,10 +1,7 @@
-import os
 from copy import copy
 from copy import deepcopy
 from datetime import datetime
-from pathlib import Path
 from random import sample
-from tempfile import TemporaryDirectory
 from time import time
 from unittest import TestCase
 from unittest.mock import MagicMock
@@ -19,6 +16,7 @@ from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaSpinOffType
+from schema_mechanism.core import SchemaStats
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 from schema_mechanism.core import get_global_params
@@ -30,15 +28,14 @@ from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.func_api import update_schema
-from schema_mechanism.serialization.json import deserialize
-from schema_mechanism.serialization.json import serialize
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from schema_mechanism.util import repr_str
 from test_share.test_classes import MockObserver
 from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
-from test_share.test_func import file_was_written
 from test_share.test_func import satisfies_equality_checks
 from test_share.test_func import satisfies_hash_checks
 
@@ -140,16 +137,6 @@ class TestSchema(TestCase):
                                                'reliability': self.schema.reliability, })
 
         self.assertEqual(expected_repr, repr(self.schema))
-
-    # Schema.update
-    # 	conditions to test:
-    #             if is_feature_enabled(SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED) and explained:
-    #                 logger.debug(
-    #                     f'update suppressed for schema {self} because its result was explained by a reliable schema')
-    #             else:
-    #                 self._extended_result.update_all(activated=activated, new=new, lost=lost, count=count)
-    #
-    # Schema.receive (test unrecognized spin_off_type raises a ValueError)
 
     def test_is_context_satisfied(self):
         c = sym_state_assert('1,3')
@@ -827,39 +814,24 @@ class TestSchema(TestCase):
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.schema))
 
-    @test_share.disable_test
-    def test_serialize_basic_schema(self):
-        with TemporaryDirectory() as tmp_dir:
-            path = Path(os.path.join(tmp_dir, 'test-file-schema-serialize.sav'))
+    def test_encode_and_decode(self):
+        schema = sym_schema(
+            '1,2/TestAction/3,4',
+            cost=100.3,
+            overriding_conditions=sym_state_assert('2,3'),
+            avg_duration=6.9,
+            creation_time=1000,
+            schema_stats=SchemaStats(
+                n=100,
+                n_activated=37,
+                n_success=17,
+            )
+        )
 
-            # sanity check: file SHOULD NOT exist
-            self.assertFalse(path.exists())
+        encoded_obj = encode(schema)
+        decoded_obj: Schema = decode(encoded_obj)
 
-            serialize(self.schema, path)
-
-            # test: file SHOULD exist after call to save
-            self.assertTrue(file_was_written(path))
-
-            recovered = deserialize(path)
-
-            self.assertEqual(self.schema, recovered)
-
-    @test_share.disable_test
-    def test_serialize_composite_action_schema(self):
-        with TemporaryDirectory() as tmp_dir:
-            path = Path(os.path.join(tmp_dir, 'test-file-schema-serialize_composite_action_schema.sav'))
-
-            # sanity check: file SHOULD NOT exist
-            self.assertFalse(path.exists())
-
-            serialize(self.schema_ca, path)
-
-            # test: file SHOULD exist after call to save
-            self.assertTrue(file_was_written(path))
-
-            recovered: Schema = deserialize(path)
-
-            self.assertEqual(self.schema_ca, recovered)
+        self.assertEqual(schema, decoded_obj)
 
     @test_share.performance_test
     def test_performance_1(self):

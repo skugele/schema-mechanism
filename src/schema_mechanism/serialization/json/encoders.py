@@ -12,6 +12,7 @@ from schema_mechanism.core import ExtendedResult
 from schema_mechanism.core import FrozenECItemStats
 from schema_mechanism.core import FrozenERItemStats
 from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaStats
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
@@ -118,18 +119,6 @@ def encode_er_item_stats(er_item_stats: ERItemStats) -> dict:
     return attrs
 
 
-# def encode_schema(schema: Schema):
-#     if not isinstance(schema, Schema):
-#         raise TypeError(f"Object of type '{type(schema)}' is not JSON serializable")
-#
-#     attrs = {
-#         '__type__': 'Schema',
-#         'source': list(item.source),
-#         'primitive_value': item.primitive_value,
-#         'delegated_value': item.delegated_value
-#     }
-#     return attrs
-
 def encode_frozen_ec_item_stats(ec_item_stats: FrozenECItemStats) -> dict:
     if not isinstance(ec_item_stats, FrozenECItemStats):
         raise TypeError(f"Object of type '{type(ec_item_stats)}' is not JSON serializable")
@@ -188,6 +177,27 @@ def encode_extended_result(extended_result: ExtendedResult) -> dict:
     return attrs
 
 
+def encode_schema(schema: Schema):
+    if not isinstance(schema, Schema):
+        raise TypeError(f"Object of type '{type(schema)}' is not JSON serializable")
+
+    attrs = {
+        '__type__': 'Schema',
+        'action': schema.action,
+        'context': schema.context,
+        'result': schema.result,
+        'extended_context': schema.extended_context,
+        'extended_result': schema.extended_result,
+        'schema_stats': schema.stats,
+        'overriding_conditions': schema.overriding_conditions,
+        'avg_duration': schema.avg_duration,
+        'cost': schema.cost,
+        'creation_time': schema.creation_time,
+
+    }
+    return attrs
+
+
 encoder_map: dict[Type, Callable] = {
     Action: encode_action,
     SymbolicItem: encode_symbolic_item,
@@ -201,6 +211,7 @@ encoder_map: dict[Type, Callable] = {
     FrozenERItemStats: encode_frozen_er_item_stats,
     ExtendedContext: encode_extended_context,
     ExtendedResult: encode_extended_result,
+    Schema: encode_schema,
 }
 
 

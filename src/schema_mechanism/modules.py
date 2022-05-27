@@ -720,15 +720,14 @@ def create_spin_off(schema: Schema, spin_off_type: SchemaSpinOffType, item: Item
         )
 
         # add composite contexts to ItemPool to support learning of composite results
-        if not is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS):
-            if len(new_context) > 1:
-                _ = ItemPool().get(new_context.as_state(), item_type=CompositeItem)
+        if len(new_context) > 1:
+            _ = ItemPool().get(new_context.as_state(), item_type=CompositeItem)
 
         return SchemaPool().get(SchemaUniqueKey(action=schema.action, context=new_context, result=schema.result))
 
     elif SchemaSpinOffType.RESULT == spin_off_type:
-        if not is_feature_enabled(SupportedFeature.ER_INCREMENTAL_RESULTS) and not schema.is_bare():
-            raise ValueError('Result spin-off for primitive schemas only (unless ER_INCREMENTAL_RESULTS enabled)')
+        if not schema.is_bare():
+            raise ValueError('Result spin-off for primitive schemas only')
 
         new_result = (
             StateAssertion(items=(item,))

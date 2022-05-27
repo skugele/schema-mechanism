@@ -15,6 +15,7 @@ from schema_mechanism.core import FrozenERItemStats
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Item
 from schema_mechanism.core import ItemPool
+from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaStats
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
@@ -89,6 +90,10 @@ def decode_extended_result(obj_dict: dict) -> ExtendedResult:
     return ExtendedResult(stats=stats, **obj_dict)
 
 
+def decode_schema(obj_dict: dict) -> Schema:
+    return Schema(**obj_dict)
+
+
 decoder_map: dict[str, Callable] = {
     'Action': decode_action,
     'SymbolicItem': decode_symbolic_item,
@@ -102,6 +107,7 @@ decoder_map: dict[str, Callable] = {
     'FrozenERItemStats': decode_frozen_er_item_stats,
     'ExtendedContext': decode_extended_context,
     'ExtendedResult': decode_extended_result,
+    'Schema': decode_schema,
 }
 
 
