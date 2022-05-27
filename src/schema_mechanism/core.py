@@ -598,6 +598,7 @@ class ItemStats(ABC):
         """ Updates the item statistics """
 
 
+@dataclass
 class ECItemStats(ItemStats):
     """ Extended context item-level statistics
 
@@ -605,36 +606,10 @@ class ECItemStats(ItemStats):
         its result will obtain) if the schema is activated when the slot's item is On, to the probability
         of success if that item is Off when the schema is activated." (Drescher, 1991, p. 73)
     """
-
-    def __init__(self):
-        super().__init__()
-
-        self._n_success_and_on = 0
-        self._n_success_and_off = 0
-        self._n_fail_and_on = 0
-        self._n_fail_and_off = 0
-
-    def __eq__(self, other) -> bool:
-        if isinstance(other, ECItemStats):
-            return all(
-                (
-                    # generator expression for conditions to allow lazy evaluation
-                    condition for condition in
-                    [
-                        self._n_success_and_on == other._n_success_and_on,
-                        self._n_success_and_off == other._n_success_and_off,
-                        self._n_fail_and_on == other._n_fail_and_on,
-                        self._n_fail_and_off == other._n_fail_and_off,
-                    ]
-                )
-            )
-        return False if other is None else NotImplemented
-
-    def __hash__(self):
-        return hash((self._n_success_and_on,
-                     self._n_success_and_off,
-                     self._n_fail_and_on,
-                     self._n_fail_and_off))
+    n_success_and_on: int = 0
+    n_success_and_off: int = 0
+    n_fail_and_on: int = 0
+    n_fail_and_off: int = 0
 
     def __str__(self) -> str:
         attr_values = (
@@ -658,6 +633,12 @@ class ECItemStats(ItemStats):
 
         return repr_str(self, attr_values)
 
+    def __hash__(self):
+        return hash((self.n_success_and_on,
+                     self.n_success_and_off,
+                     self.n_fail_and_on,
+                     self.n_fail_and_off))
+
     @property
     def correlation_test(self) -> ItemCorrelationTest:
         params = get_global_params()
@@ -675,16 +656,16 @@ class ECItemStats(ItemStats):
 
     def update(self, on: bool, success: bool, count: int = 1) -> None:
         if on and success:
-            self._n_success_and_on += count
+            self.n_success_and_on += count
 
         elif on and not success:
-            self._n_fail_and_on += count
+            self.n_fail_and_on += count
 
         elif not on and success:
-            self._n_success_and_off += count
+            self.n_success_and_off += count
 
         elif not on and not success:
-            self._n_fail_and_off += count
+            self.n_fail_and_off += count
 
     @property
     def n_on(self) -> int:
@@ -696,11 +677,11 @@ class ECItemStats(ItemStats):
 
     @property
     def n_success(self) -> int:
-        return self._n_success_and_on + self._n_success_and_off
+        return self.n_success_and_on + self.n_success_and_off
 
     @property
     def n_fail(self) -> int:
-        return self._n_fail_and_on + self._n_fail_and_off
+        return self.n_fail_and_on + self.n_fail_and_off
 
     @property
     def n(self) -> int:
@@ -719,58 +700,24 @@ class ECItemStats(ItemStats):
         except ZeroDivisionError:
             return np.NAN
 
-    @property
-    def n_success_and_on(self) -> int:
-        return self._n_success_and_on
-
-    @property
-    def n_success_and_off(self) -> int:
-        return self._n_success_and_off
-
-    @property
-    def n_fail_and_on(self) -> int:
-        return self._n_fail_and_on
-
-    @property
-    def n_fail_and_off(self) -> int:
-        return self._n_fail_and_off
-
     def as_table(self) -> CorrelationTable:
         return self.n_success_and_on, self.n_fail_and_on, self.n_success_and_off, self.n_fail_and_off
 
     def reset(self) -> None:
-        self._n_success_and_on = 0
-        self._n_fail_and_on = 0
-        self._n_success_and_off = 0
-        self._n_fail_and_off = 0
+        self.n_success_and_on = 0
+        self.n_fail_and_on = 0
+        self.n_success_and_off = 0
+        self.n_fail_and_off = 0
 
 
+@dataclass
 class ERItemStats(ItemStats):
     """ Extended result item-level statistics """
 
-    def __init__(self):
-        super().__init__()
-
-        self._n_on_and_activated = 0
-        self._n_on_and_not_activated = 0
-        self._n_off_and_activated = 0
-        self._n_off_and_not_activated = 0
-
-    def __eq__(self, other) -> bool:
-        if isinstance(other, ERItemStats):
-            return all(
-                (
-                    # generator expression for conditions to allow lazy evaluation
-                    condition for condition in
-                    [
-                        self._n_on_and_activated == other._n_on_and_activated,
-                        self._n_on_and_not_activated == other._n_on_and_not_activated,
-                        self._n_off_and_activated == other._n_off_and_activated,
-                        self._n_off_and_not_activated == other._n_off_and_not_activated,
-                    ]
-                )
-            )
-        return False if other is None else NotImplemented
+    n_on_and_activated: int = 0
+    n_on_and_not_activated: int = 0
+    n_off_and_activated: int = 0
+    n_off_and_not_activated: int = 0
 
     @property
     def correlation_test(self) -> ItemCorrelationTest:
@@ -789,7 +736,7 @@ class ERItemStats(ItemStats):
 
     @property
     def n_on(self) -> int:
-        return self._n_on_and_activated + self._n_on_and_not_activated
+        return self.n_on_and_activated + self.n_on_and_not_activated
 
     @property
     def n(self) -> int:
@@ -797,50 +744,34 @@ class ERItemStats(ItemStats):
 
     @property
     def n_off(self) -> int:
-        return self._n_off_and_activated + self._n_off_and_not_activated
+        return self.n_off_and_activated + self.n_off_and_not_activated
 
     @property
     def n_activated(self) -> int:
-        return self._n_on_and_activated + self._n_off_and_activated
+        return self.n_on_and_activated + self.n_off_and_activated
 
     @property
     def n_not_activated(self) -> int:
-        return self._n_on_and_not_activated + self._n_off_and_not_activated
-
-    @property
-    def n_on_and_activated(self) -> int:
-        return self._n_on_and_activated
-
-    @property
-    def n_on_and_not_activated(self) -> int:
-        return self._n_on_and_not_activated
-
-    @property
-    def n_off_and_activated(self) -> int:
-        return self._n_off_and_activated
-
-    @property
-    def n_off_and_not_activated(self) -> int:
-        return self._n_off_and_not_activated
+        return self.n_on_and_not_activated + self.n_off_and_not_activated
 
     def update(self, on: bool, activated: bool, count: int = 1) -> None:
         if on and activated:
-            self._n_on_and_activated += count
+            self.n_on_and_activated += count
 
         elif on and not activated:
-            self._n_on_and_not_activated += count
+            self.n_on_and_not_activated += count
 
         elif not on and activated:
-            self._n_off_and_activated += count
+            self.n_off_and_activated += count
 
         elif not on and not activated:
-            self._n_off_and_not_activated += count
+            self.n_off_and_not_activated += count
 
     def reset(self) -> None:
-        self._n_on_and_activated = 0
-        self._n_on_and_not_activated = 0
-        self._n_off_and_activated = 0
-        self._n_off_and_not_activated = 0
+        self.n_on_and_activated = 0
+        self.n_on_and_not_activated = 0
+        self.n_off_and_activated = 0
+        self.n_off_and_not_activated = 0
 
     def as_table(self) -> CorrelationTable:
         return (self.n_on_and_activated,
@@ -849,10 +780,10 @@ class ERItemStats(ItemStats):
                 self.n_off_and_not_activated)
 
     def __hash__(self):
-        return hash((self._n_on_and_activated,
-                     self._n_off_and_activated,
-                     self._n_on_and_not_activated,
-                     self._n_off_and_not_activated))
+        return hash((self.n_on_and_activated,
+                     self.n_off_and_activated,
+                     self.n_on_and_not_activated,
+                     self.n_off_and_not_activated))
 
     def __str__(self) -> str:
         attr_values = (
@@ -871,7 +802,7 @@ class ERItemStats(ItemStats):
             'n_on_and_activated': f'{self.n_on_and_activated:,}',
             'n_on_and_not_activated': f'{self.n_on_and_not_activated:,}',
             'n_off_and_activated': f'{self.n_off_and_activated:,}',
-            'n_off_and_not_activated': f'{self._n_off_and_not_activated:,}',
+            'n_off_and_not_activated': f'{self.n_off_and_not_activated:,}',
         }
 
         return repr_str(self, attr_values)

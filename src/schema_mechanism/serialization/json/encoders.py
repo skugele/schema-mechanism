@@ -5,6 +5,8 @@ from typing import Type
 
 from schema_mechanism.core import Action
 from schema_mechanism.core import CompositeItem
+from schema_mechanism.core import ECItemStats
+from schema_mechanism.core import ERItemStats
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import SchemaStats
 from schema_mechanism.core import StateAssertion
@@ -84,6 +86,34 @@ def encode_schema_stats(schema_stats: SchemaStats) -> dict:
     return attrs
 
 
+def encode_ec_item_stats(ec_item_stats: ECItemStats) -> dict:
+    if not isinstance(ec_item_stats, ECItemStats):
+        raise TypeError(f"Object of type '{type(ec_item_stats)}' is not JSON serializable")
+
+    attrs = {
+        '__type__': 'ECItemStats',
+        'n_success_and_on': ec_item_stats.n_success_and_on,
+        'n_success_and_off': ec_item_stats.n_success_and_off,
+        'n_fail_and_on': ec_item_stats.n_fail_and_on,
+        'n_fail_and_off': ec_item_stats.n_fail_and_off,
+    }
+    return attrs
+
+
+def encode_er_item_stats(er_item_stats: ERItemStats) -> dict:
+    if not isinstance(er_item_stats, ERItemStats):
+        raise TypeError(f"Object of type '{type(er_item_stats)}' is not JSON serializable")
+
+    attrs = {
+        '__type__': 'ERItemStats',
+        'n_on_and_activated': er_item_stats.n_on_and_activated,
+        'n_on_and_not_activated': er_item_stats.n_on_and_not_activated,
+        'n_off_and_activated': er_item_stats.n_off_and_activated,
+        'n_off_and_not_activated': er_item_stats.n_off_and_not_activated,
+    }
+    return attrs
+
+
 # def encode_schema(schema: Schema):
 #     if not isinstance(schema, Schema):
 #         raise TypeError(f"Object of type '{type(schema)}' is not JSON serializable")
@@ -104,6 +134,8 @@ encoder_map: dict[Type, Callable] = {
     StateAssertion: encode_state_assertion,
     GlobalStats: encode_global_stats,
     SchemaStats: encode_schema_stats,
+    ECItemStats: encode_ec_item_stats,
+    ERItemStats: encode_er_item_stats,
 }
 
 

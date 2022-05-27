@@ -119,10 +119,65 @@ class TestECItemStatistics(TestCase):
         self.item_stats = ECItemStats()
 
     def test_init(self):
-        self.assertEqual(self.item_stats.n_success_and_on, 0)
-        self.assertEqual(self.item_stats.n_success_and_off, 0)
-        self.assertEqual(self.item_stats.n_fail_and_on, 0)
-        self.assertEqual(self.item_stats.n_fail_and_off, 0)
+        # test: attributes should be properly set if explicitly given to initializer
+        n_success_and_on = 10
+        n_success_and_off = 6
+        n_fail_and_on = 10
+        n_fail_and_off = 10
+
+        ec_item_stats = ECItemStats(
+            n_success_and_on=n_success_and_on,
+            n_success_and_off=n_success_and_off,
+            n_fail_and_on=n_fail_and_on,
+            n_fail_and_off=n_fail_and_off,
+        )
+
+        self.assertEqual(n_success_and_on, ec_item_stats.n_success_and_on)
+        self.assertEqual(n_success_and_off, ec_item_stats.n_success_and_off)
+        self.assertEqual(n_fail_and_on, ec_item_stats.n_fail_and_on)
+        self.assertEqual(n_fail_and_off, ec_item_stats.n_fail_and_off)
+
+        # test: defaults should be properly set if values not given to initializer
+        default_n_success_and_on = 0
+        default_n_success_and_off = 0
+        default_n_fail_and_on = 0
+        default_n_fail_and_off = 0
+
+        ec_item_stats = ECItemStats()
+
+        self.assertEqual(default_n_success_and_on, ec_item_stats.n_success_and_on)
+        self.assertEqual(default_n_success_and_off, ec_item_stats.n_success_and_off)
+        self.assertEqual(default_n_fail_and_on, ec_item_stats.n_fail_and_on)
+        self.assertEqual(default_n_fail_and_off, ec_item_stats.n_fail_and_off)
+
+    def test_derived_values(self):
+        n_success_and_on = 10
+        n_success_and_off = 6
+        n_fail_and_on = 10
+        n_fail_and_off = 10
+
+        ec_item_stats = ECItemStats(
+            n_success_and_on=n_success_and_on,
+            n_success_and_off=n_success_and_off,
+            n_fail_and_on=n_fail_and_on,
+            n_fail_and_off=n_fail_and_off,
+        )
+
+        # test: n_success should equal to n_success_and_on + n_success_and_off
+        self.assertEqual(n_success_and_on + n_success_and_off, ec_item_stats.n_success)
+
+        # test: n_fail should equal to n_fail_and_on + n_fail_and_off
+        self.assertEqual(n_fail_and_on + n_fail_and_off, ec_item_stats.n_fail)
+
+        # test: n_on should equal to n_success_and_on + n_success_and_off
+        self.assertEqual(n_success_and_on + n_fail_and_on, ec_item_stats.n_on)
+
+        # test: n_off should equal to n_success_and_off + n_fail_and_off
+        self.assertEqual(n_success_and_off + n_fail_and_off, ec_item_stats.n_off)
+
+        # test: n should equal to n_success + n_fail AND n_on + n_off
+        self.assertEqual(ec_item_stats.n_success + ec_item_stats.n_fail, ec_item_stats.n)
+        self.assertEqual(ec_item_stats.n_on + ec_item_stats.n_off, ec_item_stats.n)
 
     def test_specificity_1(self):
         # test: initial specificity SHOULD be NAN
@@ -262,6 +317,19 @@ class TestECItemStatistics(TestCase):
         expected_repr = repr_str(self.item_stats, attr_values)
         self.assertEqual(expected_repr, repr(self.item_stats))
 
+    def test_encode_and_decode(self):
+        ec_item_stats = ECItemStats(
+            n_success_and_on=17,
+            n_success_and_off=12,
+            n_fail_and_on=19,
+            n_fail_and_off=5,
+        )
+
+        encoded_obj = encode(ec_item_stats)
+        decoded_obj: GlobalStats = decode(encoded_obj)
+
+        self.assertEqual(ec_item_stats, decoded_obj)
+
     @test_share.performance_test
     def test_performance_equal(self):
         self.item_stats.update(on=True, success=True)
@@ -313,10 +381,65 @@ class TestERItemStatistics(TestCase):
         self.item_stats = ERItemStats()
 
     def test_init(self):
-        self.assertEqual(self.item_stats.n_on_and_activated, 0)
-        self.assertEqual(self.item_stats.n_on_and_not_activated, 0)
-        self.assertEqual(self.item_stats.n_off_and_activated, 0)
-        self.assertEqual(self.item_stats.n_off_and_not_activated, 0)
+        # test: attributes should be properly set if explicitly given to initializer
+        n_on_and_activated = 10
+        n_on_and_not_activated = 6
+        n_off_and_activated = 10
+        n_off_and_not_activated = 10
+
+        er_item_stats = ERItemStats(
+            n_on_and_activated=n_on_and_activated,
+            n_on_and_not_activated=n_on_and_not_activated,
+            n_off_and_activated=n_off_and_activated,
+            n_off_and_not_activated=n_off_and_not_activated,
+        )
+
+        self.assertEqual(n_on_and_activated, er_item_stats.n_on_and_activated)
+        self.assertEqual(n_on_and_not_activated, er_item_stats.n_on_and_not_activated)
+        self.assertEqual(n_off_and_activated, er_item_stats.n_off_and_activated)
+        self.assertEqual(n_off_and_not_activated, er_item_stats.n_off_and_not_activated)
+
+        # test: defaults should be properly set if values not given to initializer
+        default_n_on_and_activated = 0
+        default_n_on_and_not_activated = 0
+        default_n_off_and_activated = 0
+        default_n_off_and_not_activated = 0
+
+        er_item_stats = ERItemStats()
+
+        self.assertEqual(default_n_on_and_activated, er_item_stats.n_on_and_activated)
+        self.assertEqual(default_n_on_and_not_activated, er_item_stats.n_on_and_not_activated)
+        self.assertEqual(default_n_off_and_activated, er_item_stats.n_off_and_activated)
+        self.assertEqual(default_n_off_and_not_activated, er_item_stats.n_off_and_not_activated)
+
+    def test_derived_values(self):
+        n_on_and_activated = 10
+        n_on_and_not_activated = 6
+        n_off_and_activated = 10
+        n_off_and_not_activated = 10
+
+        ec_item_stats = ERItemStats(
+            n_on_and_activated=n_on_and_activated,
+            n_on_and_not_activated=n_on_and_not_activated,
+            n_off_and_activated=n_off_and_activated,
+            n_off_and_not_activated=n_off_and_not_activated,
+        )
+
+        # test: n_activated should equal to n_on_and_activated + n_off_and_activated
+        self.assertEqual(n_on_and_activated + n_off_and_activated, ec_item_stats.n_activated)
+
+        # test: n_not_activated should equal to n_on_and_not_activated + n_off_and_not_activated
+        self.assertEqual(n_on_and_not_activated + n_off_and_not_activated, ec_item_stats.n_not_activated)
+
+        # test: n_on should equal to n_on_and_activated + n_on_and_not_activated
+        self.assertEqual(n_on_and_activated + n_on_and_not_activated, ec_item_stats.n_on)
+
+        # test: n_off should equal to n_off_and_activated + n_off_and_not_activated
+        self.assertEqual(n_off_and_activated + n_off_and_not_activated, ec_item_stats.n_off)
+
+        # test: n should equal to n_activated + n_not_activated AND n_on + n_off
+        self.assertEqual(ec_item_stats.n_activated + ec_item_stats.n_not_activated, ec_item_stats.n)
+        self.assertEqual(ec_item_stats.n_on + ec_item_stats.n_off, ec_item_stats.n)
 
     def test_update(self):
         self.item_stats.update(on=True, activated=True, count=32)
@@ -383,7 +506,7 @@ class TestERItemStatistics(TestCase):
             'n_on_and_activated': f'{self.item_stats.n_on_and_activated:,}',
             'n_on_and_not_activated': f'{self.item_stats.n_on_and_not_activated:,}',
             'n_off_and_activated': f'{self.item_stats.n_off_and_activated:,}',
-            'n_off_and_not_activated': f'{self.item_stats._n_off_and_not_activated:,}',
+            'n_off_and_not_activated': f'{self.item_stats.n_off_and_not_activated:,}',
         }
 
         expected_repr = repr_str(self.item_stats, attr_values)
@@ -438,6 +561,19 @@ class TestERItemStatistics(TestCase):
 
                 # test: negative correlation threshold should be equal to the global parameter value
                 self.assertEqual(negative_correlation_threshold, self.item_stats.negative_correlation_threshold)
+
+    def test_encode_and_decode(self):
+        er_item_stats = ERItemStats(
+            n_on_and_activated=17,
+            n_on_and_not_activated=12,
+            n_off_and_activated=19,
+            n_off_and_not_activated=5,
+        )
+
+        encoded_obj = encode(er_item_stats)
+        decoded_obj: GlobalStats = decode(encoded_obj)
+
+        self.assertEqual(er_item_stats, decoded_obj)
 
     @test_share.performance_test
     def test_performance_equal(self):

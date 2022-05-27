@@ -4,6 +4,8 @@ from typing import Callable
 
 from schema_mechanism.core import Action
 from schema_mechanism.core import CompositeItem
+from schema_mechanism.core import ECItemStats
+from schema_mechanism.core import ERItemStats
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SchemaStats
@@ -38,6 +40,14 @@ def decode_schema_stats(obj_dict: dict) -> SchemaStats:
     return SchemaStats(**obj_dict)
 
 
+def decode_ec_item_stats(obj_dict: dict) -> ECItemStats:
+    return ECItemStats(**obj_dict)
+
+
+def decode_er_item_stats(obj_dict: dict) -> ERItemStats:
+    return ERItemStats(**obj_dict)
+
+
 decoder_map: dict[str, Callable] = {
     'Action': decode_action,
     'SymbolicItem': decode_symbolic_item,
@@ -45,6 +55,8 @@ decoder_map: dict[str, Callable] = {
     'StateAssertion': decode_state_assertion,
     'GlobalStats': decode_global_stats,
     'SchemaStats': decode_schema_stats,
+    'ECItemStats': decode_ec_item_stats,
+    'ERItemStats': decode_er_item_stats,
 }
 
 
