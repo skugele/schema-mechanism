@@ -39,9 +39,24 @@ class TestGlobalStats(TestCase):
         self.global_stats._baseline_value = 0.156
 
     def test_init(self):
-        for initial_baseline_value in np.linspace(-10.0, 10.0):
-            stats = GlobalStats(initial_baseline_value=initial_baseline_value)
-            self.assertEqual(initial_baseline_value, stats.baseline_value)
+
+        # test: attributes should be properly set if explicitly given to initializer
+        n = 10
+        baseline_value = -0.56
+
+        global_stats = GlobalStats(n=n, baseline_value=baseline_value)
+
+        self.assertEqual(n, global_stats.n)
+        self.assertEqual(baseline_value, global_stats.baseline_value)
+
+        # test: defaults should be properly set if values not given to initializer
+        default_n = 0
+        default_baseline_value = 0.0
+
+        global_stats = GlobalStats()
+
+        self.assertEqual(default_n, global_stats.n)
+        self.assertEqual(default_baseline_value, global_stats.baseline_value)
 
     def test_global_instance_get_and_set_functions(self):
         stats = GlobalStats()
@@ -472,91 +487,116 @@ class TestSchemaStats(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self.ss = SchemaStats()
+        self.schema_stats = SchemaStats()
 
     def test_init(self):
-        self.assertEqual(self.ss.n, 0)
-        self.assertEqual(self.ss.n_activated, 0)
-        self.assertEqual(self.ss.n_not_activated, 0)
-        self.assertEqual(self.ss.n_success, 0)
-        self.assertEqual(self.ss.n_fail, 0)
+        # test: initializer should set attribute values correctly when explicitly sent to initializer
+        n = 125
+        n_activated = 100
+        n_success = 17
+
+        schema_stats = SchemaStats(
+            n=n,
+            n_activated=n_activated,
+            n_success=n_success,
+        )
+
+        self.assertEqual(n, schema_stats.n)
+        self.assertEqual(n_activated, schema_stats.n_activated)
+        self.assertEqual(n_success, schema_stats.n_success)
+
+        schema_stats = SchemaStats()
+
+        # test: initializer should set default values correctly
+        n_default = 0
+        n_activated_default = 0
+        n_success_default = 0
+
+        self.assertEqual(n_default, schema_stats.n)
+        self.assertEqual(n_activated_default, schema_stats.n_activated)
+        self.assertEqual(n_success_default, schema_stats.n_success)
 
     def test_update(self):
-        self.ss.update(activated=True, success=True, count=1)
-        self.assertEqual(1, self.ss.n)
-        self.assertEqual(1, self.ss.n_activated)
-        self.assertEqual(1, self.ss.n_success)
-        self.assertEqual(0, self.ss.n_fail)
-        self.assertEqual(0, self.ss.n_not_activated)
+        self.schema_stats.update(activated=True, success=True, count=1)
+        self.assertEqual(1, self.schema_stats.n)
+        self.assertEqual(1, self.schema_stats.n_activated)
+        self.assertEqual(1, self.schema_stats.n_success)
+        self.assertEqual(0, self.schema_stats.n_fail)
+        self.assertEqual(0, self.schema_stats.n_not_activated)
 
-        self.ss.update(activated=True, success=False, count=1)
-        self.assertEqual(2, self.ss.n)
-        self.assertEqual(2, self.ss.n_activated)
-        self.assertEqual(1, self.ss.n_success)
-        self.assertEqual(1, self.ss.n_fail)
-        self.assertEqual(0, self.ss.n_not_activated)
+        self.schema_stats.update(activated=True, success=False, count=1)
+        self.assertEqual(2, self.schema_stats.n)
+        self.assertEqual(2, self.schema_stats.n_activated)
+        self.assertEqual(1, self.schema_stats.n_success)
+        self.assertEqual(1, self.schema_stats.n_fail)
+        self.assertEqual(0, self.schema_stats.n_not_activated)
 
-        self.ss.update(activated=False, success=True, count=1)
-        self.assertEqual(3, self.ss.n)
-        self.assertEqual(2, self.ss.n_activated)
-        self.assertEqual(1, self.ss.n_success)  # must be activated for success or fail
-        self.assertEqual(1, self.ss.n_fail)  # must be activated for success or fail
-        self.assertEqual(1, self.ss.n_not_activated)
+        self.schema_stats.update(activated=False, success=True, count=1)
+        self.assertEqual(3, self.schema_stats.n)
+        self.assertEqual(2, self.schema_stats.n_activated)
+        self.assertEqual(1, self.schema_stats.n_success)  # must be activated for success or fail
+        self.assertEqual(1, self.schema_stats.n_fail)  # must be activated for success or fail
+        self.assertEqual(1, self.schema_stats.n_not_activated)
 
-        self.ss.update(activated=False, success=False, count=1)
-        self.assertEqual(4, self.ss.n)
-        self.assertEqual(2, self.ss.n_activated)
-        self.assertEqual(1, self.ss.n_success)
-        self.assertEqual(1, self.ss.n_fail)
-        self.assertEqual(2, self.ss.n_not_activated)
+        self.schema_stats.update(activated=False, success=False, count=1)
+        self.assertEqual(4, self.schema_stats.n)
+        self.assertEqual(2, self.schema_stats.n_activated)
+        self.assertEqual(1, self.schema_stats.n_success)
+        self.assertEqual(1, self.schema_stats.n_fail)
+        self.assertEqual(2, self.schema_stats.n_not_activated)
 
     def test_n(self):
         # should always be updated by count
-        self.ss.update(activated=True, success=True, count=1)
-        self.ss.update(activated=True, success=False, count=1)
-        self.ss.update(activated=False, success=True, count=1)
+        self.schema_stats.update(activated=True, success=True, count=1)
+        self.schema_stats.update(activated=True, success=False, count=1)
+        self.schema_stats.update(activated=False, success=True, count=1)
 
         # test with count > 1
-        self.ss.update(activated=False, success=False, count=2)
-        self.assertEqual(5, self.ss.n)
+        self.schema_stats.update(activated=False, success=False, count=2)
+        self.assertEqual(5, self.schema_stats.n)
 
     def test_activated(self):
-        self.ss.update(activated=True, success=True, count=1)
-        self.ss.update(activated=True, success=False, count=1)
-        self.assertEqual(2, self.ss.n_activated)
+        self.schema_stats.update(activated=True, success=True, count=1)
+        self.schema_stats.update(activated=True, success=False, count=1)
+        self.assertEqual(2, self.schema_stats.n_activated)
 
-        self.ss.update(activated=False, success=True, count=1)
-        self.ss.update(activated=False, success=False, count=1)
-        self.assertEqual(2, self.ss.n_activated)
+        self.schema_stats.update(activated=False, success=True, count=1)
+        self.schema_stats.update(activated=False, success=False, count=1)
+        self.assertEqual(2, self.schema_stats.n_activated)
 
     def test_success(self):
         # must be activated to increment success
-        self.ss.update(activated=True, success=True, count=1)
-        self.ss.update(activated=True, success=False, count=1)
-        self.assertEqual(1, self.ss.n_success)
+        self.schema_stats.update(activated=True, success=True, count=1)
+        self.schema_stats.update(activated=True, success=False, count=1)
+        self.assertEqual(1, self.schema_stats.n_success)
 
-        self.ss.update(activated=False, success=True, count=1)
-        self.ss.update(activated=False, success=False, count=1)
-        self.assertEqual(1, self.ss.n_success)
+        self.schema_stats.update(activated=False, success=True, count=1)
+        self.schema_stats.update(activated=False, success=False, count=1)
+        self.assertEqual(1, self.schema_stats.n_success)
 
-    @test_share.string_test
-    def test_str(self):
-        print(str(self.ss))
+    def test_derived_values(self):
+        schema_stats = SchemaStats(
+            n=123,
+            n_success=67,
+            n_activated=95,
+        )
 
-    def test_repr(self):
-        stats = SchemaStats()
+        # test: n_not_activated should equal n_activated - n_success
+        self.assertEqual(schema_stats.n_activated - schema_stats.n_success, schema_stats.n_fail)
 
-        stats.update(activated=False, success=True, count=1)
-        stats.update(activated=False, success=False, count=3)
+        # test: n_fail should equal n - n_activated
+        self.assertEqual(schema_stats.n - schema_stats.n_activated, schema_stats.n_not_activated)
 
-        attr_values = {
-            'n': f'{stats.n:,}',
-            'n_activated': f'{stats.n_activated:,}',
-            'n_success': f'{stats.n_success:,}',
-        }
+    def test_encode_and_decode(self):
+        schema_stats = SchemaStats(
+            n=123,
+            n_success=84,
+            n_activated=5,
+        )
+        encoded_obj = encode(schema_stats)
+        decoded_obj: SchemaStats = decode(encoded_obj)
 
-        expected_str = repr_str(stats, attr_values)
-        self.assertEqual(expected_str, repr(stats))
+        self.assertEqual(schema_stats, decoded_obj)
 
 
 class TestReadOnlySchemaStats(TestCase):

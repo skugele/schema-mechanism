@@ -10,6 +10,7 @@ from collections import deque
 from collections.abc import Collection
 from collections.abc import Iterator
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from functools import singledispatch
@@ -488,24 +489,10 @@ def reduce_to_most_specific_items(items: Optional[Collection[Item]]) -> Collecti
     return items_to_keep
 
 
+@dataclass
 class GlobalStats:
-    def __init__(self, initial_baseline_value: float = 0.0):
-        self.baseline_value: float = initial_baseline_value
-        self.n: int = 0
-
-    def __eq__(self, other) -> bool:
-        if isinstance(other, GlobalStats):
-            return all(
-                (
-                    # generator expression for conditions to allow lazy evaluation
-                    condition for condition in
-                    [
-                        other.baseline_value == self.baseline_value,
-                        other.n == self.n
-                    ]
-                )
-            )
-        return False if other is None else NotImplemented
+    n: int = 0
+    baseline_value: float = 0.0
 
     def update(self, selection_state: State, result_state: State) -> None:
         """ Updates the global statistics based on the selection and result states.
@@ -528,49 +515,20 @@ class GlobalStats:
         self.n = 0
 
 
+@dataclass
 class SchemaStats:
-    def __init__(self):
-        self._n = 0  # total number of update events
-        self._n_activated = 0
-        self._n_success = 0
-
-    def __repr__(self):
-        attr_values = {
-            'n': f'{self.n:,}',
-            'n_activated': f'{self.n_activated:,}',
-            'n_success': f'{self.n_success:,}',
-        }
-
-        return repr_str(self, attr_values)
+    n: int = 0
+    n_activated: int = 0
+    n_success: int = 0
 
     def update(self, activated: bool = False, success: bool = False, count: int = 1):
-        self._n += count
+        self.n += count
 
         if activated:
-            self._n_activated += count
+            self.n_activated += count
 
             if success:
-                self._n_success += count
-
-    @property
-    def n(self) -> int:
-        """ Returns the number of times this schema's stats were updated.
-
-            A schema is updated whenever its context is satisfied.
-
-            :return: the total number of schema updates (regardless of activation)
-        """
-        return self._n
-
-    @property
-    def n_activated(self) -> int:
-        """ Returns the number of times this schema was activated (explicitly or implicitly).
-
-            “To activate a schema is to initiate its action when the schema is applicable.” (Drescher, 1991, p.53)
-
-            :return: the number of activations (explicit or implicit)
-        """
-        return self._n_activated
+                self.n_success += count
 
     @property
     def n_not_activated(self) -> int:
@@ -580,18 +538,7 @@ class SchemaStats:
 
             :return: the number of times the schema was not chosen for activation (explicit or implicit)
         """
-        return self._n - self._n_activated
-
-    @property
-    def n_success(self) -> int:
-        """ Returns the number of times this schema succeeded on activation.
-
-            “An activated schema is said to succeed if its predicted results all in fact obtain, and to
-            fail otherwise.” (Drescher, 1991, p.53)
-
-        :return: the number of successes
-        """
-        return self._n_success
+        return self.n - self.n_activated
 
     @property
     def n_fail(self) -> int:
@@ -602,7 +549,7 @@ class SchemaStats:
 
         :return: the number of failures
         """
-        return self._n_activated - self._n_success
+        return self.n_activated - self.n_success
 
 
 class ItemStats(ABC):

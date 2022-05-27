@@ -6,6 +6,7 @@ from schema_mechanism.core import Action
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
+from schema_mechanism.core import SchemaStats
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 
@@ -30,15 +31,11 @@ def decode_state_assertion(obj_dict: dict) -> StateAssertion:
 
 
 def decode_global_stats(obj_dict: dict) -> GlobalStats:
-    n = obj_dict.pop('n')
-    baseline_value = obj_dict.pop('baseline_value')
+    return GlobalStats(**obj_dict)
 
-    stats = GlobalStats()
 
-    stats._n = n
-    stats._baseline_value = baseline_value
-
-    return stats
+def decode_schema_stats(obj_dict: dict) -> SchemaStats:
+    return SchemaStats(**obj_dict)
 
 
 decoder_map: dict[str, Callable] = {
@@ -47,6 +44,7 @@ decoder_map: dict[str, Callable] = {
     'CompositeItem': decode_composite_item,
     'StateAssertion': decode_state_assertion,
     'GlobalStats': decode_global_stats,
+    'SchemaStats': decode_schema_stats,
 }
 
 

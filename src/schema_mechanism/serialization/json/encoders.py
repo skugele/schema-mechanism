@@ -6,6 +6,7 @@ from typing import Type
 from schema_mechanism.core import Action
 from schema_mechanism.core import CompositeItem
 from schema_mechanism.core import GlobalStats
+from schema_mechanism.core import SchemaStats
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 
@@ -70,6 +71,19 @@ def encode_global_stats(global_stats: GlobalStats) -> dict:
     return attrs
 
 
+def encode_schema_stats(schema_stats: SchemaStats) -> dict:
+    if not isinstance(schema_stats, SchemaStats):
+        raise TypeError(f"Object of type '{type(schema_stats)}' is not JSON serializable")
+
+    attrs = {
+        '__type__': 'SchemaStats',
+        'n': schema_stats.n,
+        'n_success': schema_stats.n_success,
+        'n_activated': schema_stats.n_activated,
+    }
+    return attrs
+
+
 # def encode_schema(schema: Schema):
 #     if not isinstance(schema, Schema):
 #         raise TypeError(f"Object of type '{type(schema)}' is not JSON serializable")
@@ -89,6 +103,7 @@ encoder_map: dict[Type, Callable] = {
     CompositeItem: encode_composite_item,
     StateAssertion: encode_state_assertion,
     GlobalStats: encode_global_stats,
+    SchemaStats: encode_schema_stats,
 }
 
 

@@ -40,7 +40,7 @@ class TestState(TestCase):
 
         self.s_empty = tuple()
 
-        GlobalStats(initial_baseline_value=-1.0)
+        GlobalStats(baseline_value=-1.0)
 
     def test_init(self):
         self.assertEqual(0, len(self.s_empty))
