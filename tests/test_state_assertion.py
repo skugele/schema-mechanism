@@ -1,9 +1,12 @@
 from unittest import TestCase
 
+from schema_mechanism.core import ItemPool
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from schema_mechanism.util import repr_str
 from test_share.test_func import common_test_setup
 from test_share.test_func import satisfies_equality_checks
@@ -188,3 +191,14 @@ class TestStateAssertion(TestCase):
 
         expected_repr = repr_str(self.state_assertion, attr_values)
         self.assertEqual(expected_repr, repr(self.state_assertion))
+
+    def test_encode_and_decode(self):
+        encoded_obj = encode(self.state_assertion)
+        decoded_obj: StateAssertion = decode(encoded_obj)
+
+        self.assertEqual(self.state_assertion, decoded_obj)
+        self.assertSetEqual(set(self.items), set(decoded_obj.items))
+
+        # test: verify that all items in state assertion are in ItemPool
+        for item in decoded_obj.items:
+            self.assertIn(item.source, ItemPool())

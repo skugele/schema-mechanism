@@ -4,26 +4,49 @@ from typing import Callable
 
 from schema_mechanism.core import Action
 from schema_mechanism.core import CompositeItem
+from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
+from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 
 
-def decode_action(obj_dict: dict) -> Any:
+def decode_action(obj_dict: dict) -> Action:
     return Action(**obj_dict)
 
 
-def decode_symbolic_item(obj_dict: dict) -> Any:
-    return ItemPool().get(obj_dict['source'], item_type=SymbolicItem, **obj_dict)
+def decode_symbolic_item(obj_dict: dict) -> SymbolicItem:
+    source = obj_dict.pop('source')
+    return ItemPool().get(source, item_type=SymbolicItem, **obj_dict)
 
 
-def decode_composite_item(obj_dict: dict) -> Any:
-    return ItemPool().get(frozenset(obj_dict['source']), item_type=CompositeItem, **obj_dict)
+def decode_composite_item(obj_dict: dict) -> CompositeItem:
+    source = obj_dict.pop('source')
+    return ItemPool().get(frozenset(source), item_type=CompositeItem, **obj_dict)
+
+
+def decode_state_assertion(obj_dict: dict) -> StateAssertion:
+    items = obj_dict.pop('items')
+    return StateAssertion(items=items, **obj_dict)
+
+
+def decode_global_stats(obj_dict: dict) -> GlobalStats:
+    n = obj_dict.pop('n')
+    baseline_value = obj_dict.pop('baseline_value')
+
+    stats = GlobalStats()
+
+    stats._n = n
+    stats._baseline_value = baseline_value
+
+    return stats
 
 
 decoder_map: dict[str, Callable] = {
     'Action': decode_action,
     'SymbolicItem': decode_symbolic_item,
-    'CompositeItem': decode_composite_item
+    'CompositeItem': decode_composite_item,
+    'StateAssertion': decode_state_assertion,
+    'GlobalStats': decode_global_stats,
 }
 
 

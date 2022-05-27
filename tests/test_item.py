@@ -18,6 +18,8 @@ from schema_mechanism.core import set_delegated_value_helper
 from schema_mechanism.func_api import sym_composite_item
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from schema_mechanism.strategies.decay import NoDecayStrategy
 from schema_mechanism.strategies.trace import ReplacingTrace
 from schema_mechanism.util import repr_str
@@ -131,7 +133,7 @@ class TestSymbolicItem(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self.item = SymbolicItem(source='1234', primitive_value=1.0)
+        self.item = SymbolicItem(source='1234', primitive_value=1.0, delegated_value=0.1)
 
     # noinspection PyTypeChecker
     def test_init(self):
@@ -228,21 +230,13 @@ class TestSymbolicItem(TestCase):
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.item))
 
-    # def test_serialize(self):
-    #     with TemporaryDirectory() as tmp_dir:
-    #         path = Path(os.path.join(tmp_dir, 'test-file-symbolic_item-serialize.sav'))
-    #
-    #         # sanity check: file SHOULD NOT exist
-    #         self.assertFalse(path.exists())
-    #
-    #         serialize(self.item, path)
-    #
-    #         # test: file SHOULD exist after call to save
-    #         self.assertTrue(file_was_written(path))
-    #
-    #         recovered = deserialize(path)
-    #
-    #         self.assertEqual(self.item, recovered)
+    def test_encode_and_decode(self):
+        encoded_obj = encode(self.item)
+        decoded_obj: SymbolicItem = decode(encoded_obj)
+
+        self.assertEqual(self.item, decoded_obj)
+        self.assertEqual(self.item.primitive_value, decoded_obj.primitive_value)
+        self.assertEqual(self.item.delegated_value, decoded_obj.delegated_value)
 
     @test_share.performance_test
     def test_performance(self):

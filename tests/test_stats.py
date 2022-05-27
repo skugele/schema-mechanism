@@ -20,6 +20,8 @@ from schema_mechanism.core import get_global_params
 from schema_mechanism.core import get_global_stats
 from schema_mechanism.core import set_global_stats
 from schema_mechanism.func_api import sym_state
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from schema_mechanism.strategies.correlation_test import BarnardExactCorrelationTest
 from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from schema_mechanism.util import repr_str
@@ -32,7 +34,9 @@ class TestGlobalStats(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
-        self.stats = GlobalStats()
+        self.global_stats = GlobalStats()
+        self.global_stats._n = 10
+        self.global_stats._baseline_value = 0.156
 
     def test_init(self):
         for initial_baseline_value in np.linspace(-10.0, 10.0):
@@ -85,6 +89,12 @@ class TestGlobalStats(TestCase):
         stats.reset()
         self.assertEqual(0, stats.n)
         self.assertEqual(0.0, stats.baseline_value)
+
+    def test_encode_and_decode(self):
+        encoded_obj = encode(self.global_stats)
+        decoded_obj: GlobalStats = decode(encoded_obj)
+
+        self.assertEqual(self.global_stats, decoded_obj)
 
 
 class TestECItemStatistics(TestCase):
