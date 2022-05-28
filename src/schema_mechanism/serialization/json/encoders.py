@@ -4,7 +4,9 @@ from typing import Callable
 from typing import Type
 
 from schema_mechanism.core import Action
+from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import CompositeItem
+from schema_mechanism.core import Controller
 from schema_mechanism.core import ECItemStats
 from schema_mechanism.core import ERItemStats
 from schema_mechanism.core import ExtendedContext
@@ -25,6 +27,45 @@ def encode_action(action: Action) -> dict:
     attrs = {
         '__type__': 'Action',
         'label': action.label,
+    }
+    return attrs
+
+
+def encode_composite_action(composite_action: CompositeAction) -> dict:
+    if not isinstance(composite_action, CompositeAction):
+        TypeError(f"Object of type '{type(composite_action)}' is not JSON serializable")
+
+    attrs = {
+        '__type__': 'CompositeAction',
+        'label': composite_action.label,
+        'goal_state': composite_action.goal_state,
+    }
+    return attrs
+
+
+def encode_controller(controller: Controller) -> dict:
+    if not isinstance(controller, Controller):
+        TypeError(f"Object of type '{type(controller)}' is not JSON serializable")
+
+    encoded_proximity_map: dict[str, float] = dict()
+    if controller.proximity_map:
+        for key, value in controller.proximity_map.items():
+            encoded_key = str(encode(key))
+            encoded_proximity_map[encoded_key] = value
+
+    encoded_total_cost_map: dict[str, float] = dict()
+    if controller.total_cost_map:
+        for key, value in controller.total_cost_map.items():
+            encoded_key = str(encode(key))
+            encoded_total_cost_map[encoded_key] = value
+
+    attrs = {
+        '__type__': 'Controller',
+        'goal_state': controller.goal_state,
+        'proximity_map': encoded_proximity_map,
+        'total_cost_map': encoded_total_cost_map,
+        'components': list(controller.components),
+        'descendants': list(controller.descendants),
     }
     return attrs
 
@@ -200,6 +241,8 @@ def encode_schema(schema: Schema):
 
 encoder_map: dict[Type, Callable] = {
     Action: encode_action,
+    CompositeAction: encode_composite_action,
+    Controller: encode_controller,
     SymbolicItem: encode_symbolic_item,
     CompositeItem: encode_composite_item,
     StateAssertion: encode_state_assertion,

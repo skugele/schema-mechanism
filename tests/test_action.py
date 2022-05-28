@@ -49,7 +49,7 @@ class TestAction(TestCase):
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.a))
 
-    def test_serialize(self):
+    def test_encode_and_decode(self):
         # test: encoding/decoding of Actions with labels (should result in Actions with the same labels)
         action = Action(label='test action')
         json_str = encode(action)

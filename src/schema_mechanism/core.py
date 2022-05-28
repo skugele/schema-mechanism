@@ -1351,18 +1351,32 @@ class ExtendedContext(ExtendedItemCollection):
 
 
 class Controller:
-    def __init__(self, goal_state: StateAssertion):
+    def __init__(
+            self,
+            goal_state: StateAssertion,
+            proximity_map: dict[Schema, float] = None,
+            total_cost_map: dict[Schema, float] = None,
+            components: set[Schema] = None,
+            descendants: set[Schema] = None,
+    ) -> None:
         self._goal_state: StateAssertion = goal_state
-        self._proximity: dict[Schema, float] = defaultdict(float)
-        self._total_cost: dict[Schema, float] = defaultdict(float)
-        self._components: set[Schema] = set()
-        self._descendants: set[Schema] = set()
+
+        self._proximity_map: dict[Schema, float] = defaultdict(float)
+        if proximity_map:
+            self._proximity_map.update(proximity_map)
+
+        self._total_cost_map: dict[Schema, float] = defaultdict(float)
+        if total_cost_map:
+            self._total_cost_map.update(total_cost_map)
+
+        self._components: set[Schema] = set() if components is None else components
+        self._descendants: set[Schema] = set() if descendants is None else descendants
 
     def __eq__(self, other):
         if self is other:
             return True
         if isinstance(other, Controller):
-            return self._goal_state == other.goal_state
+            return self.goal_state == other.goal_state
         return False if other is None else NotImplemented
 
     def __hash__(self):
@@ -1392,6 +1406,10 @@ class Controller:
         """
         return self._descendants
 
+    @property
+    def proximity_map(self) -> dict[Schema, float]:
+        return self._proximity_map
+
     def proximity(self, schema: Schema) -> float:
         """ Returns the proximity (i.e., closeness) of a schema to the composite action's goal state.
 
@@ -1402,7 +1420,11 @@ class Controller:
         :param schema: a component schema
         :return: a float that quantifies the schema's goal state proximity
         """
-        return self._proximity[schema]
+        return self._proximity_map[schema]
+
+    @property
+    def total_cost_map(self) -> dict[Schema, float]:
+        return self._total_cost_map
 
     def total_cost(self, schema: Schema) -> float:
         """ Returns the total cost that would be incurred in order to achieve the composite action's goal state.
@@ -1410,7 +1432,7 @@ class Controller:
         :param schema: a component schema
         :return: a float that quantifies the total cost
         """
-        return self._total_cost[schema]
+        return self._total_cost_map[schema]
 
     def update(self, chains: list[Chain[Schema]]) -> None:
         if not chains:
@@ -1461,8 +1483,8 @@ class Controller:
 
                 # FIXME: incremental learning seems to be producing undesirable results... can I make this work?
                 # self._proximity[schema] += lr * (1.0 / avg_duration_to_goal_state - self._proximity[schema])
-                self._proximity[schema] = 1.0 / avg_duration_to_goal_state
-                self._total_cost[schema] = total_cost_to_goal_state
+                self._proximity_map[schema] = 1.0 / avg_duration_to_goal_state
+                self._total_cost_map[schema] = total_cost_to_goal_state
 
         # TODO: Implement this...
         # "each time a composite action is explicitly initiated, the controller keeps track of which component
@@ -1574,7 +1596,6 @@ def default_for_controller_map(key: StateAssertion) -> Controller:
     return Controller(key)
 
 
-# TODO: externalize controller map
 class CompositeAction(Action):
     """ "A composite action is essentially a subroutine: it is defined to be the action of achieving the designated
      goal state, by whatever means is available. The means are given by chains of schemas that lead to the goal
@@ -1944,10 +1965,7 @@ class Schema(Observer, Observable, UniqueIdMixin):
         self._stats.update(activated=activated, success=succeeded, count=count)
 
         # update average duration
-        if self.avg_duration is np.nan:
-            self.avg_duration = duration
-        else:
-            self.avg_duration += (1.0 / float(self._stats.n)) * (duration - self.avg_duration)
+        self.avg_duration += (1.0 / float(self._stats.n)) * (duration - self.avg_duration)
 
         # update extended result stats
         if self._extended_result:

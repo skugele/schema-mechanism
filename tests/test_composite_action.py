@@ -19,6 +19,8 @@ from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.modules import SchemaMemory
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from test_share import disable_test
 from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
@@ -91,7 +93,7 @@ class TestCompositeAction(TestShared):
         self.goal_state = sym_state_assert('E')
         self.label = 'CA1'
 
-        self.ca = CompositeAction(goal_state=self.goal_state, label=self.label)
+        self.composite_action = CompositeAction(goal_state=self.goal_state, label=self.label)
         self.other = CompositeAction(goal_state=sym_state_assert('F'), label='other')
 
     # noinspection PyTypeChecker,PyArgumentList
@@ -101,17 +103,17 @@ class TestCompositeAction(TestShared):
         self.assertRaises(ValueError, lambda: CompositeAction(goal_state=None))
 
         # test: goal state should be properly initialized
-        self.assertEqual(self.goal_state, self.ca.goal_state)
+        self.assertEqual(self.goal_state, self.composite_action.goal_state)
 
         # test: controller should be properly initialized
-        self.assertIsNotNone(self.ca.controller)
+        self.assertIsNotNone(self.composite_action.controller)
 
         # test: an optional label should be set if provided
-        self.assertEqual(self.label, self.ca.label)
+        self.assertEqual(self.label, self.composite_action.label)
         self.assertIsNone(CompositeAction(self.goal_state).label)
 
         # test: a unique id should be assigned
-        self.assertIsNotNone(self.ca.uid)
+        self.assertIsNotNone(self.composite_action.uid)
 
     def test_is_enabled(self):
         ca = CompositeAction(goal_state=self.goal_state)
@@ -235,7 +237,8 @@ class TestCompositeAction(TestShared):
         s3.is_applicable(sym_state('M1,P'))
 
     def test_equals(self):
-        self.assertTrue(satisfies_equality_checks(obj=self.ca, other=self.other, other_different_type=1.0))
+        self.assertTrue(
+            satisfies_equality_checks(obj=self.composite_action, other=self.other, other_different_type=1.0))
 
         # test: goal state is used to determine equality NOT labels
         ca_1 = CompositeAction(sym_state_assert('1,2'), label='CA1')
@@ -247,7 +250,7 @@ class TestCompositeAction(TestShared):
         self.assertNotEqual(ca_2, ca_3)
 
     def test_hash(self):
-        self.assertTrue(satisfies_hash_checks(obj=self.ca))
+        self.assertTrue(satisfies_hash_checks(obj=self.composite_action))
 
     def test_controller_sharing(self):
         # test: composite actions with the same goal state should share the same controller
@@ -266,6 +269,14 @@ class TestCompositeAction(TestShared):
 
         self.assertIsNot(ca1.controller, ca4.controller)
         self.assertIsNot(ca1.controller, ca5.controller)
+
+    def test_encode_and_decode(self):
+        encoded_obj = encode(self.composite_action)
+        decoded_obj: CompositeAction = decode(encoded_obj)
+
+        self.assertEqual(self.composite_action, decoded_obj)
+        self.assertEqual(self.goal_state, decoded_obj.goal_state)
+        self.assertEqual(self.label, decoded_obj.label)
 
 
 class TestController(TestShared):
@@ -522,6 +533,35 @@ class TestController(TestShared):
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.controller))
+
+    def test_encode_and_decode(self):
+
+        controller = Controller(
+            goal_state=sym_state_assert('4'),
+            proximity_map={
+                sym_schema('1,/A1/2,'): 1.0 / 3.0,
+                sym_schema('2,/A2/3,'): 1.0 / 2.0,
+                sym_schema('3,/A3/4,'): 1.0,
+            },
+            total_cost_map={
+                sym_schema('1,/A1/2,'): 1.0,
+                sym_schema('2,/A2/3,'): 2.0,
+                sym_schema('3,/A3/4,'): 3.0,
+            },
+            components={
+                sym_schema('1,/A1/2,'),
+                sym_schema('2,/A2/3,'),
+                sym_schema('3,/A3/4,'),
+            },
+        )
+
+        encoded_obj = encode(controller)
+        decoded_obj: Controller = decode(encoded_obj)
+
+        self.assertEqual(controller, decoded_obj)
+        self.assertEqual(controller.goal_state, decoded_obj.goal_state)
+        self.assertDictEqual(controller.proximity_map, decoded_obj.proximity_map)
+        self.assertDictEqual(controller.total_cost_map, decoded_obj.total_cost_map)
 
     def _calc_proximity(self, schema: Schema, chain: Chain) -> float:
         start = chain.index(schema)

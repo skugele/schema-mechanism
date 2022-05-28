@@ -3,7 +3,9 @@ from typing import Any
 from typing import Callable
 
 from schema_mechanism.core import Action
+from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import CompositeItem
+from schema_mechanism.core import Controller
 from schema_mechanism.core import ECItemStats
 from schema_mechanism.core import ERItemStats
 from schema_mechanism.core import ExtendedContext
@@ -23,6 +25,36 @@ from schema_mechanism.core import SymbolicItem
 
 def decode_action(obj_dict: dict) -> Action:
     return Action(**obj_dict)
+
+
+def decode_composite_action(obj_dict: dict) -> CompositeAction:
+    return CompositeAction(**obj_dict)
+
+
+def decode_controller(obj_dict: dict) -> Controller:
+    proximity_map: dict[Schema, float] = dict()
+    if 'proximity_map' in obj_dict:
+        encoded_proximity_map: dict[str, float] = obj_dict.pop('proximity_map')
+        for encoded_key, value in encoded_proximity_map.items():
+            decoded_key_as_str: str = encoded_key.replace('\\', '')
+
+            schema: Schema = decode(decoded_key_as_str)
+            proximity_map[schema] = value
+
+    total_cost_map: dict[Schema, float] = dict()
+    if 'total_cost_map' in obj_dict:
+        encoded_total_cost_map: dict[str, float] = obj_dict.pop('total_cost_map')
+        for encoded_key, value in encoded_total_cost_map.items():
+            decoded_key_as_str: str = encoded_key.replace('\\', '')
+
+            schema: Schema = decode(decoded_key_as_str)
+            total_cost_map[schema] = value
+
+    return Controller(
+        proximity_map=proximity_map,
+        total_cost_map=total_cost_map,
+        **obj_dict
+    )
 
 
 def decode_symbolic_item(obj_dict: dict) -> SymbolicItem:
@@ -96,6 +128,8 @@ def decode_schema(obj_dict: dict) -> Schema:
 
 decoder_map: dict[str, Callable] = {
     'Action': decode_action,
+    'CompositeAction': decode_composite_action,
+    'Controller': decode_controller,
     'SymbolicItem': decode_symbolic_item,
     'CompositeItem': decode_composite_item,
     'StateAssertion': decode_state_assertion,
