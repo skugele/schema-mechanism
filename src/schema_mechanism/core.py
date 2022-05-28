@@ -1581,17 +1581,13 @@ class CompositeAction(Action):
      state..." (See Drescher 1991, p. 59)
     """
 
-    _controller_map: dict[StateAssertion, Controller] = (
-        DefaultDictWithKeyFactory(default_for_controller_map)
-    )
-
     def __init__(self, goal_state: StateAssertion, **kwargs):
         super().__init__(**kwargs)
 
         if not goal_state:
             raise ValueError('Goal state is not optional.')
 
-        self._controller = CompositeAction._controller_map[goal_state]
+        self._controller = get_controller_map()[goal_state]
 
     def __eq__(self, other) -> bool:
         if isinstance(other, CompositeAction):
@@ -1633,18 +1629,13 @@ class CompositeAction(Action):
 
         :return: a collection of controllers satisfying this state
         """
+        controller_map: ControllerMap = get_controller_map()
+
         satisfied: list[Controller] = []
-        for goal_state, controller in cls._controller_map.items():
+        for goal_state, controller in controller_map.items():
             if goal_state.is_satisfied(state):
                 satisfied.append(controller)
         return set(satisfied)
-
-    # TODO: It is a little strange calling a "reset" method on a class called CompositeAction. The reset is really
-    # TODO: related to the controller map. Perhaps I should externalize the controller map in its own class, and call
-    # TODO: reset on it?
-    @classmethod
-    def reset(cls) -> None:
-        return cls._controller_map.clear()
 
 
 class SchemaSpinOffType(Enum):
@@ -2589,6 +2580,16 @@ def advantage(o: Any) -> float:
     """ Calculates the additional value this object has over a learned baseline. """
     baseline_value = get_global_stats().baseline_value
     return calc_value(o) - baseline_value
+
+
+ControllerMap = dict[StateAssertion, Controller]
+_controller_map: ControllerMap = (
+    DefaultDictWithKeyFactory(default_for_controller_map)
+)
+
+
+def get_controller_map() -> ControllerMap:
+    return _controller_map
 
 
 default_delegated_value_helper = EligibilityTraceDelegatedValueHelper(

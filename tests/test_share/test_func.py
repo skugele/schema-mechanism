@@ -6,10 +6,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from schema_mechanism.core import CompositeAction
+from schema_mechanism.core import ControllerMap
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import default_global_params
+from schema_mechanism.core import get_controller_map
 from schema_mechanism.core import set_global_params
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,8 @@ def common_test_setup():
     SchemaPool().clear()
 
     # resets the composite action controller
-    CompositeAction.reset()
+    controller_map: ControllerMap = get_controller_map()
+    controller_map.clear()
 
 
 def is_eq_reflexive(x: Any) -> bool:

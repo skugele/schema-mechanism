@@ -7,10 +7,12 @@ import numpy as np
 from schema_mechanism.core import Chain
 from schema_mechanism.core import CompositeAction
 from schema_mechanism.core import Controller
+from schema_mechanism.core import ControllerMap
 from schema_mechanism.core import DummyController
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaTree
+from schema_mechanism.core import get_controller_map
 from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_assert
 from schema_mechanism.func_api import sym_schema
@@ -388,7 +390,8 @@ class TestController(TestShared):
 
     def test_all_satisfied_by(self):
         # clears all of the registered controllers
-        CompositeAction.reset()
+        controller_map: ControllerMap = get_controller_map()
+        controller_map.clear()
 
         controllers: dict = {
             'A': CompositeAction(goal_state=sym_assert('A')).controller,
