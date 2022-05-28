@@ -19,6 +19,7 @@ from schema_mechanism.core import Item
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaStats
+from schema_mechanism.core import SchemaTreeNode
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 
@@ -126,6 +127,25 @@ def decode_schema(obj_dict: dict) -> Schema:
     return Schema(**obj_dict)
 
 
+def decode_schema_tree_node(obj_dict: dict) -> SchemaTreeNode:
+    schemas_satisfied_by = (
+        set(obj_dict.pop('schemas_satisfied_by'))
+        if 'schemas_satisfied_by' in obj_dict
+        else None
+    )
+    schemas_would_satisfy = (
+        set(obj_dict.pop('schemas_would_satisfy'))
+        if 'schemas_would_satisfy' in obj_dict
+        else None
+    )
+
+    return SchemaTreeNode(
+        schemas_satisfied_by=schemas_satisfied_by,
+        schemas_would_satisfy=schemas_would_satisfy,
+        **obj_dict
+    )
+
+
 decoder_map: dict[str, Callable] = {
     'Action': decode_action,
     'CompositeAction': decode_composite_action,
@@ -142,6 +162,7 @@ decoder_map: dict[str, Callable] = {
     'ExtendedContext': decode_extended_context,
     'ExtendedResult': decode_extended_result,
     'Schema': decode_schema,
+    'SchemaTreeNode': decode_schema_tree_node,
 }
 
 

@@ -16,6 +16,7 @@ from schema_mechanism.core import FrozenERItemStats
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaStats
+from schema_mechanism.core import SchemaTreeNode
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
 
@@ -239,6 +240,20 @@ def encode_schema(schema: Schema):
     return attrs
 
 
+def encode_schema_tree_node(schema_tree_node: SchemaTreeNode) -> dict:
+    if not isinstance(schema_tree_node, SchemaTreeNode):
+        raise TypeError(f"Object of type '{type(schema_tree_node)}' is not JSON serializable")
+
+    attrs = {
+        '__type__': 'SchemaTreeNode',
+        'context': schema_tree_node.context,
+        'schemas_satisfied_by': list(schema_tree_node.schemas_satisfied_by),
+        'schemas_would_satisfy': list(schema_tree_node.schemas_would_satisfy),
+        'label': schema_tree_node.label,
+    }
+    return attrs
+
+
 encoder_map: dict[Type, Callable] = {
     Action: encode_action,
     CompositeAction: encode_composite_action,
@@ -255,6 +270,7 @@ encoder_map: dict[Type, Callable] = {
     ExtendedContext: encode_extended_context,
     ExtendedResult: encode_extended_result,
     Schema: encode_schema,
+    SchemaTreeNode: encode_schema_tree_node,
 }
 
 

@@ -5,6 +5,7 @@ from unittest import TestCase
 
 import test_share
 from schema_mechanism.core import Action
+from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import SchemaTreeNode
 from schema_mechanism.func_api import sym_schema
@@ -13,6 +14,8 @@ from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.serialization.json import deserialize
 from schema_mechanism.serialization.json import serialize
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from schema_mechanism.util import repr_str
 from test_share.test_func import common_test_setup
 from test_share.test_func import file_was_written
@@ -717,19 +720,40 @@ class TestSchemaTreeNode(TestCase):
 
     def test_init(self):
         context = sym_state_assert('1,2,3')
+        schemas_satisfied_by = {
+            sym_schema('1,2,3/A1/X,'),
+            sym_schema('1,2,3/A1/Y,'),
+        }
+        schemas_would_satisfy = {
+            sym_schema('X,/A1/1,2,3'),
+            sym_schema('Y,/A1/1,2,3'),
+        }
         label = 'custom label'
 
         node = SchemaTreeNode(
             context=context,
+            schemas_satisfied_by=schemas_satisfied_by,
+            schemas_would_satisfy=schemas_would_satisfy,
             label=label)
 
-        # test: attribute values should be properly set by initializer
+        # test: attribute values should be properly set by initializer if explicitly provided
         self.assertEqual(context, node.context)
+        self.assertSetEqual(schemas_satisfied_by, node.schemas_satisfied_by)
+        self.assertSetEqual(schemas_would_satisfy, node.schemas_would_satisfy)
         self.assertEqual(label, node.label)
 
-        # test: schemas satisfied-by and would-satisfy should be initialized to empty sets
-        self.assertSetEqual(set(), node.schemas_satisfied_by)
-        self.assertSetEqual(set(), node.schemas_would_satisfy)
+        # test: defaults should be set properly if values not explicitly provided to the initializer
+        node = SchemaTreeNode()
+
+        default_context = NULL_STATE_ASSERT
+        default_schemas_satisfied_by = set()
+        default_schemas_would_satisfy = set()
+        default_label = None
+
+        self.assertEqual(default_context, node.context)
+        self.assertSetEqual(default_schemas_satisfied_by, node.schemas_satisfied_by)
+        self.assertSetEqual(default_schemas_would_satisfy, node.schemas_would_satisfy)
+        self.assertEqual(default_label, node.label)
 
     def test_schemas_satisfied_by(self):
         schemas_satisfied_by = {
@@ -760,10 +784,40 @@ class TestSchemaTreeNode(TestCase):
 
     def test_repr(self):
         node = sym_schema_tree_node('1,2,3')
-        attr_values = {'context': node.context,
-                       'label': node.label}
+        attr_values = {
+            'context': node.context,
+            'schemas_satisfied_by': node.schemas_satisfied_by,
+            'schemas_would_satisfy': node.schemas_would_satisfy,
+            'label': node.label
+        }
         self.assertEqual(repr_str(node, attr_values), repr(node))
 
     def test_hash(self):
         node = sym_schema_tree_node('1,2,3')
         self.assertTrue(satisfies_hash_checks(obj=node))
+
+    def test_encode_and_decode(self):
+        context = sym_state_assert('1,2,3')
+        schemas_satisfied_by = {
+            sym_schema('1,2,3/A1/X,'),
+            sym_schema('1,2,3/A1/Y,'),
+        }
+        schemas_would_satisfy = {
+            sym_schema('X,/A1/1,2,3'),
+            sym_schema('Y,/A1/1,2,3'),
+        }
+        label = 'custom label'
+
+        schema_tree_node = SchemaTreeNode(
+            context=context,
+            schemas_satisfied_by=schemas_satisfied_by,
+            schemas_would_satisfy=schemas_would_satisfy,
+            label=label)
+
+        encoded_obj = encode(schema_tree_node)
+        decoded_obj: SchemaTreeNode = decode(encoded_obj)
+
+        self.assertEqual(schema_tree_node, decoded_obj)
+        self.assertSetEqual(schema_tree_node.schemas_satisfied_by, decoded_obj.schemas_satisfied_by)
+        self.assertSetEqual(schema_tree_node.schemas_would_satisfy, decoded_obj.schemas_would_satisfy)
+        self.assertEqual(schema_tree_node.label, decoded_obj.label)

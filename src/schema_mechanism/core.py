@@ -2058,51 +2058,48 @@ def is_reliable(schema: Schema, threshold: Optional[float] = None) -> bool:
 class SchemaTreeNode(NodeMixin):
     def __init__(self,
                  context: Optional[StateAssertion] = None,
+                 schemas_satisfied_by: Optional[Iterable[Schema]] = None,
+                 schemas_would_satisfy: Optional[Iterable[Schema]] = None,
                  label: str = None) -> None:
-        self._context = context or NULL_STATE_ASSERT
-        self._label = label
+        self.context = context or NULL_STATE_ASSERT
 
-        self._schemas_satisfied_by = set()
-        self._schemas_would_satisfy = set()
+        self._schemas_satisfied_by = set() if schemas_satisfied_by is None else set(schemas_satisfied_by)
+        self._schemas_would_satisfy = set() if schemas_would_satisfy is None else set(schemas_would_satisfy)
+
+        self.label = label
 
     def __hash__(self) -> int:
-        return hash(self._context)
+        return hash(self.context)
 
     def __eq__(self, other) -> bool:
         if isinstance(other, SchemaTreeNode):
-            return self._context == other._context
+            return self.context == other.context
         return False if other is None else NotImplemented
 
     def __str__(self) -> str:
-        return self._label if self._label else f'{self._context}'
+        return self.label if self.label else f'{self.context}'
 
     def __repr__(self) -> str:
-        return repr_str(self, {'context': self._context,
-                               'label': self._label})
-
-    @property
-    def context(self) -> Optional[StateAssertion]:
-        return self._context
-
-    @property
-    def label(self) -> str:
-        return self._label
+        return repr_str(self, {'context': self.context,
+                               'schemas_satisfied_by': self.schemas_satisfied_by,
+                               'schemas_would_satisfy': self.schemas_would_satisfy,
+                               'label': self.label})
 
     @property
     def schemas_satisfied_by(self) -> set[Schema]:
         return self._schemas_satisfied_by
 
     @schemas_satisfied_by.setter
-    def schemas_satisfied_by(self, value) -> None:
-        self._schemas_satisfied_by = value
+    def schemas_satisfied_by(self, value: Iterable[Schema]) -> None:
+        self._schemas_satisfied_by = set(value)
 
     @property
     def schemas_would_satisfy(self) -> set[Schema]:
         return self._schemas_would_satisfy
 
     @schemas_would_satisfy.setter
-    def schemas_would_satisfy(self, value) -> None:
-        self._schemas_would_satisfy = value
+    def schemas_would_satisfy(self, value: Iterable[Schema]) -> None:
+        self._schemas_would_satisfy = set(value)
 
 
 class SchemaTree:
