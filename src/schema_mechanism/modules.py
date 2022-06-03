@@ -130,7 +130,7 @@ class SchemaMemory(Observer):
         :return: None
         """
         applicable = selection_details.applicable
-        schema = selection_details.selected
+        selected_schema = selection_details.selected
         selection_state = selection_details.selection_state
 
         # create new and lost state element collections
@@ -144,31 +144,37 @@ class SchemaMemory(Observer):
         # I'm assuming that only APPLICABLE schemas should be updated. This is based on the belief that all
         # of the probabilities within a schema are really conditioned on the context being satisfied, even
         # though this fact is implicit.
-        activated_schemas = [s for s in applicable if s.is_activated(schema, result_state)]
-        non_activated_schemas = [s for s in applicable if not s.is_activated(schema, result_state)]
+        activated_schemas = [s for s in applicable if s.is_activated(selected_schema, result_state)]
+        non_activated_schemas = [s for s in applicable if not s.is_activated(selected_schema, result_state)]
 
         # all activated schemas must be updated BEFORE non-activated.
-        for s in activated_schemas:
+        for schema in activated_schemas:
             # this supports SupportedFeature.ER_SUPPRESS_UPDATE_ON_EXPLAINED
             explained |= True if is_reliable(schema) and schema.predicts_state(result_state) else False
-            succeeded = schema_succeeded(applicable=True,
-                                         activated=True,
-                                         satisfied=s.result.is_satisfied(result_state))
+            succeeded = schema_succeeded(
+                applicable=True,
+                activated=True,
+                satisfied=schema.result.is_satisfied(result_state)
+            )
 
-            s.update(activated=True,
-                     succeeded=succeeded,
-                     selection_state=selection_state,
-                     new=new,
-                     lost=lost,
-                     explained=explained)
+            schema.update(
+                activated=True,
+                succeeded=succeeded,
+                selection_state=selection_state,
+                new=new,
+                lost=lost,
+                explained=explained
+            )
 
-        for s in non_activated_schemas:
-            s.update(activated=False,
-                     succeeded=False,  # success requires implicit or explicit activation
-                     selection_state=selection_state,
-                     new=new,
-                     lost=lost,
-                     explained=explained)
+        for schema in non_activated_schemas:
+            schema.update(
+                activated=False,
+                succeeded=False,  # success requires implicit or explicit activation
+                selection_state=selection_state,
+                new=new,
+                lost=lost,
+                explained=explained
+            )
 
         # process terminated_pending
         for pending_details in selection_details.terminated_pending:
@@ -178,26 +184,25 @@ class SchemaMemory(Observer):
             pending_status = pending_details.status
 
             if pending_status in [PendingStatus.ABORTED, PendingStatus.INTERRUPTED]:
-                # TODO: I am not positive this is correct. I may need to revisit the correct way to update these
-                # TODO: temporarily extended actions (i.e. composite actions).
                 pending_schema.update(
                     activated=True,
                     succeeded=False,  # success requires implicit or explicit activation
                     selection_state=pending_selection_state,
                     new=new_state(pending_selection_state, result_state),
                     lost=lost_state(pending_selection_state, result_state),
-                    explained=explained)
+                    explained=explained
+                )
 
         params = get_global_params()
 
         # TODO: there must be a better way to choose when to perform an update than this randomized mess.
         # update composite action controllers
         controllers = CompositeAction.all_satisfied_by(result_state)
-        for c in controllers:
+        for controller in controllers:
             if rng().uniform(0.0, 1.0) < params.get('composite_actions.update_frequency'):
-                chains = self.backward_chains(goal_state=c.goal_state,
+                chains = self.backward_chains(goal_state=controller.goal_state,
                                               max_len=params.get('composite_actions.backward_chains.max_length'))
-                c.update(chains)
+                controller.update(chains)
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
         satisfied = itertools.chain.from_iterable(
