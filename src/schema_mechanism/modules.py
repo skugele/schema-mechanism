@@ -60,37 +60,39 @@ logger = logging.getLogger(__name__)
 
 
 class SchemaMemory(Observer):
-    def __init__(self, schemas: Optional[Collection[Schema]] = None) -> None:
+    def __init__(self, bare_schemas: Optional[Collection[Schema]] = None) -> None:
         """ Initializes SchemaMemory.
 
-        :param schemas: an optional collection of built-in, bare (action-only) schemas.
+        :param bare_schemas: an optional collection of built-in, bare (action-only) schemas.
         """
         super().__init__()
 
         # built-in schemas sent to initializer must be bare (action-only) schemas
-        self._schema_tree = SchemaTree(schemas) if schemas else None
+        self.schema_tree = SchemaTree()
 
-        # register listeners for built-in schemas
-        if schemas:
-            for schema in schemas:
+        if bare_schemas:
+            self.schema_tree.add_bare_schemas(bare_schemas)
+
+            # register listeners for built-in schemas
+            for schema in bare_schemas:
                 schema.register(self)
 
     def __len__(self) -> int:
-        return self._schema_tree.n_schemas
+        return self.schema_tree.n_schemas
 
     def __contains__(self, schema: Schema) -> bool:
-        return schema in self._schema_tree
+        return schema in self.schema_tree
 
     def __str__(self):
-        return str(self._schema_tree)
+        return str(self.schema_tree)
 
     def __iter__(self) -> Schema:
-        yield from itertools.chain.from_iterable([n.schemas_satisfied_by for n in self._schema_tree])
+        yield from itertools.chain.from_iterable([n.schemas_satisfied_by for n in self.schema_tree])
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, SchemaMemory):
             return all({
-                self._schema_tree == other._schema_tree,
+                self.schema_tree == other.schema_tree,
             })
         return False if other is None else NotImplemented
 
@@ -105,11 +107,11 @@ class SchemaMemory(Observer):
         """
         sm = SchemaMemory()
 
-        sm._schema_tree = copy(tree)
-        sm._schema_tree.validate(raise_on_invalid=True)
+        sm.schema_tree = copy(tree)
+        sm.schema_tree.validate(raise_on_invalid=True)
 
         # register listeners for schemas in tree
-        for node in sm._schema_tree:
+        for node in sm.schema_tree:
             for schema in node.schemas_satisfied_by:
                 schema.register(sm)
 
@@ -199,7 +201,7 @@ class SchemaMemory(Observer):
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
         satisfied = itertools.chain.from_iterable(
-            n.schemas_satisfied_by for n in self._schema_tree.find_all_satisfied(state))
+            n.schemas_satisfied_by for n in self.schema_tree.find_all_satisfied(state))
 
         return [schema for schema in satisfied if schema.is_applicable(state)]
 
@@ -232,7 +234,7 @@ class SchemaMemory(Observer):
 
         chains = list()
 
-        nodes = self._schema_tree.find_all_would_satisfy(goal_state)
+        nodes = self.schema_tree.find_all_would_satisfy(goal_state)
         for n in nodes:
             more_chains = list()
 
@@ -285,10 +287,10 @@ class SchemaMemory(Observer):
             if self._new_composite_action_needed(source=source, spin_off=spin_off, spin_off_type=spin_off_type):
                 self._create_new_composite_action(goal_state=spin_off.result)
 
-        self._schema_tree.add(source=source, spin_offs=spin_offs, spin_off_type=spin_off_type)
+        self.schema_tree.add(source=source, spin_offs=spin_offs, spin_off_type=spin_off_type)
 
     def is_novel_result(self, result: StateAssertion) -> bool:
-        return not any({result == s.result for s in self._schema_tree.root.schemas_satisfied_by})
+        return not any({result == s.result for s in self.schema_tree.root.schemas_satisfied_by})
 
     def _new_composite_action_needed(self, source: Schema, spin_off: Schema, spin_off_type: SchemaSpinOffType) -> bool:
         """ Returns whether a new composite action is needed.
@@ -346,7 +348,7 @@ class SchemaMemory(Observer):
         # adds a new bare schema for the new composite action
         ca_schema = SchemaPool().get(SchemaUniqueKey(action=ca))
         ca_schema.register(self)
-        self._schema_tree.add_bare_schemas([ca_schema])
+        self.schema_tree.add_bare_schemas([ca_schema])
 
 
 def schema_succeeded(applicable: bool, activated: bool, satisfied: bool) -> bool:

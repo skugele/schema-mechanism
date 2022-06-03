@@ -3,6 +3,7 @@ from copy import deepcopy
 from datetime import datetime
 from random import sample
 from time import time
+from typing import Any
 from unittest import TestCase
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -828,10 +829,46 @@ class TestSchema(TestCase):
             )
         )
 
-        encoded_obj = encode(schema)
-        decoded_obj: Schema = decode(encoded_obj)
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(schema, object_registry=object_registry)
+        decoded_obj: Schema = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(schema, decoded_obj)
+
+    def test_unique_key(self):
+        context = sym_state_assert('1,2,3')
+        action = Action('test action')
+        result = sym_state_assert('A,B,C')
+
+        # test: unique key for bare schema should have action that matches schema
+        bare_schema = Schema(action=action)
+
+        self.assertEqual(action, bare_schema.unique_key.action)
+        self.assertEqual(NULL_STATE_ASSERT, bare_schema.unique_key.context)
+        self.assertEqual(NULL_STATE_ASSERT, bare_schema.unique_key.result)
+
+        # test: unique key for context-only schema should have action and context that match schema
+        context_only_schema = Schema(action=action, context=context)
+        self.assertEqual(action, context_only_schema.unique_key.action)
+        self.assertEqual(context, context_only_schema.unique_key.context)
+        self.assertEqual(NULL_STATE_ASSERT, context_only_schema.unique_key.result)
+
+        # test: unique key for result-only schema should have action and result that match schema
+        result_only_schema = Schema(action=action, result=result)
+        self.assertEqual(action, result_only_schema.unique_key.action)
+        self.assertEqual(result, result_only_schema.unique_key.result)
+        self.assertEqual(NULL_STATE_ASSERT, result_only_schema.unique_key.context)
+
+        # test: unique key for full schema should have context, action, and result that match schema
+        full_schema = Schema(
+            context=context,
+            action=action,
+            result=result
+        )
+
+        self.assertEqual(action, full_schema.unique_key.action)
+        self.assertEqual(context, full_schema.unique_key.context)
+        self.assertEqual(result, full_schema.unique_key.result)
 
     @test_share.performance_test
     def test_performance_1(self):

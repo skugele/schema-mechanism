@@ -2,6 +2,7 @@ import unittest
 from copy import copy
 from random import sample
 from time import time
+from typing import Any
 from typing import Optional
 from unittest import TestCase
 
@@ -231,8 +232,9 @@ class TestSymbolicItem(TestCase):
         self.assertTrue(satisfies_hash_checks(obj=self.item))
 
     def test_encode_and_decode(self):
-        encoded_obj = encode(self.item)
-        decoded_obj: SymbolicItem = decode(encoded_obj)
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(self.item, object_registry=object_registry)
+        decoded_obj: SymbolicItem = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(self.item, decoded_obj)
         self.assertEqual(self.item.primitive_value, decoded_obj.primitive_value)

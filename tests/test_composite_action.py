@@ -1,6 +1,7 @@
 import itertools
 import unittest
 from collections import defaultdict
+from typing import Any
 
 import numpy as np
 
@@ -64,7 +65,8 @@ class TestShared(unittest.TestCase):
         self.s1_b_e = sym_schema('D,/A1/E,', schema_type=MockSchema, reliability=1.0, avg_duration=10.0)
         self.s3_d_e = sym_schema('D,/A3/E,', schema_type=MockSchema, reliability=1.0, avg_duration=4.5)
 
-        self.tree = SchemaTree(schemas=[self.s1, self.s2, self.s3, self.s4])
+        self.tree = SchemaTree()
+        self.tree.add_bare_schemas(schemas=[self.s1, self.s2, self.s3, self.s4])
 
         self.tree.add_result_spin_offs(self.s1, [self.s1_b])
         self.tree.add_result_spin_offs(self.s2, [self.s2_c])
@@ -271,8 +273,9 @@ class TestCompositeAction(TestShared):
         self.assertIsNot(ca1.controller, ca5.controller)
 
     def test_encode_and_decode(self):
-        encoded_obj = encode(self.composite_action)
-        decoded_obj: CompositeAction = decode(encoded_obj)
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(self.composite_action, object_registry=object_registry)
+        decoded_obj: CompositeAction = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(self.composite_action, decoded_obj)
         self.assertEqual(self.goal_state, decoded_obj.goal_state)
@@ -555,8 +558,9 @@ class TestController(TestShared):
             },
         )
 
-        encoded_obj = encode(controller)
-        decoded_obj: Controller = decode(encoded_obj)
+        object_registry = dict()
+        encoded_obj = encode(controller, object_registry=object_registry)
+        decoded_obj: Controller = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(controller, decoded_obj)
         self.assertEqual(controller.goal_state, decoded_obj.goal_state)

@@ -1,6 +1,7 @@
 from copy import copy
 from copy import deepcopy
 from time import time
+from typing import Any
 from unittest import TestCase
 
 import numpy as np
@@ -106,8 +107,10 @@ class TestGlobalStats(TestCase):
         self.assertEqual(0.0, stats.baseline_value)
 
     def test_encode_and_decode(self):
-        encoded_obj = encode(self.global_stats)
-        decoded_obj: GlobalStats = decode(encoded_obj)
+        object_registry: dict[int, Any] = dict()
+
+        encoded_obj = encode(self.global_stats, object_registry=object_registry)
+        decoded_obj: GlobalStats = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(self.global_stats, decoded_obj)
 
@@ -325,8 +328,10 @@ class TestECItemStatistics(TestCase):
             n_fail_and_off=5,
         )
 
-        encoded_obj = encode(ec_item_stats)
-        decoded_obj: GlobalStats = decode(encoded_obj)
+        object_registry: dict[int, Any] = dict()
+
+        encoded_obj = encode(ec_item_stats, object_registry=object_registry)
+        decoded_obj: GlobalStats = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(ec_item_stats, decoded_obj)
 
@@ -570,8 +575,9 @@ class TestERItemStatistics(TestCase):
             n_off_and_not_activated=5,
         )
 
-        encoded_obj = encode(er_item_stats)
-        decoded_obj: GlobalStats = decode(encoded_obj)
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(er_item_stats, object_registry=object_registry)
+        decoded_obj: GlobalStats = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(er_item_stats, decoded_obj)
 
@@ -729,8 +735,11 @@ class TestSchemaStats(TestCase):
             n_success=84,
             n_activated=5,
         )
-        encoded_obj = encode(schema_stats)
-        decoded_obj: SchemaStats = decode(encoded_obj)
+
+        object_registry: dict[int, Any] = dict()
+
+        encoded_obj = encode(schema_stats, object_registry=object_registry)
+        decoded_obj: SchemaStats = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(schema_stats, decoded_obj)
 
@@ -786,8 +795,10 @@ class TestFrozenECItemStats(TestCase):
         self.assertEqual('FROZEN', str(self.item_stats))
 
     def test_encode_and_decode(self):
-        encoded_obj = encode(self.item_stats)
-        decoded_obj: FrozenECItemStats = decode(encoded_obj)
+        object_registry: dict[int, Any] = dict()
+
+        encoded_obj = encode(self.item_stats, object_registry=object_registry)
+        decoded_obj: FrozenECItemStats = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(self.item_stats, decoded_obj)
 
@@ -814,7 +825,9 @@ class TestFrozenERItemStats(TestCase):
         self.assertEqual('FROZEN', str(self.item_stats))
 
     def test_encode_and_decode(self):
-        encoded_obj = encode(self.item_stats)
-        decoded_obj: FrozenERItemStats = decode(encoded_obj)
+        object_registry: dict[int, Any] = dict()
+
+        encoded_obj = encode(self.item_stats, object_registry=object_registry)
+        decoded_obj: FrozenERItemStats = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(self.item_stats, decoded_obj)

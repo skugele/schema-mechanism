@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 from unittest import TestCase
 
 from schema_mechanism.core import Action
@@ -97,13 +98,15 @@ class TestSerialization(TestCase):
             # test: deserialize should raise a ValueError if file does not exist
             self.assertRaises(ValueError, lambda: deserialize(path=path))
 
-            serialize(original, path=path, overwrite=False)
+            object_registry: dict[int, Any] = dict()
+
+            serialize(original, path=path, overwrite=False, object_registry=object_registry)
 
             # sanity check: file SHOULD exist after serialize
             self.assertTrue(path.exists())
 
             # test: the deserialized object should equal the original
-            self.assertListEqual(original, deserialize(path))
+            self.assertListEqual(original, deserialize(path, object_registry=object_registry))
 
             # test: a ValueError SHOULD be raised when trying to overwrite file if overwrite is False
             self.assertRaises(ValueError, lambda: serialize(original, path=path, overwrite=False))

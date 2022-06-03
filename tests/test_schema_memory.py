@@ -1,6 +1,4 @@
-import os
-from pathlib import Path
-from tempfile import TemporaryDirectory
+from typing import Any
 from unittest import TestCase
 from unittest.mock import ANY
 from unittest.mock import MagicMock
@@ -25,10 +23,9 @@ from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SelectionDetails
 from schema_mechanism.modules import create_context_spin_off
 from schema_mechanism.modules import create_result_spin_off
-from schema_mechanism.serialization.json import deserialize
-from schema_mechanism.serialization.json import serialize
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from test_share.test_func import common_test_setup
-from test_share.test_func import file_was_written
 
 
 class TestSchemaMemory(TestCase):
@@ -48,7 +45,8 @@ class TestSchemaMemory(TestCase):
         self.s101 = sym_schema('/101,/')
         self.s102 = sym_schema('/102,/')
 
-        self.tree = SchemaTree((s1, s2, self.s101, self.s102))
+        self.tree = SchemaTree()
+        self.tree.add_bare_schemas((s1, s2, self.s101, self.s102))
 
         # composite action result spin-off
         self.s101_r100 = sym_schema('/101,/100,')
@@ -144,22 +142,23 @@ class TestSchemaMemory(TestCase):
         # test: one or more bare schemas should be allowed in initializer
         try:
             # test with a single bare schema
-            sm = SchemaMemory(schemas=list(self.bare_schemas)[:1])
+            sm = SchemaMemory(bare_schemas=list(self.bare_schemas)[:1])
             self.assertEqual(1, len(sm))
 
             # test with multiple bare schemas
-            sm = SchemaMemory(schemas=self.bare_schemas)
+            sm = SchemaMemory(bare_schemas=self.bare_schemas)
             self.assertEqual(len(self.bare_schemas), len(sm))
         except ValueError as e:
             self.fail(f'Caught unexpected ValueError: {e}')
 
         # test: non-bare, built-in schemas SHOULD raise a ValueError
-        self.assertRaises(ValueError, lambda: SchemaMemory(schemas=list(self.non_bare_schemas)[:1]))
-        self.assertRaises(ValueError, lambda: SchemaMemory(schemas=self.non_bare_schemas))
+        self.assertRaises(ValueError, lambda: SchemaMemory(bare_schemas=list(self.non_bare_schemas)[:1]))
+        self.assertRaises(ValueError, lambda: SchemaMemory(bare_schemas=self.non_bare_schemas))
 
     def test_from_tree(self):
         primitives = primitive_schemas(actions(5))
-        tree = SchemaTree(primitives)
+        tree = SchemaTree()
+        tree.add_bare_schemas(primitives)
 
         s1_1 = create_context_spin_off(primitives[0], sym_item('1'))
         s1_2 = create_context_spin_off(primitives[0], sym_item('2'))
@@ -425,7 +424,8 @@ class TestSchemaMemory(TestCase):
         s1 = sym_schema('/A1/')
         s2 = sym_schema('/A2/')
 
-        tree = SchemaTree((s1, s2))
+        tree = SchemaTree()
+        tree.add_bare_schemas((s1, s2))
 
         s1_a = sym_schema('/A1/A,')
         s1_b = sym_schema('/A1/B,')
@@ -469,18 +469,10 @@ class TestSchemaMemory(TestCase):
             self.assertFalse(sm.is_novel_result(r))
 
     @test_share.disable_test
-    def test_serialize(self):
-        with TemporaryDirectory() as tmp_dir:
-            path = Path(os.path.join(tmp_dir, 'test-file-schema-memory-serialize.sav'))
+    def test_encode_and_decode(self):
+        object_registry: dict[int, Any] = dict()
 
-            # sanity check: file SHOULD NOT exist
-            self.assertFalse(path.exists())
+        encoded_obj = encode(self.sm, object_registry=object_registry)
+        decoded_obj: SchemaMemory = decode(encoded_obj, object_registry=object_registry)
 
-            serialize(self.sm, path)
-
-            # test: file SHOULD exist after call to save
-            self.assertTrue(file_was_written(path))
-
-            recovered: SchemaMemory = deserialize(path)
-
-            self.assertEqual(self.sm, recovered)
+        self.assertEqual(self.sm, decoded_obj)

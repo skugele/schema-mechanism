@@ -22,22 +22,42 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-class UniqueIdMixin:
-    _last_uid: int = 0
+class Singleton(type, metaclass=ABCMeta):
+    _instances = {}
 
-    def __init__(self, **kwargs) -> None:
+    def __call__(cls, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(Singleton, cls).__call__(**kwargs)
+        return cls._instances[cls]
+
+
+class UniqueIdRegistry:
+    _last_uid: int = 0
+    _allocated_uids: set[int] = set()
+
+    @classmethod
+    def allocate_uid(cls, obj: Any, /, uid: Optional[int] = None) -> int:
+        if uid and uid in cls._allocated_uids:
+            raise ValueError(f'Requested unique id \'{uid}\' has already been allocated')
+
+        cls._last_uid += 1
+        while cls._last_uid in cls._allocated_uids:
+            cls._last_uid += 1
+
+        cls._allocated_uids.add(cls._last_uid)
+
+        return cls._last_uid
+
+
+class UniqueIdMixin:
+    def __init__(self, uid: Optional[int] = None, **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self._uid = self._gen_uid()
+        self._uid = uid or UniqueIdRegistry.allocate_uid(self)
 
     @property
     def uid(self) -> int:
         return self._uid
-
-    @classmethod
-    def _gen_uid(cls) -> int:
-        cls._last_uid += 1
-        return cls._last_uid
 
 
 class Observer(ABC):
@@ -88,15 +108,6 @@ class Observable(ABC):
         """
         for obs in self._observers:
             obs.receive(**kwargs)
-
-
-class Singleton(type, metaclass=ABCMeta):
-    _instances = {}
-
-    def __call__(cls, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(**kwargs)
-        return cls._instances[cls]
 
 
 class BoundedSet(set):

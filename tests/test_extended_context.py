@@ -4,6 +4,7 @@ from copy import deepcopy
 from pathlib import Path
 from random import sample
 from tempfile import TemporaryDirectory
+from typing import Any
 from unittest import TestCase
 from unittest.mock import PropertyMock
 from unittest.mock import patch
@@ -570,8 +571,9 @@ class TestExtendedContext(TestCase):
             }
         )
 
-        encoded_obj = encode(extended_context)
-        decoded_obj: ExtendedContext = decode(encoded_obj)
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(extended_context, object_registry=object_registry)
+        decoded_obj: ExtendedContext = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(extended_context, decoded_obj)
 

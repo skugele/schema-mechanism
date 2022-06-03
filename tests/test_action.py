@@ -1,3 +1,4 @@
+from typing import Any
 from unittest import TestCase
 
 from schema_mechanism.core import Action
@@ -52,15 +53,21 @@ class TestAction(TestCase):
     def test_encode_and_decode(self):
         # test: encoding/decoding of Actions with labels (should result in Actions with the same labels)
         action = Action(label='test action')
-        json_str = encode(action)
-        recovered = decode(json_str)
+
+        object_registry: dict[int, Any] = dict()
+
+        json_str = encode(action, object_registry=object_registry)
+        recovered = decode(json_str, object_registry=object_registry)
 
         self.assertIsInstance(recovered, Action)
         self.assertEqual(action.label, recovered.label)
 
         # test: encoding/decoding of Actions without labels (may result in actions with different uids)
         action = Action()
-        json_str = encode(action)
-        recovered = decode(json_str)
+
+        object_registry: dict[int, Any] = dict()
+
+        json_str = encode(action, object_registry=object_registry)
+        recovered = decode(json_str, object_registry=object_registry)
 
         self.assertIsInstance(recovered, Action)

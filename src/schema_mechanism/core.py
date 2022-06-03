@@ -348,7 +348,7 @@ class EligibilityTraceDelegatedValueHelper(DelegatedValueHelper):
         self._delegated_values.clear()
 
 
-class Item(ABC):
+class Item(ABC, UniqueIdMixin):
     def __init__(self,
                  source: Any,
                  primitive_value: Optional[float] = None,
@@ -931,10 +931,12 @@ class CompositeItem(Item):
             raise ValueError('Source must contain at least two state elements.')
 
 
-class StateAssertion:
+class StateAssertion(UniqueIdMixin):
 
     def __init__(self, items: Optional[Collection[Item, ...]] = None, **kwargs):
         self._items = frozenset(items) if items else frozenset()
+
+        super().__init__()
 
     def __len__(self) -> int:
         return len(self._items)
@@ -1994,6 +1996,14 @@ class Schema(Observer, Observable, UniqueIdMixin):
         """
         self.notify_all(source=self, spin_off_type=spin_off_type, relevant_items=source.new_relevant_items, **kwargs)
 
+    @property
+    def unique_key(self) -> SchemaUniqueKey:
+        return SchemaUniqueKey(
+            action=self.action,
+            context=self.context,
+            result=self.result
+        )
+
 
 class SchemaUniqueKey(NamedTuple):
     action: Action
@@ -2055,7 +2065,7 @@ def is_reliable(schema: Schema, threshold: Optional[float] = None) -> bool:
     return schema.reliability != np.NAN and schema.reliability >= threshold
 
 
-class SchemaTreeNode(NodeMixin):
+class SchemaTreeNode(NodeMixin, UniqueIdMixin):
     def __init__(self,
                  context: Optional[StateAssertion] = None,
                  schemas_satisfied_by: Optional[Iterable[Schema]] = None,
@@ -2067,6 +2077,8 @@ class SchemaTreeNode(NodeMixin):
         self._schemas_would_satisfy = set() if schemas_would_satisfy is None else set(schemas_would_satisfy)
 
         self.label = label
+
+        super().__init__()
 
     def __hash__(self) -> int:
         return hash(self.context)
@@ -2114,22 +2126,33 @@ class SchemaTree:
 
     """
 
-    def __init__(self, schemas: Collection[Schema]) -> None:
-        """ Initializes this SchemaTree from a set of bare, primitive schemas for built-in, primitive actions.
+    def __init__(
+            self,
+            root: Optional[SchemaTreeNode] = None,
+            nodes_map: Optional[dict[StateAssertion, SchemaTreeNode]] = None
+    ) -> None:
+        """ Initializes a SchemaTree.
 
-        :param schemas: a collection of bare schemas (should contain one for each primitive action)
+        Optionally, root and a nodes map can be provided to initialize this SchemaTree. This would typically be used to
+        initialize a SchemaTree from a previous learned SchemaTree instance.
+
+        :param root: an optional root SchemaTreeNode to be used as this tree's root node
+        :param nodes_map: an optional map from SchemaTreeNode contexts' to their SchemaTreeNodes
         """
-        if not schemas:
-            raise ValueError('SchemaTree must be initialized with a collection of bare schemas.')
+        if not root and nodes_map:
+            raise ValueError('Root node is required when nodes map sent to initializer')
 
-        self._root = SchemaTreeNode(label='root')
+        self._root = root or SchemaTreeNode(label='root')
+        self._nodes_map: dict[StateAssertion, SchemaTreeNode] = dict()
 
-        self._nodes: dict[StateAssertion, SchemaTreeNode] = dict()
-        self._nodes[self._root.context.flatten()] = self._root
+        # initialize nodes map from supplied instance (it is assumed that root exists in this nodes map)
+        if nodes_map:
+            self._nodes_map.update(nodes_map)
+        self._nodes_map[self._root.context.flatten()] = self._root
 
-        self._n_schemas: int = 0
+        self._n_schemas: int = len(self.schemas)
 
-        self.add_bare_schemas(schemas)
+        self.validate(raise_on_invalid=True)
 
     def __iter__(self) -> Iterator[SchemaTreeNode]:
         return LevelOrderIter(node=self.root)
@@ -2139,13 +2162,13 @@ class SchemaTree:
 
         :return: The number of SchemaTreeNodes in this tree.
         """
-        return len(self._nodes)
+        return len(self._nodes_map)
 
     def __contains__(self, s: Union[SchemaTreeNode, Schema]) -> bool:
         if isinstance(s, SchemaTreeNode):
-            return s.context.flatten() in self._nodes
+            return s.context.flatten() in self._nodes_map
         elif isinstance(s, Schema):
-            node = self._nodes.get(s.context.flatten())
+            node = self._nodes_map.get(s.context.flatten())
             return s in node.schemas_satisfied_by if node else False
 
         return False
@@ -2161,7 +2184,7 @@ class SchemaTree:
                     condition for condition in
                     [
                         self._root == other._root,
-                        self._nodes == other._nodes,
+                        self._nodes_map == other._nodes_map,
                         self._n_schemas == other._n_schemas
                     ]
                 )
@@ -2169,8 +2192,16 @@ class SchemaTree:
         return False if other is None else NotImplemented
 
     @property
+    def nodes_map(self) -> dict[StateAssertion, SchemaTreeNode]:
+        return self._nodes_map
+
+    @property
     def root(self) -> SchemaTreeNode:
         return self._root
+
+    @property
+    def schemas(self) -> set[Schema]:
+        return set(itertools.chain.from_iterable([node.schemas_satisfied_by for node in self]))
 
     @property
     def n_schemas(self) -> int:
@@ -2186,7 +2217,7 @@ class SchemaTree:
         :param assertion: the state assertion on which this retrieval is based
         :return: a SchemaTreeNode (if found) or raises a KeyError
         """
-        return self._nodes[assertion]
+        return self._nodes_map[assertion]
 
     def add_bare_schemas(self, schemas: Collection[Schema]) -> None:
         if not schemas:
@@ -2352,7 +2383,7 @@ class SchemaTree:
                 for s in spin_offs:
                     schema_context_assertions = s.context.flatten()
 
-                    match = self._nodes.get(schema_context_assertions)
+                    match = self._nodes_map.get(schema_context_assertions)
 
                     # node already exists in tree (generated from different source)
                     if match:
@@ -2366,7 +2397,7 @@ class SchemaTree:
 
                         node.children += (new_node,)
 
-                        self._nodes[schema_context_assertions] = new_node
+                        self._nodes_map[schema_context_assertions] = new_node
 
                         self._n_schemas += len(new_node.schemas_satisfied_by)
 
@@ -2374,7 +2405,7 @@ class SchemaTree:
             for s in spin_offs:
                 schema_result_assertions = s.result.flatten()
 
-                match = self._nodes.get(schema_result_assertions)
+                match = self._nodes_map.get(schema_result_assertions)
 
                 # node with context matching this result already exists in tree
                 if match:
@@ -2393,7 +2424,7 @@ class SchemaTree:
                     # must be a primitive schema's result spin-off - add new node as child of root
                     self.root.children += (new_node,)
 
-                    self._nodes[schema_result_assertions] = new_node
+                    self._nodes_map[schema_result_assertions] = new_node
 
             return node
         except KeyError:

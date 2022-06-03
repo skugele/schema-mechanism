@@ -8,23 +8,23 @@ from schema_mechanism.util import check_readable
 from schema_mechanism.util import check_writable
 
 
-def serialize(obj: Any, /, path: Path, encoder: Callable = None, overwrite: bool = False) -> None:
+def serialize(obj: Any, /, path: Path, encoder: Callable = None, overwrite: bool = False, **kwargs) -> None:
     check_writable(path, overwrite)
 
     encoder = encoder if encoder else json_encoders.encode
-    encoded_obj = encoder(obj)
+    encoded_obj = encoder(obj, **kwargs)
 
     with path.open("w") as fp:
         fp.write(encoded_obj)
 
 
-def deserialize(path: Path, decoder: Callable = None) -> Any:
+def deserialize(path: Path, decoder: Callable = None, **kwargs) -> Any:
     check_readable(path)
 
     with path.open("r") as fp:
         encoded_obj = fp.read()
 
         decoder = decoder if decoder else json_decoders.decode
-        obj = decoder(encoded_obj)
+        obj = decoder(encoded_obj, **kwargs)
 
         return obj

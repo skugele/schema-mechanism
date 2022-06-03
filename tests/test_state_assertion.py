@@ -1,3 +1,4 @@
+from typing import Any
 from unittest import TestCase
 
 from schema_mechanism.core import ItemPool
@@ -193,8 +194,11 @@ class TestStateAssertion(TestCase):
         self.assertEqual(expected_repr, repr(self.state_assertion))
 
     def test_encode_and_decode(self):
-        encoded_obj = encode(self.state_assertion)
-        decoded_obj: StateAssertion = decode(encoded_obj)
+
+        object_registry: dict[int, Any] = dict()
+
+        encoded_obj = encode(self.state_assertion, object_registry=object_registry)
+        decoded_obj: StateAssertion = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(self.state_assertion, decoded_obj)
         self.assertSetEqual(set(self.items), set(decoded_obj.items))

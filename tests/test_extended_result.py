@@ -1,6 +1,7 @@
 import itertools
 from copy import deepcopy
 from random import sample
+from typing import Any
 from unittest import TestCase
 
 import test_share
@@ -319,7 +320,8 @@ class TestExtendedResult(TestCase):
             }
         )
 
-        encoded_obj = encode(extended_result)
-        decoded_obj: ExtendedResult = decode(encoded_obj)
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(extended_result, object_registry=object_registry)
+        decoded_obj: ExtendedResult = decode(encoded_obj, object_registry=object_registry)
 
         self.assertEqual(extended_result, decoded_obj)
