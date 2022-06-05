@@ -15,6 +15,7 @@ from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
 from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
 from schema_mechanism.core import SchemaPool
+from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.modules import SchemaMechanism
@@ -39,6 +40,9 @@ set_random_seed(RANDOM_SEED)
 MAX_EPISODES = 5000
 MAX_STEPS = 150
 
+SERIALIZATION_ENABLED = False
+SAVE_DIR = './local/save/wumpus_world'
+
 
 def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     primitive_items = [
@@ -47,7 +51,11 @@ def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     ]
 
     bare_schemas = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in env.actions]
-    schema_memory = SchemaMemory(bare_schemas)
+
+    schema_tree = SchemaTree()
+    schema_tree.add(bare_schemas)
+
+    schema_memory = SchemaMemory(schema_tree)
     schema_selection = SchemaSelection(
         select_strategy=RandomizeBestSelectionStrategy(
             match=AbsoluteDiffMatchStrategy(max_diff=0.05)

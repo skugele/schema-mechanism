@@ -17,13 +17,13 @@ from functools import singledispatch
 from functools import singledispatchmethod
 from time import time
 from typing import Any
+from typing import Callable
 from typing import Hashable
 from typing import Iterable
 from typing import NamedTuple
 from typing import Optional
 from typing import Protocol
 from typing import Type
-from typing import Union
 from typing import runtime_checkable
 
 import numpy as np
@@ -2065,16 +2065,60 @@ def is_reliable(schema: Schema, threshold: Optional[float] = None) -> bool:
     return schema.reliability != np.NAN and schema.reliability >= threshold
 
 
+class SchemaSearchCollection(ABC, Collection):
+
+    @abstractmethod
+    def __iter__(self) -> Iterator[Schema]:
+        """ Returns an iterator over the schemas in this container. """
+
+    @abstractmethod
+    def __len__(self) -> int:
+        """ Returns the number of contained schemas. """
+
+    @abstractmethod
+    def __contains__(self, element: Any) -> bool:
+        """ Returns True if element is a Schema contained within this collection; False otherwise. """
+
+    @abstractmethod
+    def validate(self, **kwargs) -> None:
+        """ Validates the container's schemas are legal. Raises an exception if invalid. """
+
+    @abstractmethod
+    def find(self, predicate: Callable[[Schema], bool], **kwargs) -> Collection[Schema]:
+        """ Returns a collection of schemas that satisfy the provided predicate. """
+
+    @abstractmethod
+    def find_all_satisfied(self, state: State, **kwargs) -> Collection[Schema]:
+        """ Returns a collection of schemas whose contexts are satisfied in the given state. """
+
+    @abstractmethod
+    def find_all_would_satisfy(self, assertion: StateAssertion, **kwargs) -> Collection[Schema]:
+        """ Returns a collection of schemas whose results satisfy the given assertion. """
+
+    @abstractmethod
+    def add(self, schemas: Collection[Schema], **kwargs) -> None:
+        """ Adds a collection of schemas to this container. """
+
+
 class SchemaTreeNode(NodeMixin, UniqueIdMixin):
     def __init__(self,
                  context: Optional[StateAssertion] = None,
                  schemas_satisfied_by: Optional[Iterable[Schema]] = None,
                  schemas_would_satisfy: Optional[Iterable[Schema]] = None,
                  label: str = None) -> None:
-        self.context = context or NULL_STATE_ASSERT
+        self.context = context.flatten() if context else NULL_STATE_ASSERT
 
-        self._schemas_satisfied_by = set() if schemas_satisfied_by is None else set(schemas_satisfied_by)
-        self._schemas_would_satisfy = set() if schemas_would_satisfy is None else set(schemas_would_satisfy)
+        self._schemas_satisfied_by: set[Schema] = (
+            set()
+            if schemas_satisfied_by is None
+            else set(schemas_satisfied_by)
+        )
+
+        self._schemas_would_satisfy: set[Schema] = (
+            set()
+            if schemas_would_satisfy is None
+            else set(schemas_would_satisfy)
+        )
 
         self.label = label
 
@@ -2085,7 +2129,18 @@ class SchemaTreeNode(NodeMixin, UniqueIdMixin):
 
     def __eq__(self, other) -> bool:
         if isinstance(other, SchemaTreeNode):
-            return self.context == other.context
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.context == other.context,
+                        self.label == other.label,
+                        self.schemas_satisfied_by == other.schemas_satisfied_by,
+                        self.schemas_would_satisfy == other.schemas_would_satisfy
+                    ]
+                )
+            )
         return False if other is None else NotImplemented
 
     def __str__(self) -> str:
@@ -2114,17 +2169,8 @@ class SchemaTreeNode(NodeMixin, UniqueIdMixin):
         self._schemas_would_satisfy = set(value)
 
 
-class SchemaTree:
-    """ A search tree of SchemaTreeNodes with the following special properties:
-
-    1. Each tree node contains a set of schemas with identical contexts and actions.
-    2. Each tree node's depth equals the number of item assertion in its context plus one; for example, the
-    tree nodes corresponding to primitive (action only) schemas would have a tree height of one.
-    3. Each tree node's context contains all of the item assertion in their ancestors plus one new item assertion
-    not found in ANY ancestor. For example, if a node's parent's context contains item assertion 1,2,3, then it
-    will contain 1,2,and 3 plus a new item assertion (say 4).
-
-    """
+class SchemaTree(SchemaSearchCollection):
+    """ A search tree of SchemaTreeNodes """
 
     def __init__(
             self,
@@ -2133,8 +2179,8 @@ class SchemaTree:
     ) -> None:
         """ Initializes a SchemaTree.
 
-        Optionally, root and a nodes map can be provided to initialize this SchemaTree. This would typically be used to
-        initialize a SchemaTree from a previous learned SchemaTree instance.
+        Optionally, a root node and a nodes map can be provided to initialize this SchemaTree. This would typically be
+        used to initialize a SchemaTree from a previous learned SchemaTree instance.
 
         :param root: an optional root SchemaTreeNode to be used as this tree's root node
         :param nodes_map: an optional map from SchemaTreeNode contexts' to their SchemaTreeNodes
@@ -2150,26 +2196,22 @@ class SchemaTree:
             self._nodes_map.update(nodes_map)
         self._nodes_map[self._root.context.flatten()] = self._root
 
-        self._n_schemas: int = len(self.schemas)
+        # raises a ValueError if tree is invalid
+        self.validate()
 
-        self.validate(raise_on_invalid=True)
-
-    def __iter__(self) -> Iterator[SchemaTreeNode]:
-        return LevelOrderIter(node=self.root)
+    def __iter__(self) -> Iterator[Schema]:
+        for node in LevelOrderIter(node=self.root):
+            for schema in node.schemas_satisfied_by:
+                yield schema
 
     def __len__(self) -> int:
-        """ Returns the number of SchemaTreeNodes (not the number of schemas).
+        """ Returns the number of schemas in this schema tree. """
+        return len([schema for schema in self])
 
-        :return: The number of SchemaTreeNodes in this tree.
-        """
-        return len(self._nodes_map)
-
-    def __contains__(self, s: Union[SchemaTreeNode, Schema]) -> bool:
-        if isinstance(s, SchemaTreeNode):
-            return s.context.flatten() in self._nodes_map
-        elif isinstance(s, Schema):
-            node = self._nodes_map.get(s.context.flatten())
-            return s in node.schemas_satisfied_by if node else False
+    def __contains__(self, schema: Schema) -> bool:
+        if isinstance(schema, Schema):
+            node = self._nodes_map.get(schema.context.flatten())
+            return schema in node.schemas_satisfied_by if node else False
 
         return False
 
@@ -2185,71 +2227,76 @@ class SchemaTree:
                     [
                         self._root == other._root,
                         self._nodes_map == other._nodes_map,
-                        self._n_schemas == other._n_schemas
                     ]
                 )
             )
         return False if other is None else NotImplemented
 
-    @property
-    def nodes_map(self) -> dict[StateAssertion, SchemaTreeNode]:
-        return self._nodes_map
+    def add(self, schemas: Collection[Schema], source: Optional[Schema] = None, **kwargs) -> None:
+        """ Adds schemas to this schema tree.
 
-    @property
-    def root(self) -> SchemaTreeNode:
-        return self._root
+        :param schemas: the collection of schemas to add
+        :param source: the schema that generated these schemas or None for bare schemas
 
-    @property
-    def schemas(self) -> set[Schema]:
-        return set(itertools.chain.from_iterable([node.schemas_satisfied_by for node in self]))
-
-    @property
-    def n_schemas(self) -> int:
-        return self._n_schemas
-
-    @property
-    def height(self) -> int:
-        return self.root.height
-
-    def get(self, assertion: StateAssertion) -> SchemaTreeNode:
-        """ Retrieves a SchemaTreeNode matching this given state assertion (if it exists).
-
-        :param assertion: the state assertion on which this retrieval is based
-        :return: a SchemaTreeNode (if found) or raises a KeyError
+        :return: None
         """
-        return self._nodes_map[assertion]
-
-    def add_bare_schemas(self, schemas: Collection[Schema]) -> None:
         if not schemas:
-            raise ValueError('Schemas cannot be empty or None')
+            raise ValueError('Spin-off schemas cannot be empty or None')
 
-        if any({not schema.is_bare() for schema in schemas}):
-            raise ValueError('Schemas must be bare (action-only) schemas')
+        logger.debug(f'adding schemas! [{[str(s) for s in schemas]}]')
 
-        logger.debug(f'adding bare schemas! [{[str(s) for s in schemas]}]')
+        for schema in schemas:
+            self._update_schemas_satisfied_by(schema, source)
+            self._update_schemas_would_satisfy(schema)
 
-        # needed because schemas to add may already exist in set reducing total new count
-        len_before_add = len(self.root.schemas_satisfied_by)
-        self.root.schemas_satisfied_by |= set(schemas)
-        self._n_schemas += len(self.root.schemas_satisfied_by) - len_before_add
+    def _update_schemas_satisfied_by(self, schema: Schema, source: Schema) -> None:
+        source_node = self.root if source is None else self.get(source.context)
+        if not source_node:
+            raise ValueError(f'Source schema \'{source}\' not found in schema tree!')
 
-    def add_context_spin_offs(self, source: Schema, spin_offs: Collection[Schema]) -> None:
-        """ Adds context spin-off schemas to this tree.
+        # result spin-off
+        if source_node.context == schema.context:
+            source_node.schemas_satisfied_by.add(schema)
 
-        :param source: the source schema that resulted in these spin-off schemas.
-        :param spin_offs: the spin-off schemas.
-        :return: None
-        """
-        self.add(source, frozenset(spin_offs), SchemaSpinOffType.CONTEXT)
+        # context spin-off
+        else:
+            schema_node = self.get(schema.context)
 
-    def add_result_spin_offs(self, source: Schema, spin_offs: Collection[Schema]):
-        """ Adds result spin-off schemas to this tree.
+            # node already exists in tree (generated from different source)
+            if schema_node:
+                schema_node.schemas_satisfied_by.add(schema)
 
-        :param source: the source schema that resulted in these spin-off schemas.
-        :param spin_offs: the spin-off schemas.
-        :return: None
-        """
-        self.add(source, frozenset(spin_offs), SchemaSpinOffType.RESULT)
+            # novel assertion - requires new tree node
+            else:
+                new_node = SchemaTreeNode(schema.context)
+                new_node.schemas_satisfied_by.add(schema)
+
+                source_node.children += (new_node,)
+
+                # add new node to nodes map
+                self.set(new_node)
+
+    def _update_schemas_would_satisfy(self, schema: Schema) -> None:
+        schema_node = self.get(schema.result)
+        if schema_node:
+            schema_node.schemas_would_satisfy.add(schema)
+
+        else:
+            # composite results must first exist as contexts in a schema
+            if len(schema.result.flatten()) != 1:
+                raise ValueError(f'Encountered an illegal composite result spin-off: {schema.result}')
+
+            new_node = SchemaTreeNode(schema.result)
+            new_node.schemas_would_satisfy.add(schema)
+
+            # must be a primitive schema's result spin-off - add new node as child of root
+            self.root.children += (new_node,)
+
+            # add new node to nodes map
+            self.set(new_node)
+
+    def find(self, predicate: Callable[[Schema], bool], **kwargs) -> Collection[Schema]:
+        return {schema for schema in self if predicate(schema)}
 
     def find_all_satisfied(self, state: State, **kwargs) -> Collection[SchemaTreeNode]:
         """ Returns a collection of tree nodes containing schemas with contexts that are satisfied by this state.
@@ -2283,152 +2330,75 @@ class SchemaTree:
 
         return matches
 
-    def is_valid_node(self, node: SchemaTreeNode, raise_on_invalid: bool = False) -> bool:
-        # 1. node is in tree (path from root to node)
-        if node not in self:
-            if raise_on_invalid:
-                raise ValueError('invalid node: no path from node to root')
-            return False
-
-        # 2. node has proper depth for context
-        if len(node.context.flatten()) != node.depth:
-            if raise_on_invalid:
-                raise ValueError('invalid node: depth must equal the number of item assertion in context minus 1')
-            return False
-
-        if node is not self.root:
-
-            # 3. node's context contains all of parents
-            node_context_asserts = node.context.flatten()
-            parent_asserts = node.parent.context.flatten()
-
-            if not parent_asserts.issubset(node_context_asserts):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: context should contain all of parent\'s item assertion')
-                return False
-
-        # consistency checks between node and its schemas
-        for s in node.schemas_satisfied_by:
-
-            node_context_asserts = node.context.flatten()
-
-            schema_context_asserts = s.context.flatten()
-            schema_result_asserts = s.result.flatten()
-
-            # 4. item assertions should be identical across all contained schemas, and equal to node's assertions
-            if node_context_asserts != schema_context_asserts:
-                if raise_on_invalid:
-                    raise ValueError('invalid node: schemas in schemas_satisfied_by must have same assertions as node')
-                return False
-
-            # 5. composite results should exist as contexts in the tree
-            if len(schema_result_asserts) > 1 and SchemaTreeNode(context=s.result) not in self:
-                if raise_on_invalid:
-                    raise ValueError('invalid node: composite results must exist as a context in tree')
-                return False
-
-        for s in node.schemas_would_satisfy:
-
-            node_context_asserts = node.context.flatten()
-            schema_result_asserts = s.result.flatten()
-
-            # 6. node's context should be a subset of the schemas' results that would satisfy it
-            if not node_context_asserts.issubset(schema_result_asserts):
-                if raise_on_invalid:
-                    raise ValueError('invalid node: schemas in schemas_would_satisfy must have result = node context')
-                return False
-
-        return True
-
-    def validate(self, raise_on_invalid: bool = False) -> Collection[SchemaTreeNode]:
+    def validate(self) -> None:
         """ Validates that all nodes in the tree comply with its invariant properties and returns invalid nodes.
 
         :return: A set of invalid nodes (if any).
         """
-        return set([node for node in LevelOrderIter(self._root,
-                                                    filter_=lambda n: not self.is_valid_node(n, raise_on_invalid))])
+        for node in LevelOrderIter(self._root):
+            self._is_valid_node(node)
 
-    def add(self,
-            source: Union[Schema, SchemaTreeNode],
-            spin_offs: frozenset[Schema],
-            spin_off_type: Optional[SchemaSpinOffType] = None) -> SchemaTreeNode:
-        """ Adds schemas to this schema tree.
+    @property
+    def root(self) -> SchemaTreeNode:
+        return self._root
 
-        :param source: the "source" schema that generated the given (primitive or spin-off) schemas, or the previously
-        added tree node containing that "source" schema.
-        :param spin_offs: a collection of spin-off schemas
-        :param spin_off_type: the schema spin-off type (CONTEXT or RESULT), or None when adding primitive schemas
+    @property
+    def nodes_map(self) -> dict[StateAssertion, SchemaTreeNode]:
+        return self._nodes_map
 
-        :return: the parent node for which the add operation occurred
+    def get(self, assertion: StateAssertion) -> SchemaTreeNode:
+        """ Retrieves a SchemaTreeNode matching this given state assertion (if it exists).
+
+        :param assertion: the state assertion on which this retrieval is based
+
+        :return: a SchemaTreeNode (if found) or None if the state assertion does not exist
         """
-        if not spin_offs:
-            raise ValueError('Spin-off schemas cannot be empty or None')
+        return self._nodes_map.get(assertion.flatten())
 
-        if any({source.action != s.action for s in spin_offs}):
-            raise ValueError('Spin-off schemas must have the same action as their source.')
+    def set(self, node: SchemaTreeNode) -> None:
+        """ Adds a SchemaTreeNode to the nodes map. """
+        self._nodes_map[node.context] = node
 
-        logger.debug(f'adding schemas! [parent: {source}, spin-offs: {[str(s) for s in spin_offs]}]')
+    def _is_valid_node(self, node: SchemaTreeNode) -> None:
+        node_asserts = node.context.flatten()
 
-        try:
-            node = source if isinstance(source, SchemaTreeNode) else self.get(source.context.flatten())
+        # 1. node has proper depth for context
+        if len(node.context.flatten()) != node.depth:
+            raise ValueError('invalid node: depth must equal the number of item assertion in context minus 1')
 
-            if SchemaSpinOffType.RESULT is spin_off_type:
-                # needed because schemas to add may already exist in set reducing total new count
-                len_before_add = len(node.schemas_satisfied_by)
-                node.schemas_satisfied_by |= spin_offs
-                self._n_schemas += len(node.schemas_satisfied_by) - len_before_add
+        if node is not self.root:
 
-            # for context spin-offs
-            else:
-                for s in spin_offs:
-                    schema_context_assertions = s.context.flatten()
+            # 2. node's context contains all of its parents item assertions
+            parent_asserts = node.parent.context.flatten()
 
-                    match = self._nodes_map.get(schema_context_assertions)
+            if not parent_asserts.issubset(node_asserts):
+                raise ValueError('invalid node: node\'s assertions should contain all of parent\'s assertions')
 
-                    # node already exists in tree (generated from different source)
-                    if match:
-                        if s not in match.schemas_satisfied_by:
-                            match.schemas_satisfied_by.add(s)
-                            self._n_schemas += 1
+        # consistency checks between node and its schemas
+        for schema in node.schemas_satisfied_by:
+            # 3. item assertions should be identical across all contained schemas, and equal to node's assertions
+            if node_asserts != schema.context.flatten():
+                raise ValueError('invalid node: schemas in schemas_satisfied_by must have same assertions as node')
 
-                    else:
-                        new_node = SchemaTreeNode(s.context)
-                        new_node.schemas_satisfied_by.add(s)
+            # 4. composite results should exist as contexts in the tree
+            if (len(schema.result.flatten()) > 1
+                    and schema.result.flatten() not in self.nodes_map):
+                raise ValueError('invalid node: composite results must exist as a context in tree')
 
-                        node.children += (new_node,)
+        for schema in node.schemas_would_satisfy:
+            schema_result_asserts = schema.result.flatten()
 
-                        self._nodes_map[schema_context_assertions] = new_node
+            # 5. node's context should be a subset of the schemas' results that would satisfy it
+            if not node_asserts.issubset(schema_result_asserts):
+                raise ValueError('invalid node: schemas in schemas_would_satisfy must have result = node context')
 
-                        self._n_schemas += len(new_node.schemas_satisfied_by)
+        # 6. node's context is in node map's keys
+        if node_asserts not in self.nodes_map:
+            raise ValueError('invalid node: node\'s context not found in nodes map\'s keys')
 
-            # updates schemas_would_satisfy, creating a new tree node if necessary
-            for s in spin_offs:
-                schema_result_assertions = s.result.flatten()
-
-                match = self._nodes_map.get(schema_result_assertions)
-
-                # node with context matching this result already exists in tree
-                if match:
-                    if s not in match.schemas_would_satisfy:
-                        match.schemas_would_satisfy.add(s)
-
-                # node with matching context for this result didn't exist in tree -- should not be a composite result
-                else:
-                    # composite results must first exist as contexts in a schema
-                    if len(s.result) != 1:
-                        raise ValueError(f'Encountered an illegal composite result spin-off: {s.result}')
-
-                    new_node = SchemaTreeNode(s.result)
-                    new_node.schemas_would_satisfy.add(s)
-
-                    # must be a primitive schema's result spin-off - add new node as child of root
-                    self.root.children += (new_node,)
-
-                    self._nodes_map[schema_result_assertions] = new_node
-
-            return node
-        except KeyError:
-            raise ValueError('Source schema does not have a corresponding tree node.')
+        # 7. node is in nodes map's values
+        if node not in self.nodes_map.values():
+            raise ValueError('invalid node: node not found in nodes map')
 
 
 class ItemPool(metaclass=Singleton):

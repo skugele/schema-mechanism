@@ -6,7 +6,6 @@ from collections import Iterable
 from collections import deque
 from collections.abc import Collection
 from collections.abc import Sequence
-from copy import copy
 from dataclasses import dataclass
 from enum import Enum
 from enum import auto
@@ -24,8 +23,8 @@ from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaPool
+from schema_mechanism.core import SchemaSearchCollection
 from schema_mechanism.core import SchemaSpinOffType
-from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
@@ -60,62 +59,38 @@ logger = logging.getLogger(__name__)
 
 
 class SchemaMemory(Observer):
-    def __init__(self, bare_schemas: Optional[Collection[Schema]] = None) -> None:
+    def __init__(self, schema_collection: SchemaSearchCollection) -> None:
         """ Initializes SchemaMemory.
 
-        :param bare_schemas: an optional collection of built-in, bare (action-only) schemas.
+        :param schema_collection: a SchemaTree instance that minimally contains a set of built-in, bare (action-only) schemas.
         """
         super().__init__()
 
-        # built-in schemas sent to initializer must be bare (action-only) schemas
-        self.schema_tree = SchemaTree()
+        if not schema_collection:
+            raise ValueError('SchemaMemory must be initialized with a SchemaSearchCollection instance.')
 
-        if bare_schemas:
-            self.schema_tree.add_bare_schemas(bare_schemas)
+        self.schema_collection = schema_collection
 
-            # register listeners for built-in schemas
-            for schema in bare_schemas:
-                schema.register(self)
+        # register listeners for schemas in tree
+        for schema in self.schema_collection:
+            schema.register(self)
 
     def __len__(self) -> int:
-        return self.schema_tree.n_schemas
+        return len(self.schema_collection)
 
     def __contains__(self, schema: Schema) -> bool:
-        return schema in self.schema_tree
+        return schema in self.schema_collection
 
     def __str__(self):
-        return str(self.schema_tree)
+        return str(self.schema_collection)
 
     def __iter__(self) -> Schema:
-        yield from itertools.chain.from_iterable([n.schemas_satisfied_by for n in self.schema_tree])
+        yield from self.schema_collection
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, SchemaMemory):
-            return all({
-                self.schema_tree == other.schema_tree,
-            })
+            return self.schema_collection == other.schema_collection
         return False if other is None else NotImplemented
-
-    @classmethod
-    def from_tree(cls, tree: SchemaTree) -> SchemaMemory:
-        """ A factory method to initialize a SchemaMemory instance from a SchemaTree.
-
-        Note: This method can be used to initialize SchemaMemory with arbitrary built-in schemas.
-
-        :param tree: a SchemaTree pre-loaded with schemas.
-        :return: a tree-initialized SchemaMemory instance
-        """
-        sm = SchemaMemory()
-
-        sm.schema_tree = copy(tree)
-        sm.schema_tree.validate(raise_on_invalid=True)
-
-        # register listeners for schemas in tree
-        for node in sm.schema_tree:
-            for schema in node.schemas_satisfied_by:
-                schema.register(sm)
-
-        return sm
 
     # TODO: this method is too complicated. I need to refactor it into multiple methods.
     def update_all(self, selection_details: SelectionDetails, result_state: State) -> None:
@@ -206,7 +181,7 @@ class SchemaMemory(Observer):
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
         satisfied = itertools.chain.from_iterable(
-            n.schemas_satisfied_by for n in self.schema_tree.find_all_satisfied(state))
+            n.schemas_satisfied_by for n in self.schema_collection.find_all_satisfied(state))
 
         return [schema for schema in satisfied if schema.is_applicable(state)]
 
@@ -239,7 +214,7 @@ class SchemaMemory(Observer):
 
         chains = list()
 
-        nodes = self.schema_tree.find_all_would_satisfy(goal_state)
+        nodes = self.schema_collection.find_all_would_satisfy(goal_state)
         for n in nodes:
             more_chains = list()
 
@@ -292,10 +267,10 @@ class SchemaMemory(Observer):
             if self._new_composite_action_needed(source=source, spin_off=spin_off, spin_off_type=spin_off_type):
                 self._create_new_composite_action(goal_state=spin_off.result)
 
-        self.schema_tree.add(source=source, spin_offs=spin_offs, spin_off_type=spin_off_type)
+        self.schema_collection.add(source=source, schemas=spin_offs)
 
     def is_novel_result(self, result: StateAssertion) -> bool:
-        return not any({result == s.result for s in self.schema_tree.root.schemas_satisfied_by})
+        return not any({result == s.result for s in self.schema_collection.root.schemas_satisfied_by})
 
     def _new_composite_action_needed(self, source: Schema, spin_off: Schema, spin_off_type: SchemaSpinOffType) -> bool:
         """ Returns whether a new composite action is needed.
@@ -353,7 +328,8 @@ class SchemaMemory(Observer):
         # adds a new bare schema for the new composite action
         ca_schema = SchemaPool().get(SchemaUniqueKey(action=ca))
         ca_schema.register(self)
-        self.schema_tree.add_bare_schemas([ca_schema])
+
+        self.schema_collection.add(schemas=[ca_schema])
 
 
 def schema_succeeded(applicable: bool, activated: bool, satisfied: bool) -> bool:

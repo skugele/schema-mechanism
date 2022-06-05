@@ -1,22 +1,29 @@
 import argparse
 import logging.config
 from collections.abc import Sequence
+from pathlib import Path
 from time import sleep
 from typing import Optional
 
+import schema_mechanism
 from examples import RANDOM_SEED
+from examples import display_schema_info
 from examples import display_summary
 from examples import is_paused
 from examples import run_decorator
 from schema_mechanism.core import Action
-from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaPool
+from schema_mechanism.core import SchemaTree
+from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import State
 from schema_mechanism.func_api import sym_item
+from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SchemaSelection
+from schema_mechanism.serialization import get_serialization_filename
 from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
 from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
@@ -35,7 +42,17 @@ set_random_seed(RANDOM_SEED)
 
 # global constants
 N_MACHINES = 5
-N_STEPS = 15000
+N_STEPS = 10000
+
+SERIALIZATION_ENABLED = True
+SAVE_DIR: Path = Path('./local/save/multi_arm_bandits')
+SAVE_FILE: str = get_serialization_filename(
+    object_name='schema_mechanism',
+    prefix='multi_arm_bandits',
+    suffix='sav',
+    version=schema_mechanism.VERSION_ID
+)
+SAVE_PATH: Path = SAVE_DIR / SAVE_FILE
 
 
 class Machine:
@@ -226,13 +243,28 @@ def parse_args():
 
 
 def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
+    # schema_mechanism_: Optional[SchemaMechanism] = None
+    #
+    # if SERIALIZATION_ENABLED:
+    #     try:
+    #         schema_mechanism_ = SchemaMechanism.load(SAVE_PATH)
+    #     except ValueError as e:
+    #         logger.warning(e)
+    #
+    # if schema_mechanism_:
+    #     return schema_mechanism_
+
     primitive_items = [
         sym_item('W', primitive_value=1.0),
         sym_item('L', primitive_value=-1.0),
         sym_item('P', primitive_value=-0.5),
     ]
-    bare_schemas = [Schema(action=a) for a in env.actions]
-    schema_memory = SchemaMemory(bare_schemas)
+    bare_schemas = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in env.actions]
+
+    schema_tree = SchemaTree()
+    schema_tree.add(bare_schemas)
+
+    schema_memory = SchemaMemory(schema_tree)
     schema_selection = SchemaSelection(
         select_strategy=RandomizeBestSelectionStrategy(
             match=AbsoluteDiffMatchStrategy(max_diff=0.01)),
@@ -253,37 +285,37 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
         )
     )
 
-    sm: SchemaMechanism = SchemaMechanism(
+    schema_mechanism_ = SchemaMechanism(
         items=primitive_items,
         schema_memory=schema_memory,
         schema_selection=schema_selection,
     )
 
-    sm.params.set('learning_rate', 0.01)
+    schema_mechanism_.params.set('learning_rate', 0.01)
 
-    sm.params.set('composite_actions.update_frequency', 0.01)
-    sm.params.set('composite_actions.backward_chains.max_length', 5)
-    sm.params.set('composite_actions.min_baseline_advantage', 0.1)
+    schema_mechanism_.params.set('composite_actions.update_frequency', 0.01)
+    schema_mechanism_.params.set('composite_actions.backward_chains.max_length', 5)
+    schema_mechanism_.params.set('composite_actions.min_baseline_advantage', 0.1)
 
-    sm.params.set('schema.reliability_threshold', 0.8)
+    schema_mechanism_.params.set('schema.reliability_threshold', 0.8)
 
     # item correlation test used for determining relevance of extended context items
-    sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
+    schema_mechanism_.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
 
     # thresholds for determining the relevance of extended result items
     #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
-    sm.params.set('ext_context.positive_correlation_threshold', 0.95)
+    schema_mechanism_.params.set('ext_context.positive_correlation_threshold', 0.95)
 
     # item correlation test used for determining relevance of extended result items
-    sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
+    schema_mechanism_.params.set('ext_result.correlation_test', CorrelationOnEncounter)
 
     # thresholds for determining the relevance of extended result items
     #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
-    sm.params.set('ext_result.positive_correlation_threshold', 0.95)
+    schema_mechanism_.params.set('ext_result.positive_correlation_threshold', 0.95)
 
-    logger.info(sm.params)
+    logger.info(schema_mechanism_.params)
 
-    return sm
+    return schema_mechanism_
 
 
 # TODO: create a general purpose run with args:
@@ -302,7 +334,7 @@ def run():
     machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.machines)]
     env = BanditEnvironment(machines)
 
-    sm = create_schema_mechanism(env)
+    sm: SchemaMechanism = create_schema_mechanism(env)
 
     for n in range(args.steps):
         logger.info(f'winnings: {env.winnings}')
@@ -331,6 +363,7 @@ def run():
         if is_paused():
             display_machine_info(machines)
             display_summary(sm)
+            display_schema_info(sym_schema('/play/'))
 
             try:
                 while is_paused():
@@ -342,10 +375,13 @@ def run():
 
         state = env.step(action)
 
-        sm.learn(selection_details, result_state=state)
+        sm.learn(selection_details=selection_details, result_state=state)
 
     display_machine_info(machines)
     display_summary(sm)
+
+    # if SERIALIZATION_ENABLED:
+    #     SchemaMechanism.save(sm, path=SAVE_PATH, overwrite=True)
 
 
 def display_machine_info(machines):

@@ -66,23 +66,23 @@ class TestShared(unittest.TestCase):
         self.s3_d_e = sym_schema('D,/A3/E,', schema_type=MockSchema, reliability=1.0, avg_duration=4.5)
 
         self.tree = SchemaTree()
-        self.tree.add_bare_schemas(schemas=[self.s1, self.s2, self.s3, self.s4])
+        self.tree.add(schemas=[self.s1, self.s2, self.s3, self.s4])
 
-        self.tree.add_result_spin_offs(self.s1, [self.s1_b])
-        self.tree.add_result_spin_offs(self.s2, [self.s2_c])
-        self.tree.add_result_spin_offs(self.s3, [self.s3_d, self.s3_e])
-        self.tree.add_result_spin_offs(self.s4, [self.s4_l, self.s4_k])
+        self.tree.add(source=self.s1, schemas=[self.s1_b])
+        self.tree.add(source=self.s2, schemas=[self.s2_c])
+        self.tree.add(source=self.s3, schemas=[self.s3_d, self.s3_e])
+        self.tree.add(source=self.s4, schemas=[self.s4_l, self.s4_k])
 
-        self.tree.add_context_spin_offs(self.s1_b, [self.s1_a_b])
-        self.tree.add_context_spin_offs(self.s1_d, [self.s1_c_d])
-        self.tree.add_context_spin_offs(self.s2_c, [self.s2_b_c])
-        self.tree.add_context_spin_offs(self.s3_d, [self.s3_c_d])
-        self.tree.add_context_spin_offs(self.s3_e, [self.s3_l_e])
+        self.tree.add(source=self.s1_b, schemas=[self.s1_a_b])
+        self.tree.add(source=self.s1_d, schemas=[self.s1_c_d])
+        self.tree.add(source=self.s2_c, schemas=[self.s2_b_c])
+        self.tree.add(source=self.s3_d, schemas=[self.s3_c_d])
+        self.tree.add(source=self.s3_e, schemas=[self.s3_l_e])
 
-        self.tree.add_context_spin_offs(self.s4_k, [self.s4_d_k])
-        self.tree.add_context_spin_offs(self.s4_l, [self.s4_k_l])
+        self.tree.add(source=self.s4_k, schemas=[self.s4_d_k])
+        self.tree.add(source=self.s4_l, schemas=[self.s4_k_l])
 
-        self.sm = SchemaMemory.from_tree(self.tree)
+        self.sm = SchemaMemory(self.tree)
 
         self.goal_state = sym_state_assert('E')
         self.controller = Controller(self.goal_state)

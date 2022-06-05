@@ -31,20 +31,20 @@ class TestBackwardChaining(unittest.TestCase):
         self.s3_d_e = sym_schema('D,/A3/E,', schema_type=MockSchema, reliability=1.0)
 
         self.tree = SchemaTree()
-        self.tree.add_bare_schemas(schemas=[self.s1, self.s2, self.s3])
+        self.tree.add(schemas=[self.s1, self.s2, self.s3])
 
         # L2 result spin-offs
-        self.tree.add_result_spin_offs(self.s1, [self.s1_b])
-        self.tree.add_result_spin_offs(self.s2, [self.s2_c])
-        self.tree.add_result_spin_offs(self.s3, [self.s3_d, self.s3_e])
+        self.tree.add(source=self.s1, schemas=[self.s1_b])
+        self.tree.add(source=self.s2, schemas=[self.s2_c])
+        self.tree.add(source=self.s3, schemas=[self.s3_d, self.s3_e])
 
         # L2 context spin-offs
-        self.tree.add_context_spin_offs(self.s1_b, [self.s1_a_b])
-        self.tree.add_context_spin_offs(self.s2_c, [self.s2_b_c])
-        self.tree.add_context_spin_offs(self.s3_d, [self.s3_c_d])
-        self.tree.add_context_spin_offs(self.s3_e, [self.s3_d_e])
+        self.tree.add(source=self.s1_b, schemas=[self.s1_a_b])
+        self.tree.add(source=self.s2_c, schemas=[self.s2_b_c])
+        self.tree.add(source=self.s3_d, schemas=[self.s3_c_d])
+        self.tree.add(source=self.s3_e, schemas=[self.s3_d_e])
 
-        self.sm = SchemaMemory.from_tree(self.tree)
+        self.sm = SchemaMemory(self.tree)
 
     def test_base_cases_for_recursion(self):
         # test: NULL goal state should return an empty list
@@ -81,10 +81,10 @@ class TestBackwardChaining(unittest.TestCase):
         s2_d = sym_schema('/A2/D,', schema_type=MockSchema, reliability=0.25)
         s2_c_d = sym_schema('C,/A2/D,', schema_type=MockSchema, reliability=1.0)
 
-        self.tree.add_result_spin_offs(self.s2, [s2_d])
-        self.tree.add_context_spin_offs(s2_d, [s2_c_d])
+        self.tree.add(source=self.s2, schemas=[s2_d])
+        self.tree.add(source=s2_d, schemas=[s2_c_d])
 
-        self.sm = SchemaMemory.from_tree(self.tree)
+        self.sm = SchemaMemory(self.tree)
 
         expected_chain = []
         chains = self.sm.backward_chains(goal_state=sym_state_assert('A,'))
@@ -117,8 +117,8 @@ class TestBackwardChaining(unittest.TestCase):
         s2_a = sym_schema('/A2/A,', schema_type=MockSchema, reliability=0.25)
         s2_e_a = sym_schema('E,/A2/A,', schema_type=MockSchema, reliability=1.0)
 
-        self.tree.add_result_spin_offs(self.s2, [s2_a])
-        self.tree.add_context_spin_offs(s2_a, [s2_e_a])
+        self.tree.add(source=self.s2, schemas=[s2_a])
+        self.tree.add(source=s2_a, schemas=[s2_e_a])
 
         expected_chain = [Chain([self.s2_b_c, self.s3_c_d, self.s3_d_e, s2_e_a])]
         chains = self.sm.backward_chains(goal_state=sym_state_assert('A,'))
@@ -145,8 +145,8 @@ class TestBackwardChaining(unittest.TestCase):
         s1_b = sym_schema('/A1/B,', schema_type=MockSchema, reliability=0.25)
         s1_b_a = sym_schema('B,/A1/A,', schema_type=MockSchema, reliability=1.0)
 
-        self.tree.add_result_spin_offs(self.s1, [s1_b])
-        self.tree.add_context_spin_offs(s1_b, [s1_b_a])
+        self.tree.add(source=self.s1, schemas=[s1_b])
+        self.tree.add(source=s1_b, schemas=[s1_b_a])
 
         expected_chain = [Chain([self.s1_a_b])]
         chains = self.sm.backward_chains(goal_state=sym_state_assert('B,'))
@@ -158,7 +158,7 @@ class TestBackwardChaining(unittest.TestCase):
 
     def test_chains_with_reliable_no_context_schema(self):
         s2_e = sym_schema('/A2/E,', schema_type=MockSchema, reliability=1.0)
-        self.tree.add_result_spin_offs(self.s2, [s2_e])
+        self.tree.add(source=self.s2, schemas=[s2_e])
 
         expected_chains = [
             Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d, self.s3_d_e]),
@@ -170,7 +170,7 @@ class TestBackwardChaining(unittest.TestCase):
     def test_chains_with_identical_context_and_goal_schema(self):
         s2_e = sym_schema('E,/A2/E,', schema_type=MockSchema, reliability=1.0)
 
-        self.tree.add_result_spin_offs(self.s2, [s2_e])
+        self.tree.add(source=self.s2, schemas=[s2_e])
 
         expected_chains = [
             Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d, self.s3_d_e]),
@@ -183,9 +183,9 @@ class TestBackwardChaining(unittest.TestCase):
         s1_cd = sym_schema('/A1/(C,D),', schema_type=MockSchema, reliability=1.0)
         s1_b_cd = sym_schema('B,/A1/(C,D),', schema_type=MockSchema, reliability=1.0)
 
-        self.tree.add_context_spin_offs(self.s3_d_e, [s3_cd_e])
-        self.tree.add_result_spin_offs(self.s1, [s1_cd])
-        self.tree.add_context_spin_offs(s1_cd, [s1_b_cd])
+        self.tree.add(source=self.s3_d_e, schemas=[s3_cd_e])
+        self.tree.add(source=self.s1, schemas=[s1_cd])
+        self.tree.add(source=s1_cd, schemas=[s1_b_cd])
 
         expected_chains = [
             Chain([s1_cd]),
@@ -219,14 +219,14 @@ class TestBackwardChaining(unittest.TestCase):
         # primitives with composite actions
         se = sym_schema('/E,/')
 
-        self.tree.add_bare_schemas([se])
+        self.tree.add([se])
 
         se_e = sym_schema('/E,/E,')
-        self.tree.add_result_spin_offs(se, spin_offs=[se_e])
+        self.tree.add(source=se, schemas=[se_e])
 
         # add context spin-offs
         se_d_e = sym_schema('D,/E,/E,', schema_type=MockSchema, reliability=1.0)
-        self.tree.add_context_spin_offs(se_e, spin_offs=[se_d_e])
+        self.tree.add(source=se_e, schemas=[se_d_e])
 
         chains = self.sm.backward_chains(goal_state=sym_state_assert('E,'))
 

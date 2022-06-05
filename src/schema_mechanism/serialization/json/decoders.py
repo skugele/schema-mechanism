@@ -23,6 +23,7 @@ from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import SchemaTreeNode
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import SymbolicItem
+from schema_mechanism.modules import SchemaMemory
 
 
 def decode_action(obj_dict: dict, object_registry: dict[int, Any], **kwargs) -> Action:
@@ -213,6 +214,10 @@ def decode_schema_tree(obj_dict: dict, object_registry: dict[int, Any], **kwargs
     return SchemaTree(root=root, nodes_map=nodes_map)
 
 
+def decode_schema_memory(obj_dict: dict, object_registry: dict[int, Any], **kwargs) -> SchemaMemory:
+    return SchemaMemory(**obj_dict)
+
+
 decoder_map: dict[str, Callable] = {
     'Action': decode_action,
     'CompositeAction': decode_composite_action,
@@ -231,6 +236,7 @@ decoder_map: dict[str, Callable] = {
     'Schema': decode_schema,
     'SchemaTreeNode': decode_schema_tree_node,
     'SchemaTree': decode_schema_tree,
+    'SchemaMemory': decode_schema_memory,
 }
 
 

@@ -12,6 +12,7 @@ from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
 from schema_mechanism.core import GlobalStats
 from schema_mechanism.core import ItemPool
 from schema_mechanism.core import SchemaPool
+from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import default_action_trace
 from schema_mechanism.core import default_delegated_value_helper
 from schema_mechanism.core import default_global_params
@@ -50,7 +51,11 @@ class TestSchemaMechanism(TestCase):
             sym_item('Z', primitive_value=1.0)
         }
         self.primitive_actions = {schema.action for schema in self.bare_schemas}
-        self.schema_memory = SchemaMemory(self.bare_schemas)
+
+        self.schema_tree = SchemaTree()
+        self.schema_tree.add(schemas=self.bare_schemas)
+
+        self.schema_memory = SchemaMemory(self.schema_tree)
         self.schema_selection = SchemaSelection(
             select_strategy=RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(1.0)),
             evaluation_strategy=CompositeEvaluationStrategy(

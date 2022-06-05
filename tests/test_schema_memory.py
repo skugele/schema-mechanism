@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-import test_share
 from schema_mechanism.core import Action
 from schema_mechanism.core import Chain
 from schema_mechanism.core import Schema
@@ -46,48 +45,48 @@ class TestSchemaMemory(TestCase):
         self.s102 = sym_schema('/102,/')
 
         self.tree = SchemaTree()
-        self.tree.add_bare_schemas((s1, s2, self.s101, self.s102))
+        self.tree.add(schemas=(s1, s2, self.s101, self.s102))
 
         # composite action result spin-off
         self.s101_r100 = sym_schema('/101,/100,')
-        self.tree.add_result_spin_offs(self.s101, (self.s101_r100,))
+        self.tree.add(source=self.s101, schemas=(self.s101_r100,))
 
         # composite action context spin-off
         self.s101_1_r100 = sym_schema('1,/101,/100,', reliability=1.0)
-        self.tree.add_context_spin_offs(self.s101_r100, (self.s101_1_r100,))
+        self.tree.add(source=self.s101_r100, schemas=(self.s101_1_r100,))
 
         s1_1 = sym_schema('1,/A1/')
         s1_2 = sym_schema('2,/A1/')
         s1_3 = sym_schema('3,/A1/')
         s1_4 = sym_schema('4,/A1/')
-        self.tree.add_context_spin_offs(s1, (s1_1, s1_2, s1_3, s1_4))
+        self.tree.add(source=s1, schemas=(s1_1, s1_2, s1_3, s1_4))
 
         s2_1 = sym_schema('1,/A2/')
         s2_2 = sym_schema('2,/A2/')
-        self.tree.add_context_spin_offs(s2, (s2_1, s2_2))
+        self.tree.add(source=s2, schemas=(s2_1, s2_2))
 
         s1_1_1 = sym_schema('1,2/A1/')
         s1_1_2 = sym_schema('1,3/A1/')
         s1_1_3 = sym_schema('1,4/A1/')
         s1_1_4 = sym_schema('1,5/A1/')
-        self.tree.add_context_spin_offs(s1_1, (s1_1_1, s1_1_2, s1_1_3, s1_1_4))
+        self.tree.add(source=s1_1, schemas=(s1_1_1, s1_1_2, s1_1_3, s1_1_4))
 
         s1_1_2_1 = sym_schema('1,3,5/A1/')
         s1_1_2_2 = sym_schema('1,3,6/A1/')
         s1_1_2_3 = sym_schema('1,3,7/A1/')
-        self.tree.add_context_spin_offs(s1_1_2, (s1_1_2_1, s1_1_2_2, s1_1_2_3))
+        self.tree.add(source=s1_1_2, schemas=(s1_1_2_1, s1_1_2_2, s1_1_2_3))
 
         s1_1_2_1_1 = sym_schema('1,3,5,7/A1/')
-        self.tree.add_context_spin_offs(s1_1_2_1, (s1_1_2_1_1,))
+        self.tree.add(source=s1_1_2_1, schemas=(s1_1_2_1_1,))
 
         s1_1_2_3_1 = sym_schema('1,3,7,9/A1/')
-        self.tree.add_context_spin_offs(s1_1_2_3, (s1_1_2_3_1,))
+        self.tree.add(source=s1_1_2_3, schemas=(s1_1_2_3_1,))
 
         s1_r101 = sym_schema('/A1/101,')
-        self.tree.add_result_spin_offs(s1, (s1_r101,))
+        self.tree.add(source=s1, schemas=(s1_r101,))
 
         s1_1_r101 = sym_schema('1,/A1/101,', reliability=1.0)
-        self.tree.add_context_spin_offs(s1_r101, (s1_1_r101,))
+        self.tree.add(source=s1_r101, schemas=(s1_1_r101,))
 
         self.bare_schemas = {
             s1, s2, self.s101, self.s102
@@ -134,42 +133,44 @@ class TestSchemaMemory(TestCase):
         # |-- 2
         # |-- 4
         # +-- 101
-        self.sm = SchemaMemory.from_tree(self.tree)
+        self.sm = SchemaMemory(self.tree)
 
     def test_init(self):
-        self.assertEqual(self.tree.n_schemas, len(self.sm))
+        self.assertEqual(len(self.tree), len(self.sm))
 
         # test: one or more bare schemas should be allowed in initializer
         try:
             # test with a single bare schema
-            sm = SchemaMemory(bare_schemas=list(self.bare_schemas)[:1])
+            tree = SchemaTree()
+            tree.add(list(self.bare_schemas)[:1])
+
+            sm = SchemaMemory(tree)
             self.assertEqual(1, len(sm))
 
             # test with multiple bare schemas
-            sm = SchemaMemory(bare_schemas=self.bare_schemas)
+            tree = SchemaTree()
+            tree.add(self.bare_schemas)
+
+            sm = SchemaMemory(tree)
             self.assertEqual(len(self.bare_schemas), len(sm))
         except ValueError as e:
             self.fail(f'Caught unexpected ValueError: {e}')
 
-        # test: non-bare, built-in schemas SHOULD raise a ValueError
-        self.assertRaises(ValueError, lambda: SchemaMemory(bare_schemas=list(self.non_bare_schemas)[:1]))
-        self.assertRaises(ValueError, lambda: SchemaMemory(bare_schemas=self.non_bare_schemas))
-
-    def test_from_tree(self):
+    def test_init_from_tree(self):
         primitives = primitive_schemas(actions(5))
         tree = SchemaTree()
-        tree.add_bare_schemas(primitives)
+        tree.add(primitives)
 
         s1_1 = create_context_spin_off(primitives[0], sym_item('1'))
         s1_2 = create_context_spin_off(primitives[0], sym_item('2'))
-        tree.add_context_spin_offs(primitives[0], (s1_1, s1_2))
+        tree.add(source=primitives[0], schemas=(s1_1, s1_2))
 
         s1_r1 = create_result_spin_off(primitives[0], sym_item('3'))
         s1_r2 = create_result_spin_off(primitives[0], sym_item('4'))
-        tree.add_result_spin_offs(primitives[0], (s1_r1, s1_r2))
+        tree.add(source=primitives[0], schemas=(s1_r1, s1_r2))
 
-        sm = SchemaMemory.from_tree(tree)
-        self.assertEqual(tree.n_schemas, len(sm))
+        sm = SchemaMemory(tree)
+        self.assertEqual(len(tree), len(sm))
 
         for schema in [*primitives, s1_1, s1_2, s1_r1, s1_r2]:
             self.assertIn(schema, sm)
@@ -425,28 +426,28 @@ class TestSchemaMemory(TestCase):
         s2 = sym_schema('/A2/')
 
         tree = SchemaTree()
-        tree.add_bare_schemas((s1, s2))
+        tree.add(schemas=(s1, s2))
 
         s1_a = sym_schema('/A1/A,')
         s1_b = sym_schema('/A1/B,')
         s1_c = sym_schema('/A1/C,')
 
-        tree.add_result_spin_offs(s1, [s1_a, s1_b, s1_c])
+        tree.add(source=s1, schemas=[s1_a, s1_b, s1_c])
 
         s2_e = sym_schema('/A2/E,')
 
-        tree.add_result_spin_offs(s2, [s2_e])
+        tree.add(source=s2, schemas=[s2_e])
 
         s1_c_a = sym_schema('C,/A1/A,')
         s1_cd_a = sym_schema('C,D/A1/A,')
 
-        tree.add_context_spin_offs(s1_a, [s1_c_a])
-        tree.add_context_spin_offs(s1_c_a, [s1_cd_a])
+        tree.add(source=s1_a, schemas=[s1_c_a])
+        tree.add(source=s1_c_a, schemas=[s1_cd_a])
 
         s2_cd = sym_schema('/A2/(C,D),')
-        tree.add_result_spin_offs(s2, [s2_cd])
+        tree.add(source=s2, schemas=[s2_cd])
 
-        sm = SchemaMemory.from_tree(tree)
+        sm = SchemaMemory(tree)
 
         known_results = {s.result for s in tree.root.schemas_satisfied_by}
         unknown_results = {sym_state_assert(f'{i},') for i in range(10)}
@@ -460,15 +461,14 @@ class TestSchemaMemory(TestCase):
             self.assertTrue(sm.is_novel_result(r))
 
         spin_offs = {Schema(action=Action('A2'), result=r) for r in unknown_results}
-        tree.add_result_spin_offs(s2, spin_offs)
+        tree.add(source=s2, schemas=spin_offs)
 
-        sm = SchemaMemory.from_tree(tree)
+        sm = SchemaMemory(tree)
 
         # test: after adding result to SchemaMemory, all these should return False
         for r in unknown_results:
             self.assertFalse(sm.is_novel_result(r))
 
-    @test_share.disable_test
     def test_encode_and_decode(self):
         object_registry: dict[int, Any] = dict()
 

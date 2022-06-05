@@ -95,9 +95,6 @@ def encode_symbolic_item(
     if not isinstance(item, SymbolicItem):
         raise TypeError(f"Object of type '{type(item)}' is not JSON serializable")
 
-    if object_registry is not None:
-        object_registry[item.uid] = item
-
     attrs = {
         '__type__': 'SymbolicItem',
         'source': item.source,
@@ -113,9 +110,6 @@ def encode_composite_item(
         **kwargs) -> dict:
     if not isinstance(item, CompositeItem):
         raise TypeError(f"Object of type '{type(item)}' is not JSON serializable")
-
-    if object_registry is not None:
-        object_registry[item.uid] = item
 
     attrs = {
         '__type__': 'CompositeItem',
@@ -350,12 +344,13 @@ def encode_schema_tree_node(
         for node in schema_tree_node.children:
             object_registry[node.uid] = node
 
-        object_registry[parent.uid] = parent
+        if parent:
+            object_registry[parent.uid] = parent
 
         schemas_satisfied_by = map_list_to_unique_ids(schemas_satisfied_by)
         schemas_would_satisfy = map_list_to_unique_ids(schemas_would_satisfy)
         children = map_list_to_unique_ids(children)
-        parent = parent.uid
+        parent = parent.uid if parent else None
 
     attrs = {
         '__type__': 'SchemaTreeNode',
@@ -401,11 +396,11 @@ def encode_schema_memory(
         schema_memory: SchemaMemory,
         object_registry: dict[int, Any] = None,
         **kwargs) -> dict:
-    schema_tree = schema_memory
+    schema_collection = schema_memory.schema_collection
 
     attrs = {
         '__type__': 'SchemaMemory',
-        'schema_tree': schema_tree,
+        'schema_collection': schema_collection,
     }
     return attrs
 
@@ -435,6 +430,7 @@ encoder_map: dict[Type, Callable] = {
     Schema: encode_schema,
     SchemaTreeNode: encode_schema_tree_node,
     SchemaTree: encode_schema_tree,
+    SchemaMemory: encode_schema_memory,
 }
 
 
