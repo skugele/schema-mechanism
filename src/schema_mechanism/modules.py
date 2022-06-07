@@ -61,7 +61,7 @@ class SchemaMemory(Observer):
     def __init__(self, schema_collection: SchemaSearchCollection) -> None:
         """ Initializes SchemaMemory.
 
-        :param schema_collection: a SchemaTree instance that minimally contains a set of built-in, bare (action-only) schemas.
+        :param schema_collection: a schema collection that minimally contains a set of bare (action-only) schemas.
         """
         super().__init__()
 
@@ -70,7 +70,7 @@ class SchemaMemory(Observer):
 
         self.schema_collection = schema_collection
 
-        # register listeners for schemas in tree
+        # register listeners for schemas in schema collection
         for schema in self.schema_collection:
             schema.register(self)
 
@@ -265,9 +265,6 @@ class SchemaMemory(Observer):
 
         self.schema_collection.add(source=source, schemas=spin_offs)
 
-    def is_novel_result(self, result: StateAssertion) -> bool:
-        return not any({result == s.result for s in self.schema_collection.root.schemas_satisfied_by})
-
     def _new_composite_action_needed(self, source: Schema, spin_off: Schema, spin_off_type: SchemaSpinOffType) -> bool:
         """ Returns whether a new composite action is needed.
 
@@ -294,7 +291,7 @@ class SchemaMemory(Observer):
             is_feature_enabled(SupportedFeature.COMPOSITE_ACTIONS),
             source.is_bare(),
             spin_off_type is SchemaSpinOffType.RESULT,
-            self.is_novel_result(spin_off.result),
+            self.schema_collection.is_novel_result(spin_off.result),
 
             # TODO: There must be a better way to limit composite action creation to high value states. This
             # TODO: solution is problematic because the result state's value will fluctuate over time, and

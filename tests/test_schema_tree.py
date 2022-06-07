@@ -850,6 +850,50 @@ class TestSchemaTree(TestCase):
         expected_schemas = itertools.chain.from_iterable(node.schemas_would_satisfy for node in expected_nodes)
         self.assertSetEqual(set(expected_schemas), set(schemas))
 
+    def test_is_novel_result(self):
+        s1 = sym_schema('/A1/')
+        s2 = sym_schema('/A2/')
+
+        tree = SchemaTree()
+        tree.add(schemas=(s1, s2))
+
+        s1_a = sym_schema('/A1/A,')
+        s1_b = sym_schema('/A1/B,')
+        s1_c = sym_schema('/A1/C,')
+
+        tree.add(source=s1, schemas=[s1_a, s1_b, s1_c])
+
+        s2_e = sym_schema('/A2/E,')
+
+        tree.add(source=s2, schemas=[s2_e])
+
+        s1_c_a = sym_schema('C,/A1/A,')
+        s1_cd_a = sym_schema('C,D/A1/A,')
+
+        tree.add(source=s1_a, schemas=[s1_c_a])
+        tree.add(source=s1_c_a, schemas=[s1_cd_a])
+
+        s2_cd = sym_schema('/A2/(C,D),')
+        tree.add(source=s2, schemas=[s2_cd])
+
+        known_results = {s.result for s in tree.root.schemas_satisfied_by}
+        unknown_results = {sym_state_assert(f'{i},') for i in range(10)}
+
+        # test: results already exist in SchemaMemory - should return False
+        for r in known_results:
+            self.assertFalse(tree.is_novel_result(r))
+
+        # test: results do not exist in SchemaMemory - should return True
+        for r in unknown_results:
+            self.assertTrue(tree.is_novel_result(r))
+
+        spin_offs = {Schema(action=Action('A2'), result=r) for r in unknown_results}
+        tree.add(source=s2, schemas=spin_offs)
+
+        # test: after adding result to SchemaMemory, all these should return False
+        for r in unknown_results:
+            self.assertFalse(tree.is_novel_result(r))
+
     def test_encode_and_decode(self):
         object_registry: dict[int, Any] = dict()
 

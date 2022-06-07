@@ -2093,7 +2093,11 @@ class SchemaSearchCollection(ABC, Collection):
 
     @abstractmethod
     def find_all_would_satisfy(self, assertion: StateAssertion, **kwargs) -> Collection[Schema]:
-        """ Returns a collection of schemas whose results satisfy the given assertion. """
+        """ Returns a collection of schemas whose results satisfy the given state assertion. """
+
+    @abstractmethod
+    def is_novel_result(self, result: StateAssertion) -> bool:
+        """ Returns True if there are no schemas in tree with a result matching the given state assertion. """
 
     @abstractmethod
     def add(self, schemas: Collection[Schema], **kwargs) -> None:
@@ -2205,7 +2209,6 @@ class SchemaTree(SchemaSearchCollection):
                 yield schema
 
     def __len__(self) -> int:
-        """ Returns the number of schemas in this schema tree. """
         return len([schema for schema in self])
 
     def __contains__(self, schema: Schema) -> bool:
@@ -2233,13 +2236,6 @@ class SchemaTree(SchemaSearchCollection):
         return False if other is None else NotImplemented
 
     def add(self, schemas: Collection[Schema], source: Optional[Schema] = None, **kwargs) -> None:
-        """ Adds schemas to this schema tree.
-
-        :param schemas: the collection of schemas to add
-        :param source: the schema that generated these schemas or None for bare schemas
-
-        :return: None
-        """
         if not schemas:
             raise ValueError('Spin-off schemas cannot be empty or None')
 
@@ -2299,11 +2295,6 @@ class SchemaTree(SchemaSearchCollection):
         return {schema for schema in self if predicate(schema)}
 
     def find_all_satisfied(self, state: State, **kwargs) -> Collection[Schema]:
-        """ Returns a collection of tree nodes containing schemas with contexts that are satisfied by this state.
-
-        :param state: the state
-        :return: a collection of schemas
-        """
         matches: set[SchemaTreeNode] = set()
 
         nodes_to_process = [self._root]
@@ -2331,12 +2322,12 @@ class SchemaTree(SchemaSearchCollection):
         return set(itertools.chain.from_iterable([node.schemas_would_satisfy for node in matches]))
 
     def validate(self) -> None:
-        """ Validates that all nodes in the tree comply with its invariant properties and returns invalid nodes.
-
-        :return: A set of invalid nodes (if any).
-        """
         for node in LevelOrderIter(self._root):
             self._is_valid_node(node)
+
+    def is_novel_result(self, result: StateAssertion) -> bool:
+        # a bare schema must exist for every result, so we can simplify this search by restricting it to the root node
+        return not any({result == s.result for s in self.root.schemas_satisfied_by})
 
     @property
     def root(self) -> SchemaTreeNode:
@@ -2347,16 +2338,11 @@ class SchemaTree(SchemaSearchCollection):
         return self._nodes_map
 
     def get(self, assertion: StateAssertion) -> SchemaTreeNode:
-        """ Retrieves a SchemaTreeNode matching this given state assertion (if it exists).
-
-        :param assertion: the state assertion on which this retrieval is based
-
-        :return: a SchemaTreeNode (if found) or None if the state assertion does not exist
-        """
+        """ Retrieves a SchemaTreeNode matching the given state assertion (if it exists). """
         return self._nodes_map.get(assertion.flatten())
 
     def set(self, node: SchemaTreeNode) -> None:
-        """ Adds a SchemaTreeNode to the nodes map. """
+        """ Adds a SchemaTreeNode. """
         self._nodes_map[node.context] = node
 
     def _is_valid_node(self, node: SchemaTreeNode) -> None:
