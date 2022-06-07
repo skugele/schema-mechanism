@@ -2298,7 +2298,7 @@ class SchemaTree(SchemaSearchCollection):
     def find(self, predicate: Callable[[Schema], bool], **kwargs) -> Collection[Schema]:
         return {schema for schema in self if predicate(schema)}
 
-    def find_all_satisfied(self, state: State, **kwargs) -> Collection[SchemaTreeNode]:
+    def find_all_satisfied(self, state: State, **kwargs) -> Collection[Schema]:
         """ Returns a collection of tree nodes containing schemas with contexts that are satisfied by this state.
 
         :param state: the state
@@ -2314,9 +2314,9 @@ class SchemaTree(SchemaSearchCollection):
                 if node.children:
                     nodes_to_process += node.children
 
-        return matches
+        return set(itertools.chain.from_iterable([node.schemas_satisfied_by for node in matches]))
 
-    def find_all_would_satisfy(self, assertion: StateAssertion, **kwargs) -> Collection[SchemaTreeNode]:
+    def find_all_would_satisfy(self, assertion: StateAssertion, **kwargs) -> Collection[Schema]:
         matches: set[SchemaTreeNode] = set()
 
         nodes_to_process: list[SchemaTreeNode] = [*self._root.leaves]
@@ -2328,7 +2328,7 @@ class SchemaTree(SchemaSearchCollection):
                 if node.parent:
                     nodes_to_process += [node.parent]
 
-        return matches
+        return set(itertools.chain.from_iterable([node.schemas_would_satisfy for node in matches]))
 
     def validate(self) -> None:
         """ Validates that all nodes in the tree comply with its invariant properties and returns invalid nodes.

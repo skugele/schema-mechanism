@@ -27,9 +27,13 @@ from schema_mechanism.modules import SchemaMemory
 def encode_action(
         action: Action,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(action, Action):
         TypeError(f"Object of type '{type(action)}' is not JSON serializable")
+
+    if object_registry is not None and not read_only_object_registry:
+        object_registry[action.uid] = action
 
     attrs = {
         '__type__': 'Action',
@@ -41,9 +45,13 @@ def encode_action(
 def encode_composite_action(
         composite_action: CompositeAction,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(composite_action, CompositeAction):
         TypeError(f"Object of type '{type(composite_action)}' is not JSON serializable")
+
+    if object_registry is not None and not read_only_object_registry:
+        object_registry[composite_action.uid] = composite_action
 
     attrs = {
         '__type__': 'CompositeAction',
@@ -56,6 +64,7 @@ def encode_composite_action(
 def encode_controller(
         controller: Controller,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(controller, Controller):
         TypeError(f"Object of type '{type(controller)}' is not JSON serializable")
@@ -65,13 +74,16 @@ def encode_controller(
     proximity_map = controller.proximity_map
     total_cost_map = controller.total_cost_map
 
-    if object_registry is not None:
-        for schema in components:
-            object_registry[schema.uid] = schema
+    if object_registry is not None and not read_only_object_registry:
+        # add objects to object registry
+        if not read_only_object_registry:
+            for schema in components:
+                object_registry[schema.uid] = schema
 
-        for schema in descendants:
-            object_registry[schema.uid] = schema
+            for schema in descendants:
+                object_registry[schema.uid] = schema
 
+        # encode object references in json
         components = map_list_to_unique_ids(components)
         descendants = map_list_to_unique_ids(descendants)
         proximity_map = map_dict_keys_to_unique_ids(proximity_map)
@@ -91,9 +103,13 @@ def encode_controller(
 def encode_symbolic_item(
         item: SymbolicItem,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(item, SymbolicItem):
         raise TypeError(f"Object of type '{type(item)}' is not JSON serializable")
+
+    if object_registry is not None and not read_only_object_registry:
+        object_registry[item.uid] = item
 
     attrs = {
         '__type__': 'SymbolicItem',
@@ -107,9 +123,13 @@ def encode_symbolic_item(
 def encode_composite_item(
         item: CompositeItem,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(item, CompositeItem):
         raise TypeError(f"Object of type '{type(item)}' is not JSON serializable")
+
+    if object_registry is not None and not read_only_object_registry:
+        object_registry[item.uid] = item
 
     attrs = {
         '__type__': 'CompositeItem',
@@ -123,6 +143,7 @@ def encode_composite_item(
 def encode_state_assertion(
         state_assertion: StateAssertion,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(state_assertion, StateAssertion):
         raise TypeError(f"Object of type '{type(state_assertion)}' is not JSON serializable")
@@ -130,9 +151,14 @@ def encode_state_assertion(
     items = list(state_assertion.items)
 
     if object_registry is not None:
-        for item in items:
-            object_registry[item.uid] = item
+        # add objects to object registry
+        if not read_only_object_registry:
+            object_registry[state_assertion.uid] = state_assertion
 
+            for item in items:
+                object_registry[item.uid] = item
+
+        # encode object references in json
         items = map_list_to_unique_ids(items)
 
     attrs = {
@@ -145,6 +171,7 @@ def encode_state_assertion(
 def encode_global_stats(
         global_stats: GlobalStats,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(global_stats, GlobalStats):
         raise TypeError(f"Object of type '{type(global_stats)}' is not JSON serializable")
@@ -160,6 +187,7 @@ def encode_global_stats(
 def encode_schema_stats(
         schema_stats: SchemaStats,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(schema_stats, SchemaStats):
         raise TypeError(f"Object of type '{type(schema_stats)}' is not JSON serializable")
@@ -176,6 +204,7 @@ def encode_schema_stats(
 def encode_ec_item_stats(
         ec_item_stats: ECItemStats,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(ec_item_stats, ECItemStats):
         raise TypeError(f"Object of type '{type(ec_item_stats)}' is not JSON serializable")
@@ -193,6 +222,7 @@ def encode_ec_item_stats(
 def encode_er_item_stats(
         er_item_stats: ERItemStats,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(er_item_stats, ERItemStats):
         raise TypeError(f"Object of type '{type(er_item_stats)}' is not JSON serializable")
@@ -210,6 +240,7 @@ def encode_er_item_stats(
 def encode_frozen_ec_item_stats(
         ec_item_stats: FrozenECItemStats,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(ec_item_stats, FrozenECItemStats):
         raise TypeError(f"Object of type '{type(ec_item_stats)}' is not JSON serializable")
@@ -223,6 +254,7 @@ def encode_frozen_ec_item_stats(
 def encode_frozen_er_item_stats(
         er_item_stats: FrozenERItemStats,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(er_item_stats, FrozenERItemStats):
         raise TypeError(f"Object of type '{type(er_item_stats)}' is not JSON serializable")
@@ -236,6 +268,7 @@ def encode_frozen_er_item_stats(
 def encode_extended_context(
         extended_context: ExtendedContext,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(extended_context, ExtendedContext):
         raise TypeError(f"Object of type '{type(extended_context)}' is not JSON serializable")
@@ -244,12 +277,15 @@ def encode_extended_context(
     relevant_items = list(extended_context.relevant_items)
 
     if object_registry is not None:
-        for item in suppressed_items:
-            object_registry[item.uid] = item
+        # add objects to object registry
+        if not read_only_object_registry:
+            for item in suppressed_items:
+                object_registry[item.uid] = item
 
-        for item in relevant_items:
-            object_registry[item.uid] = item
+            for item in relevant_items:
+                object_registry[item.uid] = item
 
+        # encode object references in json
         suppressed_items = map_list_to_unique_ids(suppressed_items)
         relevant_items = map_list_to_unique_ids(relevant_items)
 
@@ -267,24 +303,28 @@ def encode_extended_context(
 def encode_extended_result(
         extended_result: ExtendedResult,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(extended_result, ExtendedResult):
         raise TypeError(f"Object of type '{type(extended_result)}' is not JSON serializable")
 
     suppressed_items = list(extended_result.suppressed_items)
     relevant_items = list(extended_result.relevant_items)
+    stats = extended_result.stats
 
     if object_registry is not None:
-        for item in suppressed_items:
-            object_registry[item.uid] = item
+        # add objects to object registry
+        if not read_only_object_registry:
+            for item in suppressed_items:
+                object_registry[item.uid] = item
 
-        for item in relevant_items:
-            object_registry[item.uid] = item
+            for item in relevant_items:
+                object_registry[item.uid] = item
 
+        # encode object references in json
         suppressed_items = map_list_to_unique_ids(suppressed_items)
         relevant_items = map_list_to_unique_ids(relevant_items)
-
-    stats: dict[int, Any] = map_dict_keys_to_unique_ids(extended_result.stats)
+        stats = map_dict_keys_to_unique_ids(extended_result.stats)
 
     attrs = {
         '__type__': 'ExtendedResult',
@@ -298,11 +338,12 @@ def encode_extended_result(
 def encode_schema(
         schema: Schema,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(schema, Schema):
         raise TypeError(f"Object of type '{type(schema)}' is not JSON serializable")
 
-    if object_registry:
+    if object_registry is not None and not read_only_object_registry:
         object_registry[schema.uid] = schema
 
     attrs = {
@@ -317,7 +358,6 @@ def encode_schema(
         'avg_duration': schema.avg_duration,
         'cost': schema.cost,
         'creation_time': schema.creation_time,
-
     }
     return attrs
 
@@ -325,6 +365,7 @@ def encode_schema(
 def encode_schema_tree_node(
         schema_tree_node: SchemaTreeNode,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(schema_tree_node, SchemaTreeNode):
         raise TypeError(f"Object of type '{type(schema_tree_node)}' is not JSON serializable")
@@ -335,18 +376,22 @@ def encode_schema_tree_node(
     children = list(schema_tree_node.children)
 
     if object_registry is not None:
-        for schema in schema_tree_node.schemas_satisfied_by:
-            object_registry[schema.uid] = schema
 
-        for schema in schema_tree_node.schemas_would_satisfy:
-            object_registry[schema.uid] = schema
+        # add objects to object registry
+        if not read_only_object_registry:
+            for schema in schema_tree_node.schemas_satisfied_by:
+                object_registry[schema.uid] = schema
 
-        for node in schema_tree_node.children:
-            object_registry[node.uid] = node
+            for schema in schema_tree_node.schemas_would_satisfy:
+                object_registry[schema.uid] = schema
 
-        if parent:
-            object_registry[parent.uid] = parent
+            for node in schema_tree_node.children:
+                object_registry[node.uid] = node
 
+            if parent:
+                object_registry[parent.uid] = parent
+
+        # encode object references in json
         schemas_satisfied_by = map_list_to_unique_ids(schemas_satisfied_by)
         schemas_would_satisfy = map_list_to_unique_ids(schemas_would_satisfy)
         children = map_list_to_unique_ids(children)
@@ -367,27 +412,38 @@ def encode_schema_tree_node(
 def encode_schema_tree(
         schema_tree: SchemaTree,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     if not isinstance(schema_tree, SchemaTree):
         raise TypeError(f"Object of type '{type(schema_tree)}' is not JSON serializable")
 
     root = schema_tree.root
+    nodes_map = schema_tree.nodes_map
 
-    object_registry[root.uid] = root
+    if object_registry is not None:
 
-    encoded_root = schema_tree.root.uid
-    encoded_nodes_map: dict[int, int] = dict()
+        # add objects to object registry
+        if not read_only_object_registry:
+            object_registry[root.uid] = root
 
-    for state_assertion, node in schema_tree.nodes_map.items():
-        object_registry[state_assertion.uid] = state_assertion
-        object_registry[node.uid] = node
+            for state_assertion, node in schema_tree.nodes_map.items():
+                object_registry[state_assertion.uid] = state_assertion
+                object_registry[node.uid] = node
 
-        encoded_nodes_map[state_assertion.uid] = node.uid
+        # encode object references in json
+        encoded_root = schema_tree.root.uid
+        encoded_nodes_map: dict[int, int] = dict()
+
+        for state_assertion, node in schema_tree.nodes_map.items():
+            encoded_nodes_map[state_assertion.uid] = node.uid
+
+        nodes_map = encoded_nodes_map
+        root = encoded_root
 
     attrs = {
         '__type__': 'SchemaTree',
-        'root': encoded_root,
-        'nodes_map': encoded_nodes_map,
+        'root': root,
+        'nodes_map': nodes_map,
     }
     return attrs
 
@@ -395,6 +451,7 @@ def encode_schema_tree(
 def encode_schema_memory(
         schema_memory: SchemaMemory,
         object_registry: dict[int, Any] = None,
+        read_only_object_registry: bool = False,
         **kwargs) -> dict:
     schema_collection = schema_memory.schema_collection
 
@@ -444,6 +501,7 @@ def map_dict_keys_to_unique_ids(object_dict: dict) -> dict[int, Any]:
 
 def _encode(obj: Any, **kwargs):
     encoder = encoder_map.get(type(obj))
+
     if not encoder:
         raise TypeError(f"Object of type '{type(obj)}' is not JSON serializable")
     return encoder(obj, **kwargs)

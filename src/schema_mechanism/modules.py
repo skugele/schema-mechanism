@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import itertools
 import logging
 from collections import Iterable
 from collections import deque
@@ -180,8 +179,7 @@ class SchemaMemory(Observer):
                 controller.update(chains)
 
     def all_applicable(self, state: State) -> Sequence[Schema]:
-        satisfied = itertools.chain.from_iterable(
-            n.schemas_satisfied_by for n in self.schema_collection.find_all_satisfied(state))
+        satisfied = self.schema_collection.find_all_satisfied(state)
 
         return [schema for schema in satisfied if schema.is_applicable(state)]
 
@@ -214,27 +212,25 @@ class SchemaMemory(Observer):
 
         chains = list()
 
-        nodes = self.schema_collection.find_all_would_satisfy(goal_state)
-        for n in nodes:
-            more_chains = list()
-
-            for s in n.schemas_would_satisfy:
-                if ((s.context != goal_state)
-                        and (s.context not in term_states)
-                        and (s.result not in term_states)
-                        and is_reliable(s)):
-                    chains_ = self.backward_chains(
-                        goal_state=s.context,
-                        max_len=max_len - 1 if max_len else None,
-                        term_states={s.result, goal_state, *term_states}
-                    )
-                    if chains_:
-                        for c in chains_:
-                            c.append(s)
-                    else:
-                        chains_.append(Chain([s]))
-                    more_chains.extend(chains_)
-            chains.extend(more_chains)
+        schemas = self.schema_collection.find_all_would_satisfy(goal_state)
+        for schema in schemas:
+            more_chains: list[Chain] = list()
+            if ((schema.context != goal_state)
+                    and (schema.context not in term_states)
+                    and (schema.result not in term_states)
+                    and is_reliable(schema)):
+                more_chains = self.backward_chains(
+                    goal_state=schema.context,
+                    max_len=max_len - 1 if max_len else None,
+                    term_states={schema.result, goal_state, *term_states}
+                )
+                if more_chains:
+                    for c in more_chains:
+                        c.append(schema)
+                else:
+                    more_chains.append(Chain([schema]))
+            if more_chains:
+                chains.extend(more_chains)
         return chains
 
     def receive(self, source: Schema, spin_off_type: SchemaSpinOffType, relevant_items: Collection[Item]) -> None:

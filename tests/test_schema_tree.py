@@ -1,3 +1,4 @@
+import itertools
 from collections import Counter
 from typing import Any
 from unittest import TestCase
@@ -24,6 +25,9 @@ class TestSchemaTree(TestCase):
         common_test_setup()
 
         # root
+        # |-- X
+        # |-- Y
+        # |-- Z
         # |-- 1
         # |   |-- 1,2
         # |   |-- 1,3
@@ -38,7 +42,7 @@ class TestSchemaTree(TestCase):
         # |-- 2
         # |   +-- 2,7
         # |       +-- 2,7,9
-        # |-- 3
+        # +-- 3
         self.p1 = sym_schema('/A1/')
         self.p2 = sym_schema('/A2/')
         self.p3 = sym_schema('/A3/')
@@ -48,8 +52,8 @@ class TestSchemaTree(TestCase):
 
         # NODE (ROOT) schemas
         self.p1_r1 = sym_schema('/A1/X,')
-        self.p2_r1 = sym_schema('/A2/X,')
-        self.p3_r1 = sym_schema('/A3/X,')
+        self.p2_r1 = sym_schema('/A2/Y,')
+        self.p3_r1 = sym_schema('/A3/Z,')
 
         self.tree.add(source=self.p1, schemas=[self.p1_r1])
         self.tree.add(source=self.p2, schemas=[self.p2_r1])
@@ -72,47 +76,47 @@ class TestSchemaTree(TestCase):
         self.tree.add(source=self.p1_r1_c1, schemas=[self.p1_r1_c1_c3])
 
         # NODE (1,3,5):
-        self.p1_r1_c1_c2_c1 = sym_schema('1,3,5/A1/X,')
+        self.p1_r1_c1_c2_c1 = sym_schema('1,3,5/A1/Y,')
         self.tree.add(source=self.p1_r1_c1_c2, schemas=[self.p1_r1_c1_c2_c1])
 
         # NODE (1,3,6):
-        self.p1_r1_c1_c2_c2 = sym_schema('1,3,6/A1/X,')
+        self.p1_r1_c1_c2_c2 = sym_schema('1,3,6/A1/Y,')
         self.tree.add(source=self.p1_r1_c1_c2, schemas=[self.p1_r1_c1_c2_c2])
 
         # NODE (1,3,7):
-        self.p1_r1_c1_c2_c3 = sym_schema('1,3,7/A1/X,')
+        self.p1_r1_c1_c2_c3 = sym_schema('1,3,7/A1/Y,')
         self.tree.add(source=self.p1_r1_c1_c2, schemas=[self.p1_r1_c1_c2_c3])
 
         # NODE (1,3,5,7):
-        self.p1_r1_c1_c2_c1_c1 = sym_schema('1,3,5,7/A1/X,')
+        self.p1_r1_c1_c2_c1_c1 = sym_schema('1,3,5,7/A1/Z,')
         self.tree.add(source=self.p1_r1_c1_c2_c1, schemas=[self.p1_r1_c1_c2_c1_c1])
 
         # NODE (1,3,7,9):
-        self.p1_r1_c1_c2_c3_c1 = sym_schema('1,3,7,9/A1/X,')
+        self.p1_r1_c1_c2_c3_c1 = sym_schema('1,3,7,9/A1/Z,')
         self.tree.add(source=self.p1_r1_c1_c2_c3, schemas=[self.p1_r1_c1_c2_c3_c1])
 
         # NODE (1,3,7,9,11):
-        self.p1_r1_c1_c2_c3_c1_c1 = sym_schema('1,3,7,9,11/A1/X,')
+        self.p1_r1_c1_c2_c3_c1_c1 = sym_schema('1,3,7,9,11/A1/Z,')
         self.tree.add(source=self.p1_r1_c1_c2_c3_c1, schemas=[self.p1_r1_c1_c2_c3_c1_c1])
 
         # NODE (1,3,7,9,13):
-        self.p1_r1_c1_c2_c3_c1_c2 = sym_schema('1,3,7,9,13/A1/X,')
+        self.p1_r1_c1_c2_c3_c1_c2 = sym_schema('1,3,7,9,13/A1/Z,')
         self.tree.add(source=self.p1_r1_c1_c2_c3_c1, schemas=[self.p1_r1_c1_c2_c3_c1_c2])
 
         # NODE (2):
-        self.p3_r1_c1 = sym_schema('2,/A3/X,')
+        self.p3_r1_c1 = sym_schema('2,/A3/1,3')
         self.tree.add(source=self.p3_r1, schemas=[self.p3_r1_c1])
 
         # NODE (2,7):
-        self.p3_r1_c1_c1 = sym_schema('2,7/A3/X,')
+        self.p3_r1_c1_c1 = sym_schema('2,7/A3/1,3')
         self.tree.add(source=self.p3_r1_c1, schemas=[self.p3_r1_c1_c1])
 
         # NODE (2,7,9):
-        self.p3_r1_c1_c1_c1 = sym_schema('2,7,9/A3/X,')
+        self.p3_r1_c1_c1_c1 = sym_schema('2,7,9/A3/1,3,5,7')
         self.tree.add(source=self.p3_r1_c1_c1, schemas=[self.p3_r1_c1_c1_c1])
 
         # NODE (3):
-        self.p1_r1_c2 = sym_schema('3,/A1/X,')
+        self.p1_r1_c2 = sym_schema('3,/A1/1,3,7,9')
         self.tree.add(source=self.p1_r1, schemas=[self.p1_r1_c2])
 
         # NODE (3,1): [REDUNDANT WITH 1,3... Shouldn't result in a new schema or node in the self.tree]
@@ -778,74 +782,73 @@ class TestSchemaTree(TestCase):
         self.assertTrue(satisfies_equality_checks(obj=tree, other=other, other_different_type=1.0))
 
     def test_find_all_satisfied(self):
+        # case 1: blank state should only return root node's schemas_satisfied_by
+        schemas = self.tree.find_all_satisfied(state=sym_state(''))
+        self.assertSetEqual(self.tree.root.schemas_satisfied_by, set(schemas))
 
-        # case 1: blank state should only return root node
-        nodes = self.tree.find_all_satisfied(state=sym_state(''))
-        self.assertSetEqual({self.tree.root}, set(nodes))
-
-        # case 2: state with all unknown elements should only return root node
-        nodes = self.tree.find_all_satisfied(state=sym_state('UNK,NOPE'))
-        self.assertSetEqual({self.tree.root}, set(nodes))
+        # case 2: state with all unknown elements should only return root node's schemas_satisfied_by
+        schemas = self.tree.find_all_satisfied(state=sym_state('UNK,NOPE'))
+        self.assertSetEqual(self.tree.root.schemas_satisfied_by, set(schemas))
 
         # case 3: state with known elements that are only including in contexts with other elements should only return
-        #       : root
-        nodes = self.tree.find_all_satisfied(state=sym_state('9,11'))
-        self.assertSetEqual({self.tree.root}, set(nodes))
+        #       : root node's schemas_satisfied_by
+        schemas = self.tree.find_all_satisfied(state=sym_state('9,11'))
+        self.assertSetEqual(self.tree.root.schemas_satisfied_by, set(schemas))
 
         # case 4: single element that matches a child of root should return that matching node and root
-        nodes = self.tree.find_all_satisfied(state=sym_state('3'))
-        expected_nodes = [
+        schemas = self.tree.find_all_satisfied(state=sym_state('3'))
+        nodes = [
             self.tree.root,
-            sym_schema_tree_node('3,')
+            self.tree.get(sym_state_assert('3,'))
         ]
-        self.assertSetEqual(
-            {node.context for node in expected_nodes},
-            {node.context for node in nodes}
-        )
+        expected_schemas = itertools.chain.from_iterable(node.schemas_satisfied_by for node in nodes)
+        self.assertSetEqual(set(schemas), set(expected_schemas))
 
         # case 5: example that crosses multiple branches from root
-        nodes = self.tree.find_all_satisfied(state=sym_state('1,2,3,7'))
-        expected_nodes = [
+        schemas = self.tree.find_all_satisfied(state=sym_state('1,2,3,7'))
+        nodes = [
             self.tree.root,
-            sym_schema_tree_node('1,'),
-            sym_schema_tree_node('1,2,'),
-            sym_schema_tree_node('1,3'),
-            sym_schema_tree_node('1,3,7'),
-            sym_schema_tree_node('2,'),
-            sym_schema_tree_node('2,7'),
-            sym_schema_tree_node('3,'),
+            self.tree.get(sym_state_assert('1,')),
+            self.tree.get(sym_state_assert('1,2,')),
+            self.tree.get(sym_state_assert('1,3')),
+            self.tree.get(sym_state_assert('1,3,7')),
+            self.tree.get(sym_state_assert('2,')),
+            self.tree.get(sym_state_assert('2,7')),
+            self.tree.get(sym_state_assert('3,')),
         ]
-        self.assertSetEqual(
-            {node.context for node in expected_nodes},
-            {node.context for node in nodes}
-        )
+        expected_schemas = itertools.chain.from_iterable(node.schemas_satisfied_by for node in nodes)
+        self.assertSetEqual(set(schemas), set(expected_schemas))
 
     def test_find_all_would_satisfy(self):
-        # case 1: state that satisfies an entire branch starting with a child of root
-        nodes = self.tree.find_all_would_satisfy(assertion=sym_state_assert('1'))
-
-        matched_ancestor_node = self.tree.get(sym_state_assert('1'))
-        self.assertSetEqual({matched_ancestor_node, *matched_ancestor_node.descendants}, set(nodes))
-
-        # case 2:
-        nodes = self.tree.find_all_would_satisfy(assertion=sym_state_assert('8,9'))
-        expected_nodes = []
-
-        self.assertSetEqual(
-            {node.context for node in expected_nodes},
-            {node.context for node in nodes}
-        )
-
-        # case 3:
-        nodes = self.tree.find_all_would_satisfy(assertion=sym_state_assert('3,6'))
+        # case 1: state assertion that would be satisfied by an entire branch in tree starting with a child of root
+        schemas = self.tree.find_all_would_satisfy(assertion=sym_state_assert('X'))
         expected_nodes = [
-            sym_schema_tree_node('1,3,6'),
+            self.tree.get(sym_state_assert('X')),
+            *self.tree.get(sym_state_assert('X')).descendants,
         ]
+        expected_schemas = itertools.chain.from_iterable(node.schemas_would_satisfy for node in expected_nodes)
+        self.assertSetEqual(set(expected_schemas), set(schemas))
 
-        self.assertSetEqual(
-            {node.context for node in expected_nodes},
-            {node.context for node in nodes}
-        )
+        # case 2: state assertion that would not be satisfied by any schemas in current tree
+        schemas = self.tree.find_all_would_satisfy(assertion=sym_state_assert('X,1,'))
+        self.assertSetEqual(set(), set(schemas))
+
+        # case 3: state assertion that would be satisfied by schemas in a single leaf node
+        schemas = self.tree.find_all_would_satisfy(assertion=sym_state_assert('1,3,5,7'))
+        expected_nodes = [
+            self.tree.get(sym_state_assert('1,3,5,7')),
+        ]
+        expected_schemas = itertools.chain.from_iterable(node.schemas_would_satisfy for node in expected_nodes)
+        self.assertSetEqual(set(expected_schemas), set(schemas))
+
+        # case 4: state assertion that would be satisfied by a branch starting in middle of tree
+        schemas = self.tree.find_all_would_satisfy(assertion=sym_state_assert('1,3'))
+        expected_nodes = [
+            self.tree.get(sym_state_assert('1,3')),
+            *self.tree.get(sym_state_assert('1,3')).descendants,
+        ]
+        expected_schemas = itertools.chain.from_iterable(node.schemas_would_satisfy for node in expected_nodes)
+        self.assertSetEqual(set(expected_schemas), set(schemas))
 
     def test_encode_and_decode(self):
         object_registry: dict[int, Any] = dict()
