@@ -244,7 +244,7 @@ class TestFunctionalApi(unittest.TestCase):
             self.assertIs(sym_schema(str_repr), sym_schema(str_repr))
 
         schema_1 = sym_schema('/play/')
-        schema_2 = SchemaPool().get(SchemaUniqueKey(context=None, action=Action('play'), result=None))
+        schema_2 = SchemaPool().get(SchemaUniqueKey(action=Action('play')))
 
         self.assertIs(schema_1, schema_2)
 

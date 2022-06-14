@@ -11,7 +11,7 @@ from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import PendingDetails
 from schema_mechanism.modules import PendingStatus
 from schema_mechanism.modules import SchemaSelection
-from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
 from schema_mechanism.strategies.evaluation import TotalPrimitiveValueEvaluationStrategy
 from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
@@ -71,11 +71,11 @@ class TestSchemaSelection(TestCase):
         # test defaults
         ss = SchemaSelection()
 
-        # test: a default selection strategy should be assigned if not explicitly requested
-        self.assertIsNotNone(ss.select_strategy)
+        # test: if not explicitly set, selection strategy should be set to RandomizeBestSelectionStrategy
+        self.assertIsInstance(ss.select_strategy, RandomizeBestSelectionStrategy)
 
-        # test: if not explicitly set, value strategies should be set to NoOpEvaluationStrategies
-        self.assertIsInstance(ss.evaluation_strategy, NoOpEvaluationStrategy)
+        # test: if not explicitly set, evaluation strategy should be set to DefaultEvaluationStrategy
+        self.assertIsInstance(ss.evaluation_strategy, DefaultEvaluationStrategy)
 
         select_strategy = RandomizeBestSelectionStrategy(AbsoluteDiffMatchStrategy(0.1))
         evaluation_strategy = TotalPrimitiveValueEvaluationStrategy()

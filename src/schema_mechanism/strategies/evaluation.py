@@ -88,6 +88,11 @@ class EvaluationStrategy(ABC):
 class NoOpEvaluationStrategy(EvaluationStrategy):
     """ An EvaluationStrategy that always returns zero value. Intended to function as a NO-OP. """
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, NoOpEvaluationStrategy):
+            return True
+        return False if other is None else NotImplemented
+
     def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         return np.zeros_like(schemas)
 
@@ -97,6 +102,11 @@ class TotalPrimitiveValueEvaluationStrategy(EvaluationStrategy):
 
     def __init__(self) -> None:
         self.calc_schema_values = np.vectorize(self._calc_schema_value, otypes=[float])
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, TotalPrimitiveValueEvaluationStrategy):
+            return True
+        return False if other is None else NotImplemented
 
     def _calc_schema_value(self, schema: Schema) -> float:
         return sum(item.primitive_value for item in schema.result.items if schema.result)
@@ -115,6 +125,11 @@ class TotalDelegatedValueEvaluationStrategy(EvaluationStrategy):
     def __init__(self) -> None:
         self.calc_schema_values = np.vectorize(self._calc_schema_value, otypes=[float])
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, TotalDelegatedValueEvaluationStrategy):
+            return True
+        return False if other is None else NotImplemented
+
     def _calc_schema_value(self, schema: Schema) -> float:
         return sum(item.delegated_value for item in schema.result.items if schema.result)
 
@@ -131,6 +146,11 @@ class MaxDelegatedValueEvaluationStrategy(EvaluationStrategy):
 
     def __init__(self) -> None:
         self.calc_schema_values = np.vectorize(self._calc_schema_value, otypes=[float])
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, MaxDelegatedValueEvaluationStrategy):
+            return True
+        return False if other is None else NotImplemented
 
     def _calc_schema_value(self, schema: Schema) -> float:
         return max([item.delegated_value for item in schema.result.items if schema.result], default=0.0)
@@ -157,6 +177,11 @@ class InstrumentalValueEvaluationStrategy(EvaluationStrategy):
      moment but not the next." (See Drescher 1991, p. 63)
 
     """
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, InstrumentalValueEvaluationStrategy):
+            return True
+        return False if other is None else NotImplemented
 
     def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         if not schemas and pending:
@@ -209,6 +234,20 @@ class PendingFocusEvaluationStrategy(EvaluationStrategy):
             'decay_strategy': self.decay_strategy
         }
         return repr_str(obj=self, attr_values=attr_values)
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, PendingFocusEvaluationStrategy):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.max_value == other.max_value,
+                        self.decay_strategy == other.decay_strategy,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented
 
     @property
     def max_value(self) -> float:
@@ -275,6 +314,20 @@ class ReliabilityEvaluationStrategy(EvaluationStrategy):
             'severity': self.severity
         }
         return repr_str(obj=self, attr_values=attr_values)
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, ReliabilityEvaluationStrategy):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.max_penalty == other.max_penalty,
+                        self.severity == other.severity,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented
 
     @property
     def max_penalty(self) -> float:
@@ -349,6 +402,22 @@ class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
             'max_value': self.max_value,
         }
         return repr_str(obj=self, attr_values=attr_values)
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, EpsilonGreedyEvaluationStrategy):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.epsilon == other.epsilon,
+                        self.epsilon_min == other.epsilon_min,
+                        self.decay_strategy == other.decay_strategy,
+                        self.max_value == other.max_value,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented
 
     @property
     def epsilon(self) -> float:
@@ -441,6 +510,19 @@ class HabituationEvaluationStrategy(EvaluationStrategy):
         }
         return repr_str(obj=self, attr_values=attr_values)
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, HabituationEvaluationStrategy):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.scaling_strategy == other.scaling_strategy,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented
+
     def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
         if not schemas:
             return np.array([])
@@ -484,6 +566,21 @@ class CompositeEvaluationStrategy(EvaluationStrategy):
             'strategy_alias': self.strategy_alias,
         }
         return repr_str(obj=self, attr_values=attr_values)
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, CompositeEvaluationStrategy):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.strategies == other.strategies,
+                        np.array_equal(self.weights, other.weights),
+                        self.post_process == other.post_process,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented
 
     @property
     def strategies(self) -> Collection[EvaluationStrategy]:
@@ -555,6 +652,22 @@ class DefaultExploratoryEvaluationStrategy(CompositeEvaluationStrategy):
             strategy_alias='default-exploratory-strategy'
         )
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, DefaultExploratoryEvaluationStrategy):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.epsilon == other.epsilon,
+                        self.epsilon_min == other.epsilon_min,
+                        self.epsilon_decay_rate == other.epsilon_decay_rate,
+                        self.post_process == other.post_process,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented
+
     @property
     def epsilon(self) -> float:
         return self._epsilon_greedy_value_strategy.epsilon
@@ -616,6 +729,22 @@ class DefaultGoalPursuitEvaluationStrategy(CompositeEvaluationStrategy):
             strategy_alias='default-goal-pursuit-strategy'
         )
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, DefaultGoalPursuitEvaluationStrategy):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.reliability_max_penalty == other.reliability_max_penalty,
+                        self.pending_focus_max_value == other.pending_focus_max_value,
+                        self.pending_focus_decay_rate == other.pending_focus_decay_rate,
+                        self.post_process == other.post_process,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented
+
     @property
     def reliability_max_penalty(self) -> float:
         return self._reliability_value_strategy.max_penalty
@@ -639,6 +768,23 @@ class DefaultGoalPursuitEvaluationStrategy(CompositeEvaluationStrategy):
     @pending_focus_decay_rate.setter
     def pending_focus_decay_rate(self, value: float) -> None:
         self._pending_focus_decay_strategy.rate = value
+
+
+class DefaultEvaluationStrategy(CompositeEvaluationStrategy):
+    def __init__(
+            self,
+            goal_pursuit_strategy: EvaluationStrategy = None,
+            exploratory_strategy: EvaluationStrategy = None,
+            weights: Sequence[float] = None) -> None:
+        self.goal_pursuit_strategy = goal_pursuit_strategy or DefaultGoalPursuitEvaluationStrategy()
+        self.exploratory_strategy = exploratory_strategy or DefaultExploratoryEvaluationStrategy()
+
+        weights = weights or equal_weights(2)
+
+        super().__init__(
+            strategies=[self.goal_pursuit_strategy, self.exploratory_strategy],
+            weights=weights,
+        )
 
 
 ####################

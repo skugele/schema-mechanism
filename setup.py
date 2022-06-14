@@ -16,6 +16,7 @@ setup(
         'lark==1.1.1',
         'numpy==1.21.4',
         'pynput==1.7.6'
+        'pyyaml==6.0',
         'scikit-learn==1.0.1',
         'scipy==1.7.3',
     ],

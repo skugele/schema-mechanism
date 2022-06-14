@@ -17,7 +17,6 @@ from schema_mechanism.func_api import sym_state_assert
 from schema_mechanism.serialization.json.decoders import decode
 from schema_mechanism.serialization.json.encoders import encode
 from schema_mechanism.share import SupportedFeature
-from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
 
@@ -29,7 +28,7 @@ class TestExtendedResult(TestCase):
         common_test_setup()
 
         params = get_global_params()
-        params.set('ext_result.correlation_test', DrescherCorrelationTest())
+        params.set('ext_result.correlation_test', 'DrescherCorrelationTest')
         params.set('ext_result.positive_correlation_threshold', 0.65)
         params.set('ext_result.negative_correlation_threshold', 0.65)
 

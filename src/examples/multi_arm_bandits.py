@@ -5,32 +5,23 @@ from pathlib import Path
 from time import sleep
 from typing import Optional
 
-import schema_mechanism
 from examples import RANDOM_SEED
 from examples import display_schema_info
 from examples import display_summary
 from examples import is_paused
 from examples import run_decorator
 from schema_mechanism.core import Action
-from schema_mechanism.core import SchemaPool
-from schema_mechanism.core import SchemaTree
-from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import State
+from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
-from schema_mechanism.modules import RandomizeBestSelectionStrategy
 from schema_mechanism.modules import SchemaMechanism
-from schema_mechanism.modules import SchemaMemory
-from schema_mechanism.modules import SchemaSelection
-from schema_mechanism.serialization import get_serialization_filename
-from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
-from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
-from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
-from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
-from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
-from schema_mechanism.strategies.evaluation import display_minmax
-from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
+from schema_mechanism.modules import init
+from schema_mechanism.modules import load
+from schema_mechanism.modules import save
+from schema_mechanism.parameters import GlobalParams
+from schema_mechanism.serialization import DEFAULT_ENCODING
 from schema_mechanism.util import Observable
 from schema_mechanism.util import rng
 from schema_mechanism.util import set_random_seed
@@ -41,18 +32,11 @@ logger = logging.getLogger('examples.environments.multi_arm_bandits')
 set_random_seed(RANDOM_SEED)
 
 # global constants
-N_MACHINES = 5
-N_STEPS = 10000
+N_MACHINES = 3
+N_STEPS = 5000
 
 SERIALIZATION_ENABLED = True
 SAVE_DIR: Path = Path('./local/save/multi_arm_bandits')
-SAVE_FILE: str = get_serialization_filename(
-    object_name='schema_mechanism',
-    prefix='multi_arm_bandits',
-    suffix='sav',
-    version=schema_mechanism.VERSION_ID
-)
-SAVE_PATH: Path = SAVE_DIR / SAVE_FILE
 
 
 class Machine:
@@ -242,90 +226,58 @@ def parse_args():
     return parser.parse_args()
 
 
-def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
-    # schema_mechanism_: Optional[SchemaMechanism] = None
-    #
-    # if SERIALIZATION_ENABLED:
-    #     try:
-    #         schema_mechanism_ = SchemaMechanism.load(SAVE_PATH)
-    #     except ValueError as e:
-    #         logger.warning(e)
-    #
-    # if schema_mechanism_:
-    #     return schema_mechanism_
+def init_params() -> GlobalParams:
+    params = get_global_params()
 
-    primitive_items = [
-        sym_item('W', primitive_value=1.0),
-        sym_item('L', primitive_value=-1.0),
-        sym_item('P', primitive_value=-0.5),
-    ]
-    bare_schemas = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in env.actions]
+    params.set('learning_rate', 0.01)
 
-    schema_tree = SchemaTree()
-    schema_tree.add(bare_schemas)
+    params.set('composite_actions.update_frequency', 0.01)
+    params.set('composite_actions.backward_chains.max_length', 5)
+    params.set('composite_actions.min_baseline_advantage', 0.05)
 
-    schema_memory = SchemaMemory(schema_tree)
-    schema_selection = SchemaSelection(
-        select_strategy=RandomizeBestSelectionStrategy(
-            match=AbsoluteDiffMatchStrategy(max_diff=0.01)),
-        evaluation_strategy=CompositeEvaluationStrategy(
-            strategies=[
-                DefaultExploratoryEvaluationStrategy(
-                    epsilon=0.9999,
-                    epsilon_min=0.1,
-                    epsilon_decay_rate=0.9999,
-                    # post_process=[display_minmax],
-                ),
-                DefaultGoalPursuitEvaluationStrategy(
-                    # post_process=[display_minmax]
-                ),
-            ],
-            weights=[0.6, 0.4],
-            post_process=[display_minmax],
-        )
-    )
-
-    schema_mechanism_ = SchemaMechanism(
-        items=primitive_items,
-        schema_memory=schema_memory,
-        schema_selection=schema_selection,
-    )
-
-    schema_mechanism_.params.set('learning_rate', 0.01)
-
-    schema_mechanism_.params.set('composite_actions.update_frequency', 0.01)
-    schema_mechanism_.params.set('composite_actions.backward_chains.max_length', 5)
-    schema_mechanism_.params.set('composite_actions.min_baseline_advantage', 0.1)
-
-    schema_mechanism_.params.set('schema.reliability_threshold', 0.8)
+    params.set('schema.reliability_threshold', 0.7)
 
     # item correlation test used for determining relevance of extended context items
-    schema_mechanism_.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
+    params.set('ext_context.correlation_test', 'FisherExactCorrelationTest')
 
     # thresholds for determining the relevance of extended result items
     #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
-    schema_mechanism_.params.set('ext_context.positive_correlation_threshold', 0.95)
+    params.set('ext_context.positive_correlation_threshold', 0.85)
 
     # item correlation test used for determining relevance of extended result items
-    schema_mechanism_.params.set('ext_result.correlation_test', CorrelationOnEncounter)
+    params.set('ext_result.correlation_test', 'CorrelationOnEncounter')
 
     # thresholds for determining the relevance of extended result items
     #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
-    schema_mechanism_.params.set('ext_result.positive_correlation_threshold', 0.95)
+    params.set('ext_result.positive_correlation_threshold', 0.85)
 
-    logger.info(schema_mechanism_.params)
-
-    return schema_mechanism_
+    return params
 
 
-# TODO: create a general purpose run with args:
-#       (1) environment
-#       (2) schema mechanism
-#       (3) pause callback
-#       (4) start of episode callback
-#       (5) end of episode callback
-#       (6) start of step callback
-#       (7) end of step callback
+def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
+    schema_mechanism: Optional[SchemaMechanism] = None
+
+    if SERIALIZATION_ENABLED:
+        try:
+            schema_mechanism = load(SAVE_DIR)
+        except FileNotFoundError as e:
+            logger.warning(e)
+
+    if not schema_mechanism:
+        primitive_items = [
+            sym_item('W', primitive_value=1.0),
+            sym_item('L', primitive_value=-1.0),
+            sym_item('P', primitive_value=-0.5),
+        ]
+
+        schema_mechanism = init(
+            items=primitive_items,
+            actions=env.actions,
+            global_params=init_params()
+        )
+
+    return schema_mechanism
+
 
 @run_decorator
 def run():
@@ -334,17 +286,17 @@ def run():
     machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.machines)]
     env = BanditEnvironment(machines)
 
-    sm: SchemaMechanism = create_schema_mechanism(env)
+    schema_mechanism: SchemaMechanism = create_schema_mechanism(env)
 
     for n in range(args.steps):
         logger.info(f'winnings: {env.winnings}')
         logger.info(f'state[{n}]: {env.current_state}')
 
-        current_composite_schema = sm.schema_selection.pending_schema
+        current_composite_schema = schema_mechanism.schema_selection.pending_schema
         if current_composite_schema:
             logger.info(f'active composite action schema: {current_composite_schema} ')
 
-        selection_details = sm.select(env.current_state)
+        selection_details = schema_mechanism.select(env.current_state)
 
         schema = selection_details.selected
         action = schema.action
@@ -362,7 +314,7 @@ def run():
 
         if is_paused():
             display_machine_info(machines)
-            display_summary(sm)
+            display_summary(schema_mechanism)
             display_schema_info(sym_schema('/play/'))
 
             try:
@@ -375,13 +327,17 @@ def run():
 
         state = env.step(action)
 
-        sm.learn(selection_details=selection_details, result_state=state)
+        schema_mechanism.learn(selection_details=selection_details, result_state=state)
 
     display_machine_info(machines)
-    display_summary(sm)
+    display_summary(schema_mechanism)
 
-    # if SERIALIZATION_ENABLED:
-    #     SchemaMechanism.save(sm, path=SAVE_PATH, overwrite=True)
+    if SERIALIZATION_ENABLED:
+        save(
+            modules=[schema_mechanism],
+            path=SAVE_DIR,
+            encoding=DEFAULT_ENCODING,
+        )
 
 
 def display_machine_info(machines):

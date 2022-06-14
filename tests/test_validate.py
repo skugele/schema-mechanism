@@ -1,27 +1,22 @@
 from enum import Enum
 from enum import auto
+from typing import Any
 from typing import Hashable
 from unittest import TestCase
 
 import numpy as np
 
-from schema_mechanism.core import Action
-from schema_mechanism.core import Item
-from schema_mechanism.core import Schema
-from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from schema_mechanism.share import SupportedFeature
 from schema_mechanism.validate import AcceptAllValidator
 from schema_mechanism.validate import BlackListValidator
 from schema_mechanism.validate import ElementWiseValidator
 from schema_mechanism.validate import MultiValidator
 from schema_mechanism.validate import RangeValidator
-from schema_mechanism.validate import SubClassValidator
 from schema_mechanism.validate import SupportedFeatureValidator
-from schema_mechanism.validate import TypeValidator
 from schema_mechanism.validate import WhiteListValidator
-from test_share.test_classes import MockSchema
-from test_share.test_classes import MockSymbolicItem
 from test_share.test_func import common_test_setup
 from test_share.test_func import satisfies_equality_checks
 from test_share.test_func import satisfies_hash_checks
@@ -54,6 +49,15 @@ class TestAcceptAllValidator(TestCase):
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
+
+    def test_encode_and_decode(self):
+        validator = AcceptAllValidator()
+
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(validator, object_registry=object_registry)
+        decoded_obj: AcceptAllValidator = decode(encoded_obj, object_registry=object_registry)
+
+        self.assertEqual(validator, decoded_obj)
 
 
 class TestRangeValidator(TestCase):
@@ -126,113 +130,18 @@ class TestRangeValidator(TestCase):
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
 
+    def test_encode_and_decode(self):
+        validator = RangeValidator(
+            low=-1.7,
+            high=3.5,
+            exclude=[3.5]
+        )
 
-class TestTypeValidator(TestCase):
-    def setUp(self) -> None:
-        common_test_setup()
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(validator, object_registry=object_registry)
+        decoded_obj: RangeValidator = decode(encoded_obj, object_registry=object_registry)
 
-        self.accept_set = {int, float}
-        self.validator = TypeValidator(self.accept_set)
-
-    def test_init(self):
-        # test: attributes should have been set during initialization
-        self.assertSetEqual(self.accept_set, self.validator.accept_set)
-
-        # test: if accept_set is empty it should generate a ValueError
-        self.assertRaises(ValueError, lambda: TypeValidator(accept_set=[]))
-
-    def test_call(self):
-
-        try:
-            # test: objects of types in accept_set should not generate a ValueError
-            for value in [1, 1.0]:
-                self.validator(value)
-
-            # test: subclasses of accepted types should be accepted
-            class IntSub(int):
-                def __new__(cls, i):
-                    return super().__new__(cls, i)
-
-            self.validator(IntSub(1))
-
-            # test: None should be accepted
-            self.validator(None)
-        except ValueError as e:
-            self.fail(f'Unexpected ValueError: {str(e)}')
-
-        # test: objects of unaccepted types should generate a ValueError
-        self.assertRaises(ValueError, lambda: self.validator('1'))
-        self.assertRaises(ValueError, lambda: self.validator(set()))
-
-    def test_equals(self):
-        obj = TypeValidator(accept_set={float})
-        other = TypeValidator(accept_set={str})
-
-        self.assertTrue(satisfies_equality_checks(obj=obj, other=other, other_different_type=1.0))
-
-    def test_hash(self):
-        self.assertTrue(satisfies_hash_checks(obj=self.validator))
-
-
-class TestSubClassValidator(TestCase):
-    def setUp(self) -> None:
-        common_test_setup()
-
-        self.accept_set = {Item, Schema}
-        self.validator = SubClassValidator(accept_set=self.accept_set)
-
-    # noinspection PyTypeChecker
-    def test_init(self):
-        # test: attributes should have been set during initialization
-        self.assertSetEqual(self.accept_set, self.validator.accept_set)
-
-        # test: if accept_set is empty it should generate a ValueError
-        self.assertRaises(ValueError, lambda: SubClassValidator(accept_set=[]))
-        self.assertRaises(ValueError, lambda: SubClassValidator(accept_set=None))
-
-    def test_call(self):
-
-        accepted_values = [
-            sym_item('1'),  # SymbolicItem
-            sym_item('1', item_type=MockSymbolicItem),  # MockSymbolicItem
-            sym_item('(1,2)'),  # CompositeItem
-            sym_schema('1,/A1/2,'),  # Schema
-            sym_schema('1,/A2/3,4', type=MockSchema),  # MockSchema
-        ]
-
-        try:
-
-            # test: objects of types or subtypes in accept_set should not generate a ValueError
-            for value in accepted_values:
-                self.validator(type(value))
-
-            # test: None should be accepted
-            self.validator(None)
-
-        except ValueError as e:
-            self.fail(f'Unexpected ValueError: {str(e)}')
-
-        rejected_values = [
-            1,
-            1.2,
-            '123',
-            [1, 2, 3],
-            {1, 2, 3},
-            Action()
-        ]
-
-        for value in rejected_values:
-            # test: objects of unaccepted types should generate a ValueError
-            self.assertRaises(ValueError, lambda: self.validator(type(value)))
-
-    def test_equals(self):
-        obj = SubClassValidator(accept_set={float})
-        other = SubClassValidator(accept_set={str})
-
-        self.assertTrue(satisfies_equality_checks(obj=obj, other=other, other_different_type=1.0))
-
-    def test_hash(self):
-        self.assertTrue(satisfies_hash_checks(obj=self.validator))
+        self.assertEqual(validator, decoded_obj)
 
 
 class TestWhiteListValidator(TestCase):
@@ -280,6 +189,17 @@ class TestWhiteListValidator(TestCase):
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
 
+    def test_encode_and_decode(self):
+        validator = WhiteListValidator(
+            accept_set=[1.0, 2.0, 3.0]
+        )
+
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(validator, object_registry=object_registry)
+        decoded_obj: WhiteListValidator = decode(encoded_obj, object_registry=object_registry)
+
+        self.assertEqual(validator, decoded_obj)
+
 
 class TestBlackListValidator(TestCase):
     def setUp(self) -> None:
@@ -326,13 +246,24 @@ class TestBlackListValidator(TestCase):
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
 
+    def test_encode_and_decode(self):
+        validator = BlackListValidator(
+            reject_set=[1.0, 2.0, 3.0]
+        )
+
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(validator, object_registry=object_registry)
+        decoded_obj: BlackListValidator = decode(encoded_obj, object_registry=object_registry)
+
+        self.assertEqual(validator, decoded_obj)
+
 
 class TestMultiValidator(TestCase):
     def setUp(self) -> None:
         common_test_setup()
 
         self.validator_set = {
-            TypeValidator(accept_set=[int]),
+            BlackListValidator(reject_set=[1.0, 2.0, 3.0]),
             RangeValidator(low=0.0, high=10.0, exclude=[10.0]),
         }
 
@@ -348,7 +279,7 @@ class TestMultiValidator(TestCase):
     def test_call(self):
         # test: value should be accepted if it passes validation for all validators
         try:
-            for value in range(10):
+            for value in range(5, 10):
                 self.validator(value)
         except ValueError as e:
             self.fail(f'Unexpected ValueError: {str(e)}')
@@ -356,7 +287,7 @@ class TestMultiValidator(TestCase):
         # test: value should raise ValueError if it fails any component validations
         self.assertRaises(ValueError, lambda: self.validator(-1))
         self.assertRaises(ValueError, lambda: self.validator(10))
-        self.assertRaises(ValueError, lambda: self.validator(0.0))
+        self.assertRaises(ValueError, lambda: self.validator(1.0))
         self.assertRaises(ValueError, lambda: self.validator('bad'))
 
     def test_equals(self):
@@ -367,6 +298,22 @@ class TestMultiValidator(TestCase):
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
+
+    def test_encode_and_decode(self):
+        validator = MultiValidator(
+            validators=[
+                AcceptAllValidator(),
+                RangeValidator(low=-10.0, high=10.0),
+                WhiteListValidator(accept_set=[1.0, 2.0, 3.0]),
+                BlackListValidator(reject_set=[2.0])
+            ]
+        )
+
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(validator, object_registry=object_registry)
+        decoded_obj: MultiValidator = decode(encoded_obj, object_registry=object_registry)
+
+        self.assertEqual(validator, decoded_obj)
 
 
 class TestElementWiseValidator(TestCase):
@@ -416,6 +363,17 @@ class TestElementWiseValidator(TestCase):
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
 
+    def test_encode_and_decode(self):
+        validator = ElementWiseValidator(
+            validator=RangeValidator(low=-10.0, high=10.0)
+        )
+
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(validator, object_registry=object_registry)
+        decoded_obj: ElementWiseValidator = decode(encoded_obj, object_registry=object_registry)
+
+        self.assertEqual(validator, decoded_obj)
+
 
 class TestSupportedFeatureValidator(TestCase):
     def setUp(self) -> None:
@@ -457,3 +415,12 @@ class TestSupportedFeatureValidator(TestCase):
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
+
+    def test_encode_and_decode(self):
+        validator = SupportedFeatureValidator()
+
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(validator, object_registry=object_registry)
+        decoded_obj: SupportedFeatureValidator = decode(encoded_obj, object_registry=object_registry)
+
+        self.assertEqual(validator, decoded_obj)

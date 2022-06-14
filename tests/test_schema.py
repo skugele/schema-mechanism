@@ -32,7 +32,6 @@ from schema_mechanism.func_api import update_schema
 from schema_mechanism.serialization.json.decoders import decode
 from schema_mechanism.serialization.json.encoders import encode
 from schema_mechanism.share import SupportedFeature
-from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from schema_mechanism.util import repr_str
 from test_share.test_classes import MockObserver
 from test_share.test_classes import MockSchema
@@ -782,7 +781,7 @@ class TestSchema(TestCase):
 
     def test_notify_all(self):
         params = get_global_params()
-        params.set('ext_context.correlation_test', DrescherCorrelationTest())
+        params.set('ext_context.correlation_test', 'DrescherCorrelationTest')
 
         self.schema.notify_all = MagicMock()
 

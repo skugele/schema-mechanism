@@ -1,3 +1,5 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from unittest import TestCase
 from unittest.mock import ANY
@@ -5,7 +7,10 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
+import schema_mechanism.serialization.json.decoders
+import schema_mechanism.serialization.json.encoders
 from schema_mechanism.core import Chain
+from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaSpinOffType
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import get_global_params
@@ -19,8 +24,7 @@ from schema_mechanism.modules import SchemaMemory
 from schema_mechanism.modules import SelectionDetails
 from schema_mechanism.modules import create_context_spin_off
 from schema_mechanism.modules import create_result_spin_off
-from schema_mechanism.serialization.json.decoders import decode
-from schema_mechanism.serialization.json.encoders import encode
+from schema_mechanism.serialization import create_manifest
 from test_share.test_func import common_test_setup
 
 
@@ -130,10 +134,10 @@ class TestSchemaMemory(TestCase):
         # |-- 2
         # |-- 4
         # +-- 101
-        self.sm = SchemaMemory(self.tree)
+        self.schema_memory = SchemaMemory(self.tree)
 
     def test_init(self):
-        self.assertEqual(len(self.tree), len(self.sm))
+        self.assertEqual(len(self.tree), len(self.schema_memory))
 
         # test: one or more bare schemas should be allowed in initializer
         try:
@@ -174,17 +178,17 @@ class TestSchemaMemory(TestCase):
 
     def test_contains(self):
         for schema in self.tree:
-            self.assertIn(schema, self.sm)
+            self.assertIn(schema, self.schema_memory)
 
         # shouldn't be in SchemaMemory
         s_not_found = sym_schema('1,2,3,4,5/A7/')
-        self.assertNotIn(s_not_found, self.sm)
+        self.assertNotIn(s_not_found, self.schema_memory)
 
     def test_iter(self):
-        iter_result = [schema for schema in self.sm]
+        iter_result = [schema for schema in self.schema_memory]
 
         self.assertEqual(len(self.all_schemas), len(iter_result))
-        self.assertSetEqual(set(self.all_schemas), set(schema for schema in self.sm))
+        self.assertSetEqual(set(self.all_schemas), set(schema for schema in self.schema_memory))
 
     def test_all_applicable(self):
         # case 1: only bare schemas without composite actions
@@ -198,7 +202,7 @@ class TestSchemaMemory(TestCase):
         # /101,/ [would be applicable, BUT no applicable controller components]
         # /101,/100, [would be applicable, BUT no applicable controller components]
         # /102,/ [would be applicable, BUT no controller components]
-        schemas = self.sm.all_applicable(state)
+        schemas = self.schema_memory.all_applicable(state)
         self.assertEqual(3, len(schemas))
 
         for schema in schemas:
@@ -216,7 +220,7 @@ class TestSchemaMemory(TestCase):
         # /A1/101, [applicable - matches all states]
         # /A2/ [applicable - matches all states]
         # 3,/A1/ [applicable - matches state == 3]
-        schemas = self.sm.all_applicable(state)
+        schemas = self.schema_memory.all_applicable(state)
         self.assertEqual(4, len(schemas))
 
         for schema in schemas:
@@ -228,7 +232,7 @@ class TestSchemaMemory(TestCase):
         # case 3: entire tree matched with the exception of single composite action schema that has a controller with
         #       : no applicable components
         state = sym_state('1,2,3,4,5,6,7,8,9,10,100,101')
-        schemas = self.sm.all_applicable(state)
+        schemas = self.schema_memory.all_applicable(state)
 
         # all schemas minus the not applicable composite action schema (/102,/)
         expected_schemas = self.all_schemas.difference({self.s102})
@@ -254,8 +258,8 @@ class TestSchemaMemory(TestCase):
 
         selected_schema = sym_schema('1,3,5,7/A1/10,')
 
-        all_schemas = set([s for s in self.sm])
-        applicable_schemas = set(self.sm.all_applicable(selection_state))
+        all_schemas = set([s for s in self.schema_memory])
+        applicable_schemas = set(self.schema_memory.all_applicable(selection_state))
         non_applicable_schemas = all_schemas - applicable_schemas
 
         selection_details = SelectionDetails(
@@ -269,7 +273,7 @@ class TestSchemaMemory(TestCase):
         for s in all_schemas:
             s.update = MagicMock()
 
-        self.sm.update_all(selection_details, result_state)
+        self.schema_memory.update_all(selection_details, result_state)
 
         for s in applicable_schemas:
             s.update.assert_called()
@@ -301,127 +305,163 @@ class TestSchemaMemory(TestCase):
 
     def test_receive_1(self):
         # create a context spin-off
-        n_schemas = len(self.sm)
+        n_schemas = len(self.schema_memory)
 
-        self.assertNotIn(sym_schema('1,3,7,9,11/A1/'), self.sm)
-        self.sm.receive(
+        self.assertNotIn(sym_schema('1,3,7,9,11/A1/'), self.schema_memory)
+        self.schema_memory.receive(
             source=sym_schema('1,3,7,9/A1/'),
             spin_off_type=SchemaSpinOffType.CONTEXT,
             relevant_items=[sym_item('11')]
         )
-        self.assertIn(sym_schema('1,3,7,9,11/A1/'), self.sm)
-        self.assertEqual(n_schemas + 1, len(self.sm))
+        self.assertIn(sym_schema('1,3,7,9,11/A1/'), self.schema_memory)
+        self.assertEqual(n_schemas + 1, len(self.schema_memory))
 
     def test_receive_2(self):
         # create a result spin-off
-        n_schemas = len(self.sm)
+        n_schemas = len(self.schema_memory)
 
-        self.assertNotIn(sym_schema('/A1/1000,'), self.sm)
+        self.assertNotIn(sym_schema('/A1/1000,'), self.schema_memory)
 
         # composite action for this result. (novel results are added as composite actions during result spin-off)
-        self.assertNotIn(sym_schema('/1000,/'), self.sm)
+        self.assertNotIn(sym_schema('/1000,/'), self.schema_memory)
 
-        self.sm.receive(
+        self.schema_memory.receive(
             source=sym_schema('/A1/'),
             spin_off_type=SchemaSpinOffType.RESULT,
             relevant_items=[sym_item('1000')]
         )
 
-        self.assertIn(sym_schema('/A1/1000,'), self.sm)
-        self.assertIn(sym_schema('/1000,/'), self.sm)
+        self.assertIn(sym_schema('/A1/1000,'), self.schema_memory)
+        self.assertIn(sym_schema('/1000,/'), self.schema_memory)
 
-        self.assertEqual(n_schemas + 2, len(self.sm))
+        self.assertEqual(n_schemas + 2, len(self.schema_memory))
 
     def test_receive_3(self):
         # create multiple context spin-offs
-        n_schemas = len(self.sm)
+        n_schemas = len(self.schema_memory)
 
-        self.assertNotIn(sym_schema('1,3,7,9,11/A1/'), self.sm)
-        self.assertNotIn(sym_schema('1,3,7,9,13/A1/'), self.sm)
-        self.sm.receive(
+        self.assertNotIn(sym_schema('1,3,7,9,11/A1/'), self.schema_memory)
+        self.assertNotIn(sym_schema('1,3,7,9,13/A1/'), self.schema_memory)
+        self.schema_memory.receive(
             source=sym_schema('1,3,7,9/A1/'),
             spin_off_type=SchemaSpinOffType.CONTEXT,
             relevant_items=sym_items('11;13')
         )
-        self.assertIn(sym_schema('1,3,7,9,11/A1/'), self.sm)
-        self.assertIn(sym_schema('1,3,7,9,13/A1/'), self.sm)
-        self.assertEqual(n_schemas + 2, len(self.sm))
+        self.assertIn(sym_schema('1,3,7,9,11/A1/'), self.schema_memory)
+        self.assertIn(sym_schema('1,3,7,9,13/A1/'), self.schema_memory)
+        self.assertEqual(n_schemas + 2, len(self.schema_memory))
 
     def test_receive_4(self):
         # create multiple result spin-offs
-        n_schemas = len(self.sm)
+        n_schemas = len(self.schema_memory)
 
-        self.assertNotIn(sym_schema('/A1/1000,'), self.sm)
-        self.assertNotIn(sym_schema('/A1/1001,'), self.sm)
+        self.assertNotIn(sym_schema('/A1/1000,'), self.schema_memory)
+        self.assertNotIn(sym_schema('/A1/1001,'), self.schema_memory)
 
         # composite actions for these results. (novel results are added as composite actions during result spin-off)
-        self.assertNotIn(sym_schema('/1000,/'), self.sm)
-        self.assertNotIn(sym_schema('/1001,/'), self.sm)
+        self.assertNotIn(sym_schema('/1000,/'), self.schema_memory)
+        self.assertNotIn(sym_schema('/1001,/'), self.schema_memory)
 
-        self.sm.receive(
+        self.schema_memory.receive(
             source=sym_schema('/A1/'),
             spin_off_type=SchemaSpinOffType.RESULT,
             relevant_items=sym_items('1000;1001')
         )
 
-        self.assertIn(sym_schema('/A1/1000,'), self.sm)
-        self.assertIn(sym_schema('/A1/1001,'), self.sm)
+        self.assertIn(sym_schema('/A1/1000,'), self.schema_memory)
+        self.assertIn(sym_schema('/A1/1001,'), self.schema_memory)
 
         # new composite actions
-        self.assertIn(sym_schema('/1000,/'), self.sm)
-        self.assertIn(sym_schema('/1001,/'), self.sm)
+        self.assertIn(sym_schema('/1000,/'), self.schema_memory)
+        self.assertIn(sym_schema('/1001,/'), self.schema_memory)
 
         # 4 = 2 (new result spin-offs) + 2 (new basic composite action schemas)
-        self.assertEqual(n_schemas + 4, len(self.sm))
+        self.assertEqual(n_schemas + 4, len(self.schema_memory))
 
     def test_receive_5(self):
         # create multiple context spin-offs, one of which already exists in schema memory
-        n_schemas = len(self.sm)
+        n_schemas = len(self.schema_memory)
 
-        self.assertIn(sym_schema('1,3/A1/'), self.sm)
-        self.assertNotIn(sym_schema('3,6/A1/'), self.sm)
-        self.sm.receive(
+        self.assertIn(sym_schema('1,3/A1/'), self.schema_memory)
+        self.assertNotIn(sym_schema('3,6/A1/'), self.schema_memory)
+        self.schema_memory.receive(
             source=sym_schema('3,/A1/'),
             spin_off_type=SchemaSpinOffType.CONTEXT,
             relevant_items=sym_items('1;6')
         )
-        self.assertIn(sym_schema('1,3/A1/'), self.sm)
-        self.assertIn(sym_schema('3,6/A1/'), self.sm)
+        self.assertIn(sym_schema('1,3/A1/'), self.schema_memory)
+        self.assertIn(sym_schema('3,6/A1/'), self.schema_memory)
 
         # should only be one new schema
-        self.assertEqual(n_schemas + 1, len(self.sm))
+        self.assertEqual(n_schemas + 1, len(self.schema_memory))
 
     def test_receive_6(self):
         # create multiple result spin-offs, one of which already exists in schema memory
-        n_schemas = len(self.sm)
+        n_schemas = len(self.schema_memory)
 
         # sanity check: schema '/A1/101/' should exist in tree, but not '/A1/1001'
-        self.assertIn(sym_schema('/A1/101,'), self.sm)
-        self.assertNotIn(sym_schema('/A1/1001,'), self.sm)
+        self.assertIn(sym_schema('/A1/101,'), self.schema_memory)
+        self.assertNotIn(sym_schema('/A1/1001,'), self.schema_memory)
 
         # composite actions for these results. (novel results are added as composite actions during result spin-off)
-        self.assertIn(sym_schema('/101,/'), self.sm)
-        self.assertNotIn(sym_schema('/1001,/'), self.sm)
+        self.assertIn(sym_schema('/101,/'), self.schema_memory)
+        self.assertNotIn(sym_schema('/1001,/'), self.schema_memory)
 
-        self.sm.receive(
+        self.schema_memory.receive(
             source=sym_schema('/A1/'),
             spin_off_type=SchemaSpinOffType.RESULT,
             relevant_items=sym_items('101;1001')
         )
 
         # test: new result spin-off should have been added
-        self.assertIn(sym_schema('/A1/1001,'), self.sm)
+        self.assertIn(sym_schema('/A1/1001,'), self.schema_memory)
 
         # test: new bare schema with novel composite action should have been added
-        self.assertIn(sym_schema('/1001,/'), self.sm)
+        self.assertIn(sym_schema('/1001,/'), self.schema_memory)
 
         # test: adds 1 new result spin-off and 1 new bare schema for novel result
-        self.assertEqual(n_schemas + 2, len(self.sm))
+        self.assertEqual(n_schemas + 2, len(self.schema_memory))
 
-    def test_encode_and_decode(self):
-        object_registry: dict[int, Any] = dict()
+    def test_save_and_load(self):
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir)
 
-        encoded_obj = encode(self.sm, object_registry=object_registry)
-        decoded_obj: SchemaMemory = decode(encoded_obj, object_registry=object_registry)
+            object_registry: dict[str, Any] = dict()
+            manifest = create_manifest()
 
-        self.assertEqual(self.sm, decoded_obj)
+            # sanity check: directory should initially contain no files
+            files_in_temp_dir = [file for file in path.glob('**/*') if file.is_file()]
+            self.assertTrue(len(files_in_temp_dir) == 0)
+
+            self.schema_memory.save(
+                path=path,
+                manifest=manifest,
+                object_registry=object_registry,
+                overwrite=False,
+                encoder=schema_mechanism.serialization.json.encoders.encode
+            )
+
+            # test: directory should contain serialized file(s)
+            files_in_temp_dir = [file for file in path.glob('**/*') if file.is_file()]
+            self.assertTrue(len(files_in_temp_dir) > 0)
+
+            # test: returned manifest should contain an entry to each serialized sub-component
+            manifest_for_schema_memory = manifest['objects']['SchemaMemory']
+
+            self.assertIn('schema_collection', manifest_for_schema_memory)
+            schema_collection_filepath = Path(manifest_for_schema_memory['schema_collection'])
+
+            # test: a file should exist in the temporary directory for each sub-component
+            self.assertIn(schema_collection_filepath, files_in_temp_dir)
+
+            recovered_schema_memory = SchemaMemory.load(
+                manifest=manifest,
+                decoder=schema_mechanism.serialization.json.decoders.decode,
+                object_registry=object_registry
+            )
+
+            self.assertEqual(self.schema_memory, recovered_schema_memory)
+
+            schema_pool = SchemaPool()
+            for schema in recovered_schema_memory:
+                self.assertTrue(schema in schema_pool)

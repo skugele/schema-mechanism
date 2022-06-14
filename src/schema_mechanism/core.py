@@ -34,10 +34,8 @@ from anytree import RenderTree
 
 from schema_mechanism.parameters import GlobalParams
 from schema_mechanism.share import SupportedFeature
-from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
+from schema_mechanism.strategies import correlation_test
 from schema_mechanism.strategies.correlation_test import CorrelationTable
-from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
-from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
 from schema_mechanism.strategies.correlation_test import ItemCorrelationTest
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.trace import AccumulatingTrace
@@ -51,10 +49,9 @@ from schema_mechanism.util import Singleton
 from schema_mechanism.util import UniqueIdMixin
 from schema_mechanism.util import pairwise
 from schema_mechanism.util import repr_str
-from schema_mechanism.validate import MultiValidator
 from schema_mechanism.validate import RangeValidator
 from schema_mechanism.validate import SupportedFeatureValidator
-from schema_mechanism.validate import TypeValidator
+from schema_mechanism.validate import WhiteListValidator
 
 logger = logging.getLogger(__name__)
 
@@ -643,7 +640,9 @@ class ECItemStats(ItemStats):
     @property
     def correlation_test(self) -> ItemCorrelationTest:
         params = get_global_params()
-        return params.get('ext_context.correlation_test') or FisherExactCorrelationTest()
+
+        test_name = params.get('ext_context.correlation_test') or 'DrescherCorrelationTest'
+        return correlation_test.name_to_type_map[test_name]
 
     @property
     def positive_correlation_threshold(self) -> float:
@@ -723,7 +722,8 @@ class ERItemStats(ItemStats):
     @property
     def correlation_test(self) -> ItemCorrelationTest:
         params = get_global_params()
-        return params.get('ext_result.correlation_test') or FisherExactCorrelationTest()
+        test_name = params.get('ext_result.correlation_test') or 'DrescherCorrelationTest'
+        return correlation_test.name_to_type_map[test_name]
 
     @property
     def positive_correlation_threshold(self) -> float:
@@ -1548,12 +1548,12 @@ class Action(UniqueIdMixin):
             if self._label and other._label:
                 return self._label == other._label
             else:
-                return self._uid == other._uid
+                return self.uid == other.uid
 
         return False if other is None else NotImplemented
 
     def __hash__(self) -> int:
-        return hash(self._label or self._uid)
+        return hash(self._label or self.uid)
 
     def __str__(self) -> str:
         return self._label or str(self.uid)
@@ -2007,8 +2007,8 @@ class Schema(Observer, Observable, UniqueIdMixin):
 
 class SchemaUniqueKey(NamedTuple):
     action: Action
-    context: Optional[StateAssertion] = None
-    result: Optional[StateAssertion] = None
+    context: Optional[StateAssertion] = NULL_STATE_ASSERT
+    result: Optional[StateAssertion] = NULL_STATE_ASSERT
 
 
 class SchemaPool(metaclass=Singleton):
@@ -2017,8 +2017,11 @@ class SchemaPool(metaclass=Singleton):
     """
     _schemas: dict[SchemaUniqueKey, Schema] = dict()
 
-    def __contains__(self, key: SchemaUniqueKey) -> bool:
-        return key in SchemaPool._schemas
+    def __contains__(self, schema: Schema) -> bool:
+        if not isinstance(schema, Schema):
+            return False
+
+        return schema.unique_key in SchemaPool._schemas
 
     def __len__(self) -> int:
         return len(SchemaPool._schemas)
@@ -2109,16 +2112,18 @@ class SchemaTreeNode(NodeMixin, UniqueIdMixin):
                  context: Optional[StateAssertion] = None,
                  schemas_satisfied_by: Optional[Iterable[Schema]] = None,
                  schemas_would_satisfy: Optional[Iterable[Schema]] = None,
-                 label: str = None) -> None:
+                 label: str = None,
+                 parent: SchemaTreeNode = None,
+                 uid: int = None) -> None:
         self.context = context.flatten() if context else NULL_STATE_ASSERT
 
-        self._schemas_satisfied_by: set[Schema] = (
+        self.schemas_satisfied_by: set[Schema] = (
             set()
             if schemas_satisfied_by is None
             else set(schemas_satisfied_by)
         )
 
-        self._schemas_would_satisfy: set[Schema] = (
+        self.schemas_would_satisfy: set[Schema] = (
             set()
             if schemas_would_satisfy is None
             else set(schemas_would_satisfy)
@@ -2126,7 +2131,11 @@ class SchemaTreeNode(NodeMixin, UniqueIdMixin):
 
         self.label = label
 
-        super().__init__()
+        if parent is not None:
+            self.parent = parent
+
+        NodeMixin.__init__(self)
+        UniqueIdMixin.__init__(self, uid=uid)
 
     def __hash__(self) -> int:
         return hash(self.context)
@@ -2156,52 +2165,31 @@ class SchemaTreeNode(NodeMixin, UniqueIdMixin):
                                'schemas_would_satisfy': self.schemas_would_satisfy,
                                'label': self.label})
 
-    @property
-    def schemas_satisfied_by(self) -> set[Schema]:
-        return self._schemas_satisfied_by
-
-    @schemas_satisfied_by.setter
-    def schemas_satisfied_by(self, value: Iterable[Schema]) -> None:
-        self._schemas_satisfied_by = set(value)
-
-    @property
-    def schemas_would_satisfy(self) -> set[Schema]:
-        return self._schemas_would_satisfy
-
-    @schemas_would_satisfy.setter
-    def schemas_would_satisfy(self, value: Iterable[Schema]) -> None:
-        self._schemas_would_satisfy = set(value)
-
 
 class SchemaTree(SchemaSearchCollection):
     """ A search tree of SchemaTreeNodes """
 
-    def __init__(
-            self,
-            root: Optional[SchemaTreeNode] = None,
-            nodes_map: Optional[dict[StateAssertion, SchemaTreeNode]] = None
-    ) -> None:
+    def __init__(self, root: Optional[SchemaTreeNode] = None) -> None:
         """ Initializes a SchemaTree.
 
-        Optionally, a root node and a nodes map can be provided to initialize this SchemaTree. This would typically be
-        used to initialize a SchemaTree from a previous learned SchemaTree instance.
+        Optionally, a root node an be provided to initialize this SchemaTree. This would typically be used to initialize
+        a SchemaTree from a previously learned SchemaTree instance.
 
         :param root: an optional root SchemaTreeNode to be used as this tree's root node
-        :param nodes_map: an optional map from SchemaTreeNode contexts' to their SchemaTreeNodes
         """
-        if not root and nodes_map:
-            raise ValueError('Root node is required when nodes map sent to initializer')
-
         self._root = root or SchemaTreeNode(label='root')
-        self._nodes_map: dict[StateAssertion, SchemaTreeNode] = dict()
-
-        # initialize nodes map from supplied instance (it is assumed that root exists in this nodes map)
-        if nodes_map:
-            self._nodes_map.update(nodes_map)
-        self._nodes_map[self._root.context.flatten()] = self._root
+        self._nodes_map: dict[StateAssertion, SchemaTreeNode] = self._generate_nodes_map_from_root(self._root)
 
         # raises a ValueError if tree is invalid
         self.validate()
+
+    def _generate_nodes_map_from_root(self, root: SchemaTreeNode) -> dict[StateAssertion, SchemaTreeNode]:
+        nodes_map: dict[StateAssertion, SchemaTreeNode] = dict()
+
+        for node in LevelOrderIter(node=root):
+            nodes_map[node.context] = node
+
+        return nodes_map
 
     def __iter__(self) -> Iterator[Schema]:
         for node in LevelOrderIter(node=self.root):
@@ -2242,6 +2230,9 @@ class SchemaTree(SchemaSearchCollection):
         logger.debug(f'adding schemas! [{[str(s) for s in schemas]}]')
 
         for schema in schemas:
+            # ensure schema is in schema pool
+            schema = SchemaPool().get(schema.unique_key)
+
             self._update_schemas_satisfied_by(schema, source)
             self._update_schemas_would_satisfy(schema)
 
@@ -2609,59 +2600,66 @@ default_action_trace = AccumulatingTrace(
 
 
 def get_default_global_params() -> GlobalParams:
+    zero_to_one_range_validator = RangeValidator(0.0, 1.0)
+    item_correlation_validator = WhiteListValidator([
+        'BarnardExactCorrelationTest',
+        'CorrelationOnEncounter',
+        'DrescherCorrelationTest',
+        'FisherExactCorrelationTest',
+    ])
+
     params = GlobalParams()
 
     # determines step size for incremental updates (e.g., this is used for delegated value updates)
-    params.set(name='learning_rate', value=0.01, validator=RangeValidator(0.0, 1.0))
+    params.set(name='learning_rate', value=0.01, validator=zero_to_one_range_validator)
 
     # item correlation test used for determining relevance of extended context items
     params.set(
         name='ext_context.correlation_test',
-        value=DrescherCorrelationTest,
-        validator=TypeValidator([ItemCorrelationTest])
+        value='DrescherCorrelationTest',
+        validator=item_correlation_validator
     )
 
     # item correlation test used for determining relevance of extended result items
     params.set(
         name='ext_result.correlation_test',
-        value=CorrelationOnEncounter,
-        validator=TypeValidator([ItemCorrelationTest])
+        value='CorrelationOnEncounter',
+        validator=item_correlation_validator
     )
 
     # thresholds for determining the relevance of extended context items
     #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
-    params.set(name='ext_context.positive_correlation_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
-    params.set(name='ext_context.negative_correlation_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
+    params.set(name='ext_context.positive_correlation_threshold', value=0.95, validator=zero_to_one_range_validator)
+    params.set(name='ext_context.negative_correlation_threshold', value=0.95, validator=zero_to_one_range_validator)
 
     # thresholds for determining the relevance of extended result items
     #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
-    params.set(name='ext_result.positive_correlation_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
-    params.set(name='ext_result.negative_correlation_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
+    params.set(name='ext_result.positive_correlation_threshold', value=0.95, validator=zero_to_one_range_validator)
+    params.set(name='ext_result.negative_correlation_threshold', value=0.95, validator=zero_to_one_range_validator)
 
     # success threshold used for determining that a schema is reliable
     #     from 0.0 [schema has never succeeded] to 1.0 [schema always succeeds]
-    params.set(name='schema.reliability_threshold', value=0.95, validator=RangeValidator(0.0, 1.0))
+    params.set(name='schema.reliability_threshold', value=0.95, validator=zero_to_one_range_validator)
 
     # used by backward_chains (supports composite action) - determines the maximum chain length
     params.set(
         name='composite_actions.backward_chains.max_length',
         value=4,
-        validator=MultiValidator([TypeValidator([int]), RangeValidator(low=0)])
+        validator=RangeValidator(low=0)
     )
 
     # the probability of updating (via backward chains) the components associated with a composite action controller
     params.set(
         name='composite_actions.update_frequency',
         value=0.01,
-        validator=RangeValidator(0.0, 1.0)
+        validator=zero_to_one_range_validator
     )
 
     # composite actions are created for novel result states that have values that are greater than the baseline
     # value by AT LEAST this amount
     params.set(
         name='composite_actions.min_baseline_advantage',
-        value=0.25,
-        validator=TypeValidator([float])
+        value=0.25
     )
 
     # set default features

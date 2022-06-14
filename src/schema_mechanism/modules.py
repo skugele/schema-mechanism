@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import logging
-from collections import Iterable
 from collections import deque
 from collections.abc import Collection
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from enum import auto
+from pathlib import Path
 from typing import Any
+from typing import Callable
+from typing import Iterable
 from typing import Optional
+from typing import Protocol
+from typing import runtime_checkable
 
 from schema_mechanism.core import Action
 from schema_mechanism.core import Chain
@@ -24,6 +28,7 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaSearchCollection
 from schema_mechanism.core import SchemaSpinOffType
+from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
@@ -45,9 +50,23 @@ from schema_mechanism.core import set_delegated_value_helper
 from schema_mechanism.core import set_global_params
 from schema_mechanism.core import set_global_stats
 from schema_mechanism.parameters import GlobalParams
+from schema_mechanism.serialization import DEFAULT_ENCODING
+from schema_mechanism.serialization import Manifest
+from schema_mechanism.serialization import ObjectRegistry
+from schema_mechanism.serialization import create_manifest
+from schema_mechanism.serialization import create_object_registry
+from schema_mechanism.serialization import decoder_map
+from schema_mechanism.serialization import deserialize
+from schema_mechanism.serialization import encoder_map
+from schema_mechanism.serialization import get_serialization_filename
+from schema_mechanism.serialization import load_manifest
+from schema_mechanism.serialization import load_object_registry
+from schema_mechanism.serialization import save_manifest
+from schema_mechanism.serialization import save_object_registry
+from schema_mechanism.serialization import serialize
 from schema_mechanism.share import SupportedFeature
+from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
-from schema_mechanism.strategies.evaluation import NoOpEvaluationStrategy
 from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.selection import SelectionStrategy
 from schema_mechanism.strategies.trace import Trace
@@ -55,6 +74,23 @@ from schema_mechanism.util import Observer
 from schema_mechanism.util import rng
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class SerializableModule(Protocol):
+
+    def save(
+            self,
+            path: Path,
+            manifest: Manifest,
+            overwrite: bool = True,
+            encoder: Callable = None,
+            object_registry: ObjectRegistry = None,
+    ) -> None:
+        """ Serializes this object to disk and updates manifest. """
+
+    def load(self, manifest: Manifest, decoder: Callable = None, object_registry: ObjectRegistry = None) -> Any:
+        """ Deserializes and returns an instance of this object based on the supplied manifest. """
 
 
 class SchemaMemory(Observer):
@@ -265,6 +301,41 @@ class SchemaMemory(Observer):
 
         self.schema_collection.add(source=source, schemas=spin_offs)
 
+    def save(
+            self,
+            path: Path,
+            manifest: dict,
+            overwrite: bool = True,
+            encoder: Callable = None,
+            object_registry: dict[str, Any] = None,
+    ) -> None:
+
+        """ Serializes this object to disk and updates a manifest containing saved sub-components and their paths. """
+        schema_collection_filepath = path / get_serialization_filename(object_name='schema_collection')
+        serialize(
+            self.schema_collection,
+            encoder=encoder,
+            path=schema_collection_filepath,
+            overwrite=overwrite,
+            object_registry=object_registry
+        )
+
+        # update manifest with module information
+        manifest['objects']['SchemaMemory'] = {
+            'schema_collection': str(schema_collection_filepath)
+        }
+
+    @classmethod
+    def load(cls, manifest: dict, decoder: Callable = None, object_registry: dict[str, Any] = None) -> SchemaMemory:
+        """ Deserializes an instance of this object from disk based on the supplied manifest. """
+        schema_collection_filepath = Path(manifest['objects']['SchemaMemory']['schema_collection'])
+        schema_collection = deserialize(
+            path=schema_collection_filepath,
+            decoder=decoder,
+            object_registry=object_registry
+        )
+        return SchemaMemory(schema_collection)
+
     def _new_composite_action_needed(self, source: Schema, spin_off: Schema, spin_off_type: SchemaSpinOffType) -> bool:
         """ Returns whether a new composite action is needed.
 
@@ -383,11 +454,25 @@ class SchemaSelection:
         :param evaluation_strategy: a strategy for calculating the selection importance of applicable schemas
         """
         self.select_strategy: SelectionStrategy = select_strategy or RandomizeBestSelectionStrategy()
-        self.evaluation_strategy: EvaluationStrategy = evaluation_strategy or NoOpEvaluationStrategy()
+        self.evaluation_strategy: EvaluationStrategy = evaluation_strategy or DefaultEvaluationStrategy()
 
         # a stack of previously selected, non-terminated schemas with composite actions used for nested invocations
         # of controller components with composite actions
         self._pending_schemas_stack: deque[PendingDetails] = deque()
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, SchemaSelection):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.select_strategy == other.select_strategy,
+                        self.evaluation_strategy == other.evaluation_strategy,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented
 
     def select(self, schemas: Sequence[Schema], state: State) -> SelectionDetails:
         """ Selects a schema for explicit activation from the supplied list of applicable schemas.
@@ -562,92 +647,84 @@ class SchemaSelection:
 
         return interrupted_list
 
+    def save(
+            self,
+            path: Path,
+            manifest: dict,
+            overwrite: bool = True,
+            encoder: Callable = None,
+            object_registry: dict[str, Any] = None,
+    ) -> None:
+        """ Serializes this object to disk and updates manifest. """
+
+        # serialize selection strategy
+        select_strategy_filepath = path / get_serialization_filename(object_name='select_strategy')
+        serialize(
+            self.select_strategy,
+            encoder=encoder,
+            path=select_strategy_filepath,
+            overwrite=overwrite,
+            object_registry=object_registry
+        )
+
+        # serialize global stats
+        evaluation_strategy_filepath = path / get_serialization_filename(object_name='evaluation_strategy')
+        serialize(
+            self.evaluation_strategy,
+            encoder=encoder,
+            path=evaluation_strategy_filepath,
+            overwrite=overwrite,
+            object_registry=object_registry
+        )
+
+        # update manifest with SchemaSelection's sub-components
+        manifest['objects']['SchemaSelection'] = {
+            'select_strategy': str(select_strategy_filepath),
+            'evaluation_strategy': str(evaluation_strategy_filepath),
+        }
+
+    @classmethod
+    def load(cls, manifest: dict, decoder: Callable = None, object_registry: dict[str, Any] = None) -> SchemaSelection:
+        select_strategy_filepath = Path(manifest['objects']['SchemaSelection']['select_strategy'])
+        select_strategy = deserialize(
+            path=select_strategy_filepath,
+            decoder=decoder,
+            object_registry=object_registry
+        )
+
+        evaluation_strategy_filepath = Path(manifest['objects']['SchemaSelection']['evaluation_strategy'])
+        evaluation_strategy = deserialize(
+            path=evaluation_strategy_filepath,
+            decoder=decoder,
+            object_registry=object_registry
+        )
+
+        return SchemaSelection(
+            select_strategy=select_strategy,
+            evaluation_strategy=evaluation_strategy
+        )
+
 
 class SchemaMechanism:
-    def __init__(self,
-                 items: Iterable[Item],
-                 schema_memory: SchemaMemory,
-                 schema_selection: SchemaSelection,
-                 global_params: GlobalParams = None,
-                 global_stats: GlobalStats = None,
-                 delegated_value_helper: DelegatedValueHelper = None,
-                 action_trace: Trace[Action] = None):
+    def __init__(self, schema_memory: SchemaMemory, schema_selection: SchemaSelection):
         super().__init__()
 
-        self._schema_memory: SchemaMemory = schema_memory
-        self._schema_selection: SchemaSelection = schema_selection
+        self.schema_memory: SchemaMemory = schema_memory
+        self.schema_selection: SchemaSelection = schema_selection
 
-        if global_params:
-            set_global_params(global_params)
-        else:
-            set_global_params(default_global_params)
-
-        if global_stats:
-            set_global_stats(global_stats)
-        else:
-            set_global_stats(default_global_stats)
-
-        if delegated_value_helper:
-            set_delegated_value_helper(delegated_value_helper)
-        else:
-            set_delegated_value_helper(default_delegated_value_helper)
-
-        if action_trace:
-            set_action_trace(action_trace)
-        else:
-            set_action_trace(default_action_trace)
-
-        # initialize traces
-        built_in_actions = {schema.action for schema in self.schema_memory}
-        get_action_trace().add(built_in_actions)
-
-        # pool references (used primarily for serialization)
-        self._item_pool: ItemPool = ItemPool()
-        self._schema_pool: SchemaPool = SchemaPool()
-
-        # ensure that all primitive items exist in the ItemPool
-        for item in items:
-            if item not in self._item_pool:
-                _ = self._item_pool.get(
-                    item.source,
-                    primitive_value=item.primitive_value,
-                    delegated_value=item.delegated_value
+    def __eq__(self, other) -> bool:
+        if isinstance(other, SchemaMechanism):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.schema_memory == other.schema_memory,
+                        self.schema_selection == other.schema_selection,
+                    ]
                 )
-
-            # ensure that item's initial delegated value was added to delegated value helper
-            self.delegated_value_helper.set_delegated_value(item, item.delegated_value)
-
-    @property
-    def schema_memory(self) -> SchemaMemory:
-        return self._schema_memory
-
-    @property
-    def schema_selection(self) -> SchemaSelection:
-        return self._schema_selection
-
-    @property
-    def delegated_value_helper(self) -> DelegatedValueHelper:
-        return get_delegated_value_helper()
-
-    @property
-    def action_trace(self) -> Trace[Action]:
-        return get_action_trace()
-
-    @property
-    def params(self) -> GlobalParams:
-        """ Retrieves the global parameters.
-
-        :return: a reference to the GlobalParams
-        """
-        return get_global_params()
-
-    @property
-    def stats(self) -> GlobalStats:
-        """ Retrieves the global statistics.
-
-        :return: a reference to the GlobalStats
-        """
-        return get_global_stats()
+            )
+        return False if other is None else NotImplemented
 
     def select(self, state: State, **_kwargs) -> SelectionDetails:
         applicable_schemas = self.schema_memory.all_applicable(state)
@@ -657,6 +734,7 @@ class SchemaMechanism:
         self.schema_memory.update_all(selection_details=selection_details, result_state=result_state)
         self.update(result_state, selection_details)
 
+    # TODO: this can be made private
     def update(self, result_state, selection_details):
         selected_schema = selection_details.selected
         selection_state = selection_details.selection_state
@@ -666,11 +744,209 @@ class SchemaMechanism:
         actions = [pending_details.schema.action for pending_details in terminated_pending_details]
         actions.append(selected_schema.action)
 
-        self.action_trace.update(actions)
-        self.delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
+        action_trace: Trace[Action] = get_action_trace()
+        action_trace.update(actions)
 
-        # updates global statistics
-        self.stats.update(selection_state=selection_state, result_state=result_state)
+        delegated_value_helper: DelegatedValueHelper = get_delegated_value_helper()
+        delegated_value_helper.update(selection_state=selection_state, result_state=result_state)
+
+        global_stats: GlobalStats = get_global_stats()
+        global_stats.update(selection_state=selection_state, result_state=result_state)
+
+    def save(
+            self,
+            path: Path,
+            manifest: dict,
+            overwrite: bool = True,
+            encoder: Callable = None,
+            object_registry: dict[str, Any] = None,
+    ) -> None:
+        """ Serializes this object to disk and updates manifest. """
+
+        # serialize sub-modules
+        self.schema_memory.save(
+            path=path, manifest=manifest, overwrite=overwrite, encoder=encoder, object_registry=object_registry)
+
+        self.schema_selection.save(
+            path=path, manifest=manifest, overwrite=overwrite, encoder=encoder, object_registry=object_registry)
+
+        # update manifest with SchemaMechanism's sub-components
+        manifest['objects']['SchemaMechanism'] = {
+            'schema_memory': 'SchemaMemory',
+            'schema_selection': 'SchemaSelection',
+        }
+
+    @classmethod
+    def load(cls, manifest: dict, decoder: Callable = None, object_registry: dict[str, Any] = None) -> SchemaMechanism:
+        """ Deserializes and returns an instance of this object based on the supplied manifest. """
+
+        # load schema memory
+        schema_memory = SchemaMemory.load(manifest=manifest, decoder=decoder, object_registry=object_registry)
+        schema_selection = SchemaSelection.load(manifest=manifest, decoder=decoder, object_registry=object_registry)
+
+        return SchemaMechanism(
+            schema_memory=schema_memory,
+            schema_selection=schema_selection
+        )
+
+
+def init(
+        items: Iterable[Item],
+        actions: Iterable[Action],
+        global_params: GlobalParams = None,
+        global_stats: GlobalStats = None,
+        delegated_value_helper: DelegatedValueHelper = None,
+        action_trace: Trace[Action] = None
+) -> SchemaMechanism:
+    """ A convenience method for initializing a SchemaMechanism and supporting objects. """
+    if not items or all((item.primitive_value == 0 for item in items)):
+        raise ValueError('At least one item with primitive value must be provided.')
+
+    if not actions:
+        raise ValueError('At least one built-in action must be provided.')
+
+    if global_params:
+        set_global_params(global_params)
+    else:
+        set_global_params(default_global_params)
+
+    if global_stats:
+        set_global_stats(global_stats)
+    else:
+        set_global_stats(default_global_stats)
+
+    if delegated_value_helper:
+        set_delegated_value_helper(delegated_value_helper)
+    else:
+        set_delegated_value_helper(default_delegated_value_helper)
+
+    if action_trace:
+        set_action_trace(action_trace)
+    else:
+        set_action_trace(default_action_trace)
+
+    # add built-in actions to action trace
+    action_trace = get_action_trace()
+    action_trace.add(actions)
+
+    item_pool: ItemPool = ItemPool()
+
+    # ensure that all primitive items exist in the ItemPool
+    for item in items:
+        if item not in item_pool:
+            _ = item_pool.get(
+                item.source,
+                primitive_value=item.primitive_value,
+                delegated_value=item.delegated_value
+            )
+
+    # create bare schemas for primitive actions
+    bare_schemas = {Schema(action=action) for action in actions}
+
+    schema_collection = SchemaTree()
+    schema_collection.add(schemas=bare_schemas)
+
+    schema_memory = SchemaMemory(schema_collection=schema_collection)
+    schema_selection = SchemaSelection()
+
+    schema_mechanism = SchemaMechanism(
+        schema_memory=schema_memory,
+        schema_selection=schema_selection
+    )
+
+    return schema_mechanism
+
+
+def save(
+        modules: Iterable[SerializableModule],
+        path: Path,
+        overwrite: bool = True,
+        encoding: str = None) -> Manifest:
+    encoding = encoding or DEFAULT_ENCODING
+    manifest: Manifest = create_manifest(encoding)
+    object_registry: ObjectRegistry = create_object_registry()
+
+    encoder = encoder_map[encoding]
+
+    # serialize global parameters
+    global_params = get_global_params()
+    global_params_filepath = path / get_serialization_filename(object_name='global_params')
+    serialize(
+        global_params,
+        encoder=encoder,
+        path=global_params_filepath,
+        overwrite=overwrite,
+        object_registry=object_registry
+    )
+    manifest['objects']['GlobalParams'] = str(global_params_filepath)
+
+    # serialize global stats
+    global_stats = get_global_stats()
+    global_stats_filepath = path / get_serialization_filename(object_name='global_stats')
+    serialize(
+        global_stats,
+        encoder=encoder,
+        path=global_stats_filepath,
+        overwrite=overwrite,
+        object_registry=object_registry
+    )
+    manifest['objects']['GlobalStats'] = str(global_stats_filepath)
+
+    for module in modules:
+        module.save(
+            path=path,
+            manifest=manifest,
+            overwrite=overwrite,
+            encoder=encoder,
+            object_registry=object_registry
+        )
+
+    save_object_registry(object_registry, manifest=manifest, path=path, encoder=encoder, overwrite=overwrite)
+    save_manifest(manifest, path=path, overwrite=overwrite)
+
+    return manifest
+
+
+def load(path: Path) -> SchemaMechanism:
+    manifest = load_manifest(path=path)
+
+    decoder = decoder_map[manifest['encoding']]
+
+    object_registry_filepath = Path(manifest['object_registry'])
+    object_registry: ObjectRegistry = (
+        load_object_registry(path=object_registry_filepath, decoder=decoder)
+        if object_registry_filepath else None
+    )
+
+    # deserialize global params
+    global_params_filepath = Path(manifest['objects']['GlobalParams'])
+    global_params = deserialize(
+        path=global_params_filepath,
+        decoder=decoder,
+    )
+    set_global_params(global_params)
+
+    # deserialize global stats
+    global_stats_filepath = Path(manifest['objects']['GlobalStats'])
+    global_stats = deserialize(
+        path=global_stats_filepath,
+        decoder=decoder,
+    )
+    set_global_stats(global_stats)
+
+    schema_mechanism = SchemaMechanism.load(
+        manifest=manifest,
+        decoder=decoder,
+        object_registry=object_registry
+    )
+
+    # add actions to action trace
+    action_trace = get_action_trace()
+
+    actions = {schema.action for schema in schema_mechanism.schema_memory}
+    action_trace.add(actions)
+
+    return schema_mechanism
 
 
 def create_spin_off(schema: Schema, spin_off_type: SchemaSpinOffType, item: Item) -> Schema:
@@ -699,7 +975,8 @@ def create_spin_off(schema: Schema, spin_off_type: SchemaSpinOffType, item: Item
         if len(new_context) > 1:
             _ = ItemPool().get(new_context.as_state(), item_type=CompositeItem)
 
-        return SchemaPool().get(SchemaUniqueKey(action=schema.action, context=new_context, result=schema.result))
+        return SchemaPool().get(
+            SchemaUniqueKey(action=schema.action, context=new_context, result=schema.result))
 
     elif SchemaSpinOffType.RESULT == spin_off_type:
         if not schema.is_bare():
@@ -711,7 +988,8 @@ def create_spin_off(schema: Schema, spin_off_type: SchemaSpinOffType, item: Item
             else schema.result.union([item])
         )
 
-        return SchemaPool().get(SchemaUniqueKey(action=schema.action, context=schema.context, result=new_result))
+        return SchemaPool().get(
+            SchemaUniqueKey(action=schema.action, context=schema.context, result=new_result))
 
     else:
         raise ValueError(f'Unsupported spin-off mode: {spin_off_type}')

@@ -33,31 +33,27 @@ class Singleton(type, metaclass=ABCMeta):
 
 class UniqueIdRegistry:
     _last_uid: int = 0
-    _allocated_uids: set[int] = set()
+    _allocated_uids: set[str] = set()
 
     @classmethod
-    def allocate_uid(cls, obj: Any, /, uid: Optional[int] = None) -> int:
+    def allocate_uid(cls, obj: Any, /, uid: Optional[str] = None) -> str:
         if uid and uid in cls._allocated_uids:
             raise ValueError(f'Requested unique id \'{uid}\' has already been allocated')
 
         cls._last_uid += 1
-        while cls._last_uid in cls._allocated_uids:
+        while str(cls._last_uid) in cls._allocated_uids:
             cls._last_uid += 1
 
-        cls._allocated_uids.add(cls._last_uid)
-
-        return cls._last_uid
+        uid = str(cls._last_uid)
+        cls._allocated_uids.add(uid)
+        return uid
 
 
 class UniqueIdMixin:
     def __init__(self, uid: Optional[int] = None, **kwargs) -> None:
-        super().__init__(**kwargs)
+        super().__init__()
 
-        self._uid = uid or UniqueIdRegistry.allocate_uid(self)
-
-    @property
-    def uid(self) -> int:
-        return self._uid
+        self.uid = uid or UniqueIdRegistry.allocate_uid(self)
 
 
 class Observer(ABC):
@@ -233,7 +229,7 @@ class AssociativeArrayList(Generic[T]):
 
             yield key, value
 
-    def add(self, elements: Collection[T]):
+    def add(self, elements: Iterable[T]):
         new_elements = [e for e in elements if e not in self._indexes]
         if not new_elements:
             return

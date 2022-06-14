@@ -22,14 +22,14 @@ def display_known_schemas(sm: SchemaMechanism, composite_only: bool = False) -> 
     else:
         logger.info(f'known schemas: (n = {len(sm.schema_memory)})')
 
-    schemas = sorted([schema for schema in sm.schema_memory], key=lambda s: s.uid)
-    for schema in schemas:
+    schemas = sorted([schema for schema in sm.schema_memory], key=lambda s: int(s.uid))
+    for i, schema in enumerate(schemas):
         is_composite = schema.action.is_composite()
 
         if composite_only and not is_composite:
             continue
 
-        logger.info(f'\t{schema.uid} ->  {str(schema)} [composite? {is_composite}]')
+        logger.info(f'\t{i} ->  {str(schema)} [composite? {is_composite}][uid = {schema.uid}]')
         if is_composite:
             display_components(schema)
 

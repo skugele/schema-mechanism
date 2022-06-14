@@ -32,6 +32,21 @@ class SigmoidScalingStrategy(ScalingStrategy):
         self.vertical_shift: float = vertical_shift
         self.intercept: float = intercept
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, SigmoidScalingStrategy):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.range_scale == other.range_scale,
+                        self.vertical_shift == other.vertical_shift,
+                        self.intercept == other.intercept,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented
+
     def _sigmoid(self, values: np.ndarray) -> np.ndarray:
         return 1.0 / (1.0 + np.exp(-values))
 

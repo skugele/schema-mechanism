@@ -67,12 +67,20 @@ class ObjectTransformer(Transformer):
 
     def schema_with_primitive_action(self, tokens: list[Any]) -> Schema:
         (context, primitive_action, result) = tokens
-        key = SchemaUniqueKey(context=context, action=primitive_action, result=result)
+        key = SchemaUniqueKey(
+            context=context or NULL_STATE_ASSERT,
+            action=primitive_action,
+            result=result or NULL_STATE_ASSERT
+        )
         return SchemaPool().get(key, **self.opt_kwargs)
 
     def schema_with_composite_action(self, tokens: list[Any]) -> Schema:
         (context, composite_action, result) = tokens
-        key = SchemaUniqueKey(context=context, action=composite_action, result=result)
+        key = SchemaUniqueKey(
+            context=context or NULL_STATE_ASSERT,
+            action=composite_action,
+            result=result or NULL_STATE_ASSERT
+        )
         return SchemaPool().get(key, **self.opt_kwargs)
 
     def primitive_action(self, tokens: list[Any]) -> Action:

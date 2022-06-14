@@ -1,21 +1,15 @@
-import os
 from collections import defaultdict
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-import test_share
 from schema_mechanism.core import Action
 from schema_mechanism.core import ReadOnlySchemaPool
+from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state_assert
-from schema_mechanism.serialization.json import deserialize
-from schema_mechanism.serialization.json import serialize
 from test_share.test_classes import MockSchema
 from test_share.test_func import common_test_setup
-from test_share.test_func import file_was_written
 
 
 class TestSchemaPool(TestCase):
@@ -80,53 +74,24 @@ class TestSchemaPool(TestCase):
 
     def test_contains(self):
         for action_id in range(100):
-            key = SchemaUniqueKey(context=sym_state_assert('1,2'),
-                                  action=Action(f'A{action_id}'),
-                                  result=sym_state_assert('4,5'))
-            _ = self.schema_pool.get(key)
+            schema = Schema(context=sym_state_assert('1,2'),
+                            action=Action(f'A{action_id}'),
+                            result=sym_state_assert('4,5'))
+            _ = self.schema_pool.get(schema.unique_key)
 
         # sanity check
         self.assertEqual(100, len(self.schema_pool))
 
         for action_id in range(100):
-            key = SchemaUniqueKey(context=sym_state_assert('1,2'),
-                                  action=Action(f'A{action_id}'),
-                                  result=sym_state_assert('4,5'))
-            self.assertIn(key, self.schema_pool)
+            schema = Schema(context=sym_state_assert('1,2'),
+                            action=Action(f'A{action_id}'),
+                            result=sym_state_assert('4,5'))
+            self.assertIn(schema, self.schema_pool)
 
-        key_not_in_pool = SchemaUniqueKey(context=sym_state_assert('1,2'),
-                                          action=Action('A100'),
-                                          result=sym_state_assert('4,5'))
-        self.assertNotIn(key_not_in_pool, self.schema_pool)
-
-    @test_share.disable_test
-    def test_serialize(self):
-        # add a few schemas to the pool before serialization
-        n_schemas = 100
-        for action_id in range(n_schemas):
-            key = SchemaUniqueKey(context=sym_state_assert('1,2'),
-                                  action=Action(f'A{action_id}'),
-                                  result=sym_state_assert('4,5'))
-            _ = self.schema_pool.get(key)
-
-        # sanity check: pool not empty
-        self.assertEqual(n_schemas, len(self.schema_pool))
-
-        with TemporaryDirectory() as tmp_dir:
-            path = Path(os.path.join(tmp_dir, 'test-file-schema-pool-serialize.sav'))
-
-            # sanity check: file SHOULD NOT exist
-            self.assertFalse(path.exists())
-
-            serialize(self.schema_pool, path)
-
-            # test: file SHOULD exist after call to save
-            self.assertTrue(file_was_written(path))
-
-            recovered = deserialize(path)
-
-            self.assertEqual(n_schemas, len(recovered))
-            self.assertListEqual(list(self.schema_pool.schemas), list(recovered.schemas))
+        schema_not_in_pool = Schema(context=sym_state_assert('1,2'),
+                                    action=Action('A100'),
+                                    result=sym_state_assert('4,5'))
+        self.assertNotIn(schema_not_in_pool, self.schema_pool)
 
     def test_iterator(self):
         n_schemas = 100

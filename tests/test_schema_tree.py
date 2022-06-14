@@ -167,18 +167,12 @@ class TestSchemaTree(TestCase):
         # test: root should be properly set in the nodes map
         self.assertIn(root_node, tree.nodes_map.values())
 
-        # test: when root and nodes map is passed to initializer, both should be set properly
-        tree = SchemaTree(
-            root=self.tree.root,
-            nodes_map=self.tree.nodes_map
-        )
+        # test: when root is passed to initializer it should be set properly and a nodes map should be created
+        tree = SchemaTree(root=self.tree.root)
 
         self.assertEqual(self.tree.root, tree.root)
         self.assertDictEqual(self.tree.nodes_map, tree.nodes_map)
         self.assertEqual(len(self.tree), len(tree))
-
-        # test: tree initialized with nodes map without root should raise a ValueError
-        self.assertRaises(ValueError, lambda: SchemaTree(nodes_map=self.tree.nodes_map))
 
     def test_iter(self):
         # test: iterating over an empty tree should stop immediately
@@ -711,7 +705,7 @@ class TestSchemaTree(TestCase):
         s5 = sym_schema('2,/A1/1,2')
 
         node = tree.get(s3.context)
-        node.schemas_satisfied_by.update({s4, s5})
+        node.schemas_satisfied_by |= {s4, s5}
 
         # test: validate should raise ValueError
         self.assertRaises(ValueError, lambda: tree.validate())
@@ -898,7 +892,9 @@ class TestSchemaTree(TestCase):
         object_registry: dict[int, Any] = dict()
 
         encoded_obj = encode(self.tree, object_registry=object_registry)
-        decoded_obj: SchemaTree = decode(encoded_obj, object_registry=object_registry)
+        encoded_object_registry = encode(object_registry)
+        decoded_object_registry = decode(encoded_object_registry)
+        decoded_obj: SchemaTree = decode(encoded_obj, object_registry=decoded_object_registry)
 
         self.assertEqual(self.tree, decoded_obj)
         self.assertEqual(self.tree.root, decoded_obj.root)
@@ -989,65 +985,3 @@ class TestSchemaTreeNode(TestCase):
     def test_hash(self):
         node = sym_schema_tree_node('1,2,3')
         self.assertTrue(satisfies_hash_checks(obj=node))
-
-    def test_encode_and_decode(self):
-        parent_tree_node = SchemaTreeNode(
-            context=sym_state_assert('1,'),
-            schemas_satisfied_by={
-                sym_schema('1,/A1/X,'),
-                sym_schema('1,/A2/Y,'),
-            },
-            schemas_would_satisfy={
-                sym_schema('A,/A1/1,'),
-                sym_schema('B,/A2/1,'),
-            },
-            label='parent node',
-        )
-
-        schema_tree_node = SchemaTreeNode(
-            context=sym_state_assert('1,2'),
-            schemas_satisfied_by={
-                sym_schema('1,2/A1/X,'),
-                sym_schema('1,2/A2/Y,'),
-            },
-            schemas_would_satisfy={
-                sym_schema('A,/A1/1,2'),
-                sym_schema('B,/A2/1,2'),
-            },
-            label='tree node',
-        )
-
-        child_tree_node = SchemaTreeNode(
-            context=sym_state_assert('1,2,3'),
-            schemas_satisfied_by={
-                sym_schema('1,2,3/A1/X,'),
-                sym_schema('1,2,3/A2/Y,'),
-            },
-            schemas_would_satisfy={
-                sym_schema('A,/A1/1,2,3'),
-                sym_schema('B,/A2/1,2,3'),
-            },
-            label='child node',
-        )
-
-        parent_tree_node.children = (schema_tree_node,)
-
-        schema_tree_node.parent = parent_tree_node
-        schema_tree_node.children = (child_tree_node,)
-
-        child_tree_node.parent = schema_tree_node
-
-        object_registry: dict[int, Any] = dict()
-
-        encoded_obj = encode(schema_tree_node, object_registry=object_registry)
-        decoded_obj: SchemaTreeNode = decode(encoded_obj, object_registry=object_registry)
-
-        # test: verify that schema tree node properties are correct
-        self.assertEqual(schema_tree_node, decoded_obj)
-        self.assertSetEqual(schema_tree_node.schemas_satisfied_by, decoded_obj.schemas_satisfied_by)
-        self.assertSetEqual(schema_tree_node.schemas_would_satisfy, decoded_obj.schemas_would_satisfy)
-        self.assertEqual(schema_tree_node.label, decoded_obj.label)
-
-        # test: verify that NodeMixin properties are retained
-        self.assertEqual(parent_tree_node, decoded_obj.parent)
-        self.assertTupleEqual((child_tree_node,), decoded_obj.children)

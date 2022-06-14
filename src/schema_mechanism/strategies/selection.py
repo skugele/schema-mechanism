@@ -30,16 +30,34 @@ class RandomizeSelectionStrategy:
         selection_index = rng().uniform(0, len(schemas))
         return schemas[selection_index], values[selection_index]
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, RandomizeSelectionStrategy):
+            return True
+        return False if other is None else NotImplemented
+
 
 class RandomizeBestSelectionStrategy:
-    def __init__(self, match: MatchStrategy = None):
-        self.eq = match or EqualityMatchStrategy()
+    def __init__(self, match_strategy: MatchStrategy = None):
+        self.match_strategy = match_strategy or EqualityMatchStrategy()
 
     def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> tuple[Schema, float]:
         max_value = np.max(values)
 
         # randomize selection if several schemas have values within sameness threshold
-        best_schemas = np.argwhere(self.eq(values, max_value)).flatten()
+        best_schemas = np.argwhere(self.match_strategy(values, max_value)).flatten()
         selection_index = rng().choice(best_schemas, size=1)[0]
 
         return schemas[selection_index], values[selection_index]
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, RandomizeBestSelectionStrategy):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.match_strategy == other.match_strategy,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented

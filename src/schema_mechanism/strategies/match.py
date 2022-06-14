@@ -20,6 +20,11 @@ class EqualityMatchStrategy:
     def __call__(self, values: np.ndarray, ref: float) -> np.ndarray:
         return values == ref
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, EqualityMatchStrategy):
+            return True
+        return False if other is None else NotImplemented
+
 
 class AbsoluteDiffMatchStrategy:
     def __init__(self, max_diff: float):
@@ -28,3 +33,16 @@ class AbsoluteDiffMatchStrategy:
 
     def __call__(self, values: np.ndarray, ref: float) -> np.ndarray:
         return values >= (ref - self.max_diff)
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, AbsoluteDiffMatchStrategy):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        self.max_diff == other.max_diff,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented

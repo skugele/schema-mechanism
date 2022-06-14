@@ -1,8 +1,10 @@
 import argparse
 import logging.config
+from pathlib import Path
 from statistics import mean
 from time import sleep
 from typing import Iterable
+from typing import Optional
 
 from examples import RANDOM_SEED
 from examples import display_item_values
@@ -14,21 +16,14 @@ from examples import run_decorator
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
 from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
-from schema_mechanism.core import SchemaPool
-from schema_mechanism.core import SchemaTree
-from schema_mechanism.core import SchemaUniqueKey
+from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.modules import SchemaMechanism
-from schema_mechanism.modules import SchemaMemory
-from schema_mechanism.modules import SchemaSelection
-from schema_mechanism.strategies.correlation_test import CorrelationOnEncounter
-from schema_mechanism.strategies.correlation_test import FisherExactCorrelationTest
+from schema_mechanism.modules import init
+from schema_mechanism.modules import load
+from schema_mechanism.modules import save
+from schema_mechanism.parameters import GlobalParams
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
-from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
-from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
-from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
-from schema_mechanism.strategies.match import AbsoluteDiffMatchStrategy
-from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.trace import ReplacingTrace
 from schema_mechanism.util import set_random_seed
 
@@ -37,73 +32,63 @@ logger = logging.getLogger('examples.environments.wumpus_small_world')
 # For reproducibility, we we also need to set PYTHONHASHSEED=RANDOM_SEED in the environment
 set_random_seed(RANDOM_SEED)
 
-MAX_EPISODES = 5000
-MAX_STEPS = 150
+MAX_EPISODES = 50
+MAX_STEPS = 25
 
-SERIALIZATION_ENABLED = False
-SAVE_DIR = './local/save/wumpus_world'
+SERIALIZATION_ENABLED = True
+SAVE_DIR: Path = Path('./local/save/wumpus_world')
+
+
+def init_params() -> GlobalParams:
+    params = get_global_params()
+
+    params.set('learning_rate', 0.01)
+
+    params.set('schema.reliability_threshold', 0.9)
+
+    params.set('composite_actions.backward_chains.max_length', 3)
+    params.set('composite_actions.update_frequency', 0.005)
+    params.set('composite_actions.min_baseline_advantage', 0.5)
+
+    params.set('ext_context.correlation_test', 'FisherExactCorrelationTest')
+    params.set('ext_context.positive_correlation_threshold', 0.95)
+    params.set('ext_result.correlation_test', 'CorrelationOnEncounter')
+    params.set('ext_result.positive_correlation_threshold', 0.8)
+
+    return params
 
 
 def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
-    primitive_items = [
-        sym_item('EVENT[AGENT ESCAPED]', primitive_value=1.0),
-        sym_item('AGENT.HAS[GOLD]', primitive_value=0.5),
-    ]
+    schema_mechanism: Optional[SchemaMechanism] = None
 
-    bare_schemas = [SchemaPool().get(SchemaUniqueKey(action=a)) for a in env.actions]
+    if SERIALIZATION_ENABLED:
+        try:
+            schema_mechanism = load(SAVE_DIR)
+        except FileNotFoundError as e:
+            logger.warning(e)
 
-    schema_tree = SchemaTree()
-    schema_tree.add(bare_schemas)
-
-    schema_memory = SchemaMemory(schema_tree)
-    schema_selection = SchemaSelection(
-        select_strategy=RandomizeBestSelectionStrategy(
-            match=AbsoluteDiffMatchStrategy(max_diff=0.05)
-        ),
-        evaluation_strategy=CompositeEvaluationStrategy(
-            strategies=[
-                DefaultExploratoryEvaluationStrategy(
-                    epsilon=0.9999,
-                    epsilon_min=0.1,
-
-                ),
-                DefaultGoalPursuitEvaluationStrategy(),
-            ],
-            # post_process=[display_minmax],
+    if not schema_mechanism:
+        delegated_value_helper = EligibilityTraceDelegatedValueHelper(
+            discount_factor=0.5,
+            eligibility_trace=ReplacingTrace(
+                active_value=1.0,
+                decay_strategy=GeometricDecayStrategy(rate=0.1)
+            )
         )
-    )
 
-    delegated_value_helper = EligibilityTraceDelegatedValueHelper(
-        discount_factor=0.5,
-        eligibility_trace=ReplacingTrace(
-            active_value=1.0,
-            decay_strategy=GeometricDecayStrategy(rate=0.1)
+        primitive_items = [
+            sym_item('EVENT[AGENT ESCAPED]', primitive_value=1.0),
+            # sym_item('(EVENT[AGENT ESCAPED],AGENT.HAS[GOLD])', primitive_value=1.0),
+        ]
+
+        schema_mechanism = init(
+            items=primitive_items,
+            actions=env.actions,
+            delegated_value_helper=delegated_value_helper,
+            global_params=init_params()
         )
-    )
 
-    sm: SchemaMechanism = SchemaMechanism(
-        items=primitive_items,
-        schema_memory=schema_memory,
-        schema_selection=schema_selection,
-        delegated_value_helper=delegated_value_helper,
-    )
-
-    sm.params.set('learning_rate', 0.01)
-
-    sm.params.set('schema.reliability_threshold', 0.8)
-
-    sm.params.set('composite_actions.backward_chains.max_length', 5)
-    sm.params.set('composite_actions.update_frequency', 0.01)
-    sm.params.set('composite_actions.min_baseline_advantage', 0.5)
-
-    sm.params.set('ext_context.correlation_test', FisherExactCorrelationTest)
-    sm.params.set('ext_context.positive_correlation_threshold', 0.95)
-    sm.params.set('ext_result.correlation_test', CorrelationOnEncounter)
-    sm.params.set('ext_result.positive_correlation_threshold', 0.8)
-
-    logger.info(sm.params)
-
-    return sm
+    return schema_mechanism
 
 
 def parse_args():
@@ -160,7 +145,7 @@ def run() -> None:
     max_episodes = args.episodes
 
     env = create_world()
-    sm = create_schema_mechanism(env)
+    schema_mechanism = create_schema_mechanism(env)
 
     render_env = True
 
@@ -181,9 +166,9 @@ def run() -> None:
                 logger.info(f'\n{env.render()}\n')
 
             logger.info(f'state [{progress_id}]: {selection_state}')
-            selection_details = sm.select(selection_state)
+            selection_details = schema_mechanism.select(selection_state)
 
-            current_composite_schema = sm.schema_selection.pending_schema
+            current_composite_schema = schema_mechanism.schema_selection.pending_schema
             if current_composite_schema:
                 logger.info(f'active composite action schema [{progress_id}]: {current_composite_schema} ')
 
@@ -204,11 +189,11 @@ def run() -> None:
 
             result_state, is_terminal = env.step(action)
 
-            sm.learn(selection_details, result_state=result_state)
+            schema_mechanism.learn(selection_details, result_state=result_state)
 
             if is_paused():
                 display_item_values()
-                display_known_schemas(sm)
+                display_known_schemas(schema_mechanism)
                 # display_schema_info(sym_schema(f'/USE[EXIT]/'))
                 if episode > 1:
                     display_performance_summary(max_steps, steps_in_episode)
@@ -226,9 +211,13 @@ def run() -> None:
 
         # GlobalStats().delegated_value_helper.eligibility_trace.clear()
 
-    display_summary(sm)
+    display_summary(schema_mechanism)
 
-    # TODO: Add code to save a serialized instance of this schema mechanism to disk
+    if SERIALIZATION_ENABLED:
+        save(
+            modules=[schema_mechanism],
+            path=SAVE_DIR,
+        )
 
 
 def display_performance_summary(max_steps: int, steps_in_episode: Iterable[int]) -> None:

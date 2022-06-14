@@ -23,8 +23,6 @@ from schema_mechanism.core import set_global_stats
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.serialization.json.decoders import decode
 from schema_mechanism.serialization.json.encoders import encode
-from schema_mechanism.strategies.correlation_test import BarnardExactCorrelationTest
-from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from schema_mechanism.util import repr_str
 from test_share.test_func import common_test_setup
 from test_share.test_func import satisfies_equality_checks
@@ -247,7 +245,7 @@ class TestECItemStatistics(TestCase):
 
     def test_drescher_correlation(self):
         params = get_global_params()
-        params.set('ext_context.correlation_test', DrescherCorrelationTest())
+        params.set('ext_context.correlation_test', 'DrescherCorrelationTest')
 
         self.item_stats.update(on=True, success=True, count=12)
         self.item_stats.update(on=True, success=False, count=7)
@@ -260,7 +258,7 @@ class TestECItemStatistics(TestCase):
 
     def test_barnard_correlation_1(self):
         params = get_global_params()
-        params.set('ext_context.correlation_test', BarnardExactCorrelationTest())
+        params.set('ext_context.correlation_test', 'BarnardExactCorrelationTest')
 
         self.item_stats.update(on=True, success=True, count=12)
         self.item_stats.update(on=True, success=False, count=7)
@@ -273,7 +271,7 @@ class TestECItemStatistics(TestCase):
 
     def test_barnard_correlation_2(self):
         params = get_global_params()
-        params.set('ext_context.correlation_test', BarnardExactCorrelationTest())
+        params.set('ext_context.correlation_test', 'BarnardExactCorrelationTest')
 
         self.item_stats.update(on=True, success=True, count=3)
         self.item_stats.update(on=True, success=False, count=8)
@@ -519,7 +517,7 @@ class TestERItemStatistics(TestCase):
 
     def test_drescher_correlation(self):
         params = get_global_params()
-        params.set('ext_result.correlation_test', DrescherCorrelationTest())
+        params.set('ext_result.correlation_test', 'DrescherCorrelationTest')
 
         self.item_stats.update(on=True, activated=True, count=12)
         self.item_stats.update(on=False, activated=True, count=7)
@@ -531,7 +529,7 @@ class TestERItemStatistics(TestCase):
 
     def test_barnard_correlation_1(self):
         params = get_global_params()
-        params.set('ext_result.correlation_test', BarnardExactCorrelationTest())
+        params.set('ext_result.correlation_test', 'BarnardExactCorrelationTest')
 
         self.item_stats.update(on=True, activated=True, count=12)
         self.item_stats.update(on=False, activated=True, count=7)
@@ -543,7 +541,7 @@ class TestERItemStatistics(TestCase):
 
     def test_barnard_correlation_2(self):
         params = get_global_params()
-        params.set('ext_result.correlation_test', BarnardExactCorrelationTest())
+        params.set('ext_result.correlation_test', 'BarnardExactCorrelationTest')
 
         self.item_stats.update(on=True, activated=True, count=3)
         self.item_stats.update(on=False, activated=True, count=8)

@@ -1,9 +1,6 @@
 import itertools
-import os
 from copy import deepcopy
-from pathlib import Path
 from random import sample
-from tempfile import TemporaryDirectory
 from typing import Any
 from unittest import TestCase
 from unittest.mock import PropertyMock
@@ -25,14 +22,10 @@ from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_items
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.func_api import sym_state_assert
-from schema_mechanism.serialization.json import deserialize
-from schema_mechanism.serialization.json import serialize
 from schema_mechanism.serialization.json.decoders import decode
 from schema_mechanism.serialization.json.encoders import encode
-from schema_mechanism.strategies.correlation_test import DrescherCorrelationTest
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
-from test_share.test_func import file_was_written
 
 
 class TestExtendedContext(TestCase):
@@ -43,7 +36,7 @@ class TestExtendedContext(TestCase):
 
         params = get_global_params()
 
-        params.set('ext_context.correlation_test', DrescherCorrelationTest())
+        params.set('ext_context.correlation_test', 'DrescherCorrelationTest')
         params.set('ext_context.positive_correlation_threshold', 0.65)
         params.set('ext_context.negative_correlation_threshold', 0.65)
 
@@ -573,32 +566,8 @@ class TestExtendedContext(TestCase):
 
         object_registry: dict[int, Any] = dict()
         encoded_obj = encode(extended_context, object_registry=object_registry)
-        decoded_obj: ExtendedContext = decode(encoded_obj, object_registry=object_registry)
+        encoded_object_registry = encode(object_registry, read_only_object_registry=True)
+        decoded_object_registry = decode(encoded_object_registry, read_only_object_registry=True)
+        decoded_obj: ExtendedContext = decode(encoded_obj, object_registry=decoded_object_registry)
 
         self.assertEqual(extended_context, decoded_obj)
-
-    @test_share.disable_test
-    def test_serialize(self):
-        # update extended context before serialize
-        items = [sym_item(str(i)) for i in range(10)]
-
-        for item in items:
-            self.ec.update(item, on=False, success=True, count=100)
-            self.ec.update(item, on=False, success=False, count=200)
-            self.ec.update(item, on=True, success=False, count=50)
-            self.ec.update(item, on=True, success=True, count=100)
-
-        with TemporaryDirectory() as tmp_dir:
-            path = Path(os.path.join(tmp_dir, 'test-file-extended_context-serialize.sav'))
-
-            # sanity check: file SHOULD NOT exist
-            self.assertFalse(path.exists())
-
-            serialize(self.ec, path)
-
-            # test: file SHOULD exist after call to save
-            self.assertTrue(file_was_written(path))
-
-            recovered = deserialize(path)
-
-            self.assertEqual(self.ec, recovered)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import cache
 from typing import Protocol
+from typing import Type
 from typing import runtime_checkable
 
 import numpy as np
@@ -177,3 +178,11 @@ def positive_correlation(table: CorrelationTable, test: ItemCorrelationTest, thr
 
 def negative_correlation(table: CorrelationTable, test: ItemCorrelationTest, threshold: float) -> bool:
     return test.negative_corr_statistic(table) >= threshold
+
+
+name_to_type_map: dict[str, Type[ItemCorrelationTest]] = {
+    'BarnardExactCorrelationTest': BarnardExactCorrelationTest,
+    'CorrelationOnEncounter': CorrelationOnEncounter,
+    'DrescherCorrelationTest': DrescherCorrelationTest,
+    'FisherExactCorrelationTest': FisherExactCorrelationTest,
+}

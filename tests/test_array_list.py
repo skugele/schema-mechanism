@@ -95,19 +95,19 @@ class TestAssociativeArrayList(TestCase):
 
         self.assertTrue(satisfies_equality_checks(obj=array_list, other=other, other_different_type=1.0))
 
-        # test: different pre_allocated values should result in eq returning False
+        # test: different pre_allocated values should result in match_strategy returning False
         array_list_1 = AssociativeArrayList(pre_allocated=100, block_size=50)
         array_list_2 = AssociativeArrayList(pre_allocated=90, block_size=50)
 
         self.assertNotEqual(array_list_1, array_list_2)
 
-        # test: different block_size should result in eq returning False
+        # test: different block_size should result in match_strategy returning False
         array_list_1 = AssociativeArrayList(pre_allocated=100, block_size=50)
         array_list_2 = AssociativeArrayList(pre_allocated=100, block_size=60)
 
         self.assertNotEqual(array_list_1, array_list_2)
 
-        # test: different indexes should result in eq returning False
+        # test: different indexes should result in match_strategy returning False
         array_list_1 = AssociativeArrayList(pre_allocated=100, block_size=50)
         array_list_1.indexes(['1', '2', '3', '4'], add_missing=True)
 
@@ -116,7 +116,7 @@ class TestAssociativeArrayList(TestCase):
 
         self.assertNotEqual(array_list_1, array_list_2)
 
-        # test: different values should result in eq returning False
+        # test: different values should result in match_strategy returning False
         array_list_1 = AssociativeArrayList(pre_allocated=100, block_size=50)
         array_list_1['1'] = 100
         array_list_1['2'] = 100

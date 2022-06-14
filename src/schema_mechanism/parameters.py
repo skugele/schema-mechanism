@@ -12,12 +12,18 @@ logger = logging.getLogger(__name__)
 
 class GlobalParams:
 
-    def __init__(self) -> None:
-        self._validators: dict[str, Validator] = defaultdict(lambda: NULL_VALIDATOR)
-        self._params: dict[str, Any] = dict()
+    def __init__(self, parameters: dict[str, Any] = None, validators: dict[str, Validator] = None) -> None:
+        self.parameters: dict[str, Any] = dict()
+        self.validators: dict[str, Validator] = defaultdict(lambda: NULL_VALIDATOR)
+
+        if parameters:
+            self.parameters.update(parameters)
+
+        if validators:
+            self.validators.update(validators)
 
     def __iter__(self) -> ItemsView[str, Any]:
-        yield from self._params.items()
+        yield from self.parameters.items()
 
     def __eq__(self, other) -> bool:
         if isinstance(other, GlobalParams):
@@ -26,8 +32,8 @@ class GlobalParams:
                     # generator expression for conditions to allow lazy evaluation
                     condition for condition in
                     [
-                        other._params == self._params,
-                        other._validators == self._validators
+                        other.parameters == self.parameters,
+                        other.validators == self.validators
                     ]
                 )
             )
@@ -40,32 +46,24 @@ class GlobalParams:
         return '; '.join(parameter_details)
 
     def __contains__(self, key: str) -> bool:
-        return key in self._params
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return self._params
-
-    @property
-    def validators(self) -> dict[str, Any]:
-        return self._validators
+        return key in self.parameters
 
     def set(self, name: str, value: Any, validator: Optional[Validator] = None) -> None:
         if validator:
-            self._validators[name] = validator
+            self.validators[name] = validator
 
         # raises ValueError if new value is invalid
-        self._validators[name](value)
-        self._params[name] = value
+        self.validators[name](value)
+        self.parameters[name] = value
 
         logger.info(f'Setting parameter "{name}" to value "{value}".')
 
     def get(self, name: str) -> Any:
-        if name not in self._params:
+        if name not in self.parameters:
             logger.warning(f'Parameter "{name}" does not exist.')
 
-        return self._params.get(name)
+        return self.parameters.get(name)
 
     def reset(self):
-        self._params.clear()
-        self._validators.clear()
+        self.parameters.clear()
+        self.validators.clear()

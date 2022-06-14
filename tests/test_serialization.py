@@ -4,11 +4,14 @@ from tempfile import TemporaryDirectory
 from typing import Any
 from unittest import TestCase
 
+import schema_mechanism.serialization.json.decoders
+import schema_mechanism.serialization.json.encoders
+import schema_mechanism.versioning
 from schema_mechanism.core import Action
 from schema_mechanism.func_api import sym_item
+from schema_mechanism.serialization import deserialize
 from schema_mechanism.serialization import get_serialization_filename
-from schema_mechanism.serialization.json import deserialize
-from schema_mechanism.serialization.json import serialize
+from schema_mechanism.serialization import serialize
 from schema_mechanism.util import check_readable
 from schema_mechanism.util import check_writable
 from test_share.test_func import common_test_setup
@@ -78,8 +81,8 @@ class TestSerialization(TestCase):
 
         # test: check that defaults should produce expected results
         default_prefix = 'schema_mechanism'
-        default_suffix = 'sav'
-        default_version = '0.0.0'
+        default_suffix = schema_mechanism.serialization.DEFAULT_ENCODING
+        default_version = schema_mechanism.versioning.version
 
         filename = get_serialization_filename(object_name=object_name)
 
@@ -89,6 +92,9 @@ class TestSerialization(TestCase):
         # try serializing/deserializing an object containing both built-in and custom types
         original = [101, '101', None, [], {'one': 1, 'two': 2}, sym_item('1'), [Action('test action')]]
 
+        encoder = schema_mechanism.serialization.json.encoders.encode
+        decoder = schema_mechanism.serialization.json.decoders.decode
+
         with TemporaryDirectory() as tmp_dir:
             path = Path(os.path.join(tmp_dir, 'test-file-serialization-serialize_and_deserialize.sav'))
 
@@ -96,23 +102,35 @@ class TestSerialization(TestCase):
             self.assertFalse(path.exists())
 
             # test: deserialize should raise a ValueError if file does not exist
-            self.assertRaises(ValueError, lambda: deserialize(path=path))
+            self.assertRaises(ValueError, lambda: deserialize(decoder=decoder, path=path))
 
             object_registry: dict[int, Any] = dict()
 
-            serialize(original, path=path, overwrite=False, object_registry=object_registry)
+            serialize(
+                original,
+                encoder=encoder,
+                path=path,
+                overwrite=False,
+                object_registry=object_registry
+            )
 
             # sanity check: file SHOULD exist after serialize
             self.assertTrue(path.exists())
 
+            restored = deserialize(
+                path=path,
+                decoder=decoder,
+                object_registry=object_registry
+            )
+
             # test: the deserialized object should equal the original
-            self.assertListEqual(original, deserialize(path, object_registry=object_registry))
+            self.assertListEqual(original, restored)
 
             # test: a ValueError SHOULD be raised when trying to overwrite file if overwrite is False
-            self.assertRaises(ValueError, lambda: serialize(original, path=path, overwrite=False))
+            self.assertRaises(ValueError, lambda: serialize(original, encoder=encoder, path=path, overwrite=False))
 
             # test: a ValueError SHOULD NOT be raised when trying to overwrite file if overwrite is True
             try:
-                serialize(original, path=path, overwrite=True)
+                serialize(original, encoder=encoder, path=path, overwrite=True)
             except ValueError as e:
                 self.fail(f'Unexpected ValueError was raised: {e}')

@@ -1,20 +1,15 @@
-import os
-from pathlib import Path
-from tempfile import TemporaryDirectory
+from typing import Any
 from unittest import TestCase
 
-import test_share
-from schema_mechanism.core import SupportedFeature
 from schema_mechanism.core import default_global_params
 from schema_mechanism.core import get_global_params
 from schema_mechanism.core import set_global_params
 from schema_mechanism.parameters import GlobalParams
-from schema_mechanism.serialization.json import deserialize
-from schema_mechanism.serialization.json import serialize
+from schema_mechanism.serialization.json.decoders import decode
+from schema_mechanism.serialization.json.encoders import encode
 from schema_mechanism.validate import AcceptAllValidator
 from schema_mechanism.validate import WhiteListValidator
 from test_share.test_func import common_test_setup
-from test_share.test_func import file_was_written
 from test_share.test_func import satisfies_equality_checks
 
 
@@ -100,47 +95,20 @@ class TestGlobalParams(TestCase):
         self.assertEqual(len(params.parameters), 0)
         self.assertEqual(len(params.validators), 0)
 
-    @test_share.disable_test
-    def test_serialize(self):
-        # sets a few non-default values
-        parameter_values = {
-            'learning_rate': 0.00001,
-            'ext_context.negative_correlation_threshold': 0.186,
-            'features': [SupportedFeature.ER_INCREMENTAL_RESULTS],
-            'ext_result.positive_correlation_threshold': 0.176,
-            'reliability_threshold': 0.72,
-        }
-
-        for key, value in parameter_values.items():
-            self.gp.set(key, value)
-
-        expected_dict = dict()
-        expected_dict.update(parameter_values)
-
-        # sanity check
-        self.assertDictEqual({k: v for k, v in self.gp}, expected_dict)
-
-        with TemporaryDirectory() as tmp_dir:
-            path = Path(os.path.join(tmp_dir, 'test-file-global_params-save_and_load.sav'))
-
-            # sanity check: file SHOULD NOT exist
-            self.assertFalse(path.exists())
-
-            serialize(self.gp, path)
-
-            # test: file SHOULD exist after call to save
-            self.assertTrue(file_was_written(path))
-
-            recovered: GlobalParams = deserialize(path)
-
-            # test: non-default global params SHOULD be restored after load
-            self.assertEqual(self.gp, recovered)
-
     def test_equals(self):
         params = default_global_params
         other = GlobalParams()
 
         self.assertTrue(satisfies_equality_checks(obj=params, other=other, other_different_type=1.0))
+
+    def test_encode_and_decode(self):
+        global_params: GlobalParams = default_global_params
+
+        object_registry: dict[int, Any] = dict()
+        encoded_obj = encode(global_params, object_registry=object_registry)
+        decoded_obj: GlobalParams = decode(encoded_obj, object_registry=object_registry)
+
+        self.assertEqual(global_params, decoded_obj)
 
 
 class TestSharedFunctions(TestCase):

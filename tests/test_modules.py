@@ -1,10 +1,20 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import TestCase
 
+from schema_mechanism.core import Action
 from schema_mechanism.core import NULL_STATE_ASSERT
+from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaSpinOffType
+from schema_mechanism.core import SchemaTree
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_schema
+from schema_mechanism.modules import SchemaMechanism
+from schema_mechanism.modules import SchemaMemory
+from schema_mechanism.modules import SchemaSelection
 from schema_mechanism.modules import create_spin_off
+from schema_mechanism.modules import load
+from schema_mechanism.modules import save
 from test_share.test_func import common_test_setup
 
 
@@ -95,3 +105,35 @@ class TestModuleFunctions(TestCase):
         self.assertRaises(ValueError, lambda: create_spin_off(schema=s_non_prim_2,
                                                               spin_off_type=SchemaSpinOffType.RESULT,
                                                               item=sym_item('(3,4)')))
+
+    def test_save_and_load(self):
+        schema_collection = SchemaTree()
+        schema_collection.add(
+            schemas=[
+                Schema(Action(f'A{i}')) for i in range(10)
+            ]
+        )
+        schema_collection.add(
+            schemas=[
+                sym_schema(f'/A{i}/{i},') for i in range(10)
+            ]
+        )
+
+        schema_memory = SchemaMemory(schema_collection=schema_collection)
+
+        schema_selection = SchemaSelection()
+        schema_mechanism = SchemaMechanism(
+            schema_memory=schema_memory,
+            schema_selection=schema_selection
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir)
+            save(
+                modules=[schema_mechanism],
+                path=path,
+            )
+
+            recovered_schema_mechanism = load(path=path)
+
+            self.assertEqual(schema_mechanism, recovered_schema_mechanism)

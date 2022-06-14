@@ -4,7 +4,6 @@ from abc import abstractmethod
 from collections import Iterable
 from typing import Any
 from typing import Optional
-from typing import Type
 
 import numpy as np
 
@@ -71,52 +70,6 @@ class RangeValidator(Validator):
     def __hash__(self) -> int:
         arg_dict = {'low': hash(self.low), 'high': hash(self.high), 'exclude': hash(self.exclude)}
         return hash(self.__class__.__name__ + str(arg_dict))
-
-
-class TypeValidator(Validator):
-    def __init__(self, accept_set: Iterable[Type]) -> None:
-        self.accept_set = frozenset(accept_set) if accept_set else frozenset()
-        if not self.accept_set:
-            raise ValueError('TypeValidator\'s accept_set cannot be empty.')
-
-    def __call__(self, value: Any) -> None:
-        if value is None:
-            return
-
-        accepted = any({isinstance(value, type_) for type_ in self.accept_set})
-        if not accepted:
-            raise ValueError(f'Type not supported: {type(value)}.')
-
-    def __eq__(self, other):
-        if isinstance(other, TypeValidator):
-            return other.accept_set == self.accept_set
-        return False if other is None else NotImplemented
-
-    def __hash__(self) -> int:
-        return hash(self.__class__.__name__ + str(self.accept_set))
-
-
-class SubClassValidator(Validator):
-    def __init__(self, accept_set: Iterable[Type]) -> None:
-        self.accept_set = frozenset(accept_set) if accept_set else frozenset()
-        if not self.accept_set:
-            raise ValueError('SubClassValidator\'s accept_set cannot be empty.')
-
-    def __call__(self, value: Any) -> None:
-        if value is None:
-            return
-
-        accepted = any({issubclass(value, type_) for type_ in self.accept_set})
-        if not accepted:
-            raise ValueError(f'Subclass not supported: {value}.')
-
-    def __eq__(self, other) -> bool:
-        if isinstance(other, SubClassValidator):
-            return self.accept_set == other.accept_set
-        return False if other is None else NotImplemented
-
-    def __hash__(self) -> int:
-        return hash(self.__class__.__name__ + str(self.accept_set))
 
 
 class BlackListValidator(Validator):
