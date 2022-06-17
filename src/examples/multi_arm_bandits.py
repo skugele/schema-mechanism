@@ -45,9 +45,6 @@ set_random_seed(RANDOM_SEED)
 N_MACHINES = 8
 N_STEPS = 5000
 
-SAVE_DIR: Path = Path('./local/save/multi_arm_bandits')
-OPTIMIZER_DIR: Path = Path('./local/optimize/multi_arm_bandits')
-
 
 class Machine:
     def __init__(self, id_: str, p_win: float) -> None:
