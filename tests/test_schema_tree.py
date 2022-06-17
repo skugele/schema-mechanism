@@ -6,6 +6,7 @@ from unittest import TestCase
 from schema_mechanism.core import Action
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import SchemaTreeNode
 from schema_mechanism.func_api import sym_schema
@@ -301,6 +302,12 @@ class TestSchemaTree(TestCase):
 
         # test: schema should have been added to schemas_would_satisfy for result assertion's node
         self.assertIn(schema, tree.get(schema.result).schemas_would_satisfy)
+
+        # test: schema should have been added to the SchemaPool
+        schema_pool: SchemaPool = SchemaPool()
+
+        self.assertTrue(schema in schema_pool)
+        self.assertIs(schema, schema_pool.get(schema.unique_key))
 
     def test_add_bare_schemas_individually(self):
         bare_schemas = [

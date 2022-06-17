@@ -143,9 +143,10 @@ def run_decorator(run: Callable):
         listener.start()
 
         start = time()
-        run(*args, **kwargs)
+        results = run(*args, **kwargs)
         end = time()
 
         logger.info(f'elapsed time: {end - start}s')
 
+        return results
     return _run_wrapper

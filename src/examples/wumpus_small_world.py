@@ -3,19 +3,28 @@ import logging.config
 from pathlib import Path
 from statistics import mean
 from time import sleep
-from typing import Iterable
+from time import time
+from typing import Collection
 from typing import Optional
+
+import optuna
+from optuna.integration import SkoptSampler
+from optuna.pruners import MedianPruner
+from optuna.pruners import SuccessiveHalvingPruner
+from optuna.samplers import RandomSampler
+from optuna.samplers import TPESampler
+from pandas import DataFrame
 
 from examples import RANDOM_SEED
 from examples import display_item_values
 from examples import display_known_schemas
-from examples import display_summary
 from examples import is_paused
 from examples import is_running
 from examples import run_decorator
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
-from schema_mechanism.core import EligibilityTraceDelegatedValueHelper
+from examples.optimizer.wumpus_small_world import EpisodeSummary
+from examples.optimizer.wumpus_small_world import get_objective_function
 from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.modules import SchemaMechanism
@@ -23,8 +32,6 @@ from schema_mechanism.modules import init
 from schema_mechanism.modules import load
 from schema_mechanism.modules import save
 from schema_mechanism.parameters import GlobalParams
-from schema_mechanism.strategies.decay import GeometricDecayStrategy
-from schema_mechanism.strategies.trace import ReplacingTrace
 from schema_mechanism.util import set_random_seed
 
 logger = logging.getLogger('examples.environments.wumpus_small_world')
@@ -34,9 +41,6 @@ set_random_seed(RANDOM_SEED)
 
 MAX_EPISODES = 50
 MAX_STEPS = 25
-
-SERIALIZATION_ENABLED = True
-SAVE_DIR: Path = Path('./local/save/wumpus_world')
 
 
 def init_params() -> GlobalParams:
@@ -58,39 +62,6 @@ def init_params() -> GlobalParams:
     return params
 
 
-def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
-    schema_mechanism: Optional[SchemaMechanism] = None
-
-    if SERIALIZATION_ENABLED:
-        try:
-            schema_mechanism = load(SAVE_DIR)
-        except FileNotFoundError as e:
-            logger.warning(e)
-
-    if not schema_mechanism:
-        delegated_value_helper = EligibilityTraceDelegatedValueHelper(
-            discount_factor=0.5,
-            eligibility_trace=ReplacingTrace(
-                active_value=1.0,
-                decay_strategy=GeometricDecayStrategy(rate=0.1)
-            )
-        )
-
-        primitive_items = [
-            sym_item('EVENT[AGENT ESCAPED]', primitive_value=1.0),
-            # sym_item('(EVENT[AGENT ESCAPED],AGENT.HAS[GOLD])', primitive_value=1.0),
-        ]
-
-        schema_mechanism = init(
-            items=primitive_items,
-            actions=env.actions,
-            delegated_value_helper=delegated_value_helper,
-            global_params=init_params()
-        )
-
-    return schema_mechanism
-
-
 def parse_args():
     """ Parses command line arguments.
     :return: argparse parser with parsed command line args
@@ -101,6 +72,32 @@ def parse_args():
                         help=f'the maximum number of steps before terminating an episode (default: {MAX_STEPS})')
     parser.add_argument('--episodes', type=int, required=False, default=MAX_EPISODES,
                         help=f'the maximum number of episodes (default: {MAX_EPISODES})')
+
+    # optimizer arguments
+    parser.add_argument('--optimize', required=False, action="store_true", default=False,
+                        help=f'execute a study to optimize hyper-parameters (default: {False})')
+    parser.add_argument('--optimizer_sampler', help='sampler to use when optimizing hyper-parameters', type=str,
+                        default='tpe', choices=['random', 'tpe', 'skopt'])
+    parser.add_argument('--optimizer_pruner', help='pruner to use when optimizing hyper-parameters', type=str,
+                        default='median', choices=['halving', 'median', 'none'])
+    parser.add_argument('--optimizer_trials', metavar='N', type=int, required=False, default=50,
+                        help='the number of optimizer trials to run')
+    parser.add_argument('--optimizer_n_runs_per_trial', metavar='N', type=int, required=False, default=10,
+                        help='the number of separate environment runs executed per optimizer trial')
+    parser.add_argument('--optimizer_study_name',
+                        help='name used for the optimizer study', type=str, default=None)
+    parser.add_argument('--optimizer_use_db', action="store_true", default=None,
+                        help='saves results from optimizer study to a database to allow resuming an interrupted study')
+
+    # serialization arguments
+    parser.add_argument('--save_path', metavar='FILE', type=Path, required=False, default=None,
+                        help='the filepath to a directory that will be used to save the learned schema mechanism')
+    parser.add_argument('--load_path', metavar='FILE', type=Path, required=False, default=None,
+                        help='the filepath to the manifest of a learned schema mechanism')
+
+    # other arguments
+    parser.add_argument('--render_env', required=False, action="store_true", default=False,
+                        help=f'display an ASCII rendering of the environment (default: {False})')
 
     return parser.parse_args()
 
@@ -138,24 +135,20 @@ def create_world() -> WumpusWorldMDP:
 
 
 @run_decorator
-def run() -> None:
-    args = parse_args()
+def run(env: WumpusWorldMDP,
+        schema_mechanism: SchemaMechanism,
+        max_steps: int,
+        max_episodes: int,
+        render_env: bool = False) -> Collection[EpisodeSummary]:
+    env.reset()
 
-    max_steps = args.steps
-    max_episodes = args.episodes
-
-    env = create_world()
-    schema_mechanism = create_schema_mechanism(env)
-
-    render_env = True
-
-    steps_in_episode = []
+    episode_summaries = list()
     for episode in range(1, max_episodes + 1):
+        episode_summary: EpisodeSummary = EpisodeSummary()
 
         # initialize the world
         selection_state, is_terminal = env.reset()
 
-        step: int = 0
         for step in range(1, max_steps + 1):
             if is_terminal or not is_running():
                 break
@@ -163,29 +156,29 @@ def run() -> None:
             progress_id = f'{episode}:{step}'
 
             if render_env:
-                logger.info(f'\n{env.render()}\n')
+                logger.debug(f'\n{env.render()}\n')
 
-            logger.info(f'state [{progress_id}]: {selection_state}')
+            logger.debug(f'state [{progress_id}]: {selection_state}')
             selection_details = schema_mechanism.select(selection_state)
 
             current_composite_schema = schema_mechanism.schema_selection.pending_schema
             if current_composite_schema:
-                logger.info(f'active composite action schema [{progress_id}]: {current_composite_schema} ')
+                logger.debug(f'active composite action schema [{progress_id}]: {current_composite_schema} ')
 
             terminated_composite_schemas = selection_details.terminated_pending
             if terminated_composite_schemas:
-                logger.info(f'terminated schemas:')
+                logger.debug(f'terminated schemas:')
                 for i, pending_details in enumerate(terminated_composite_schemas):
-                    logger.info(f'schema [{i}]: {pending_details.schema}')
-                    logger.info(f'selection state [{i}]: {pending_details.selection_state}')
-                    logger.info(f'status [{i}]: {pending_details.status}')
-                    logger.info(f'duration [{i}]: {pending_details.duration}')
+                    logger.debug(f'schema [{i}]: {pending_details.schema}')
+                    logger.debug(f'selection state [{i}]: {pending_details.selection_state}')
+                    logger.debug(f'status [{i}]: {pending_details.status}')
+                    logger.debug(f'duration [{i}]: {pending_details.duration}')
 
             schema = selection_details.selected
             action = schema.action
             effective_value = selection_details.effective_value
 
-            logger.info(f'selected schema [{progress_id}]: {schema} [eff. value: {effective_value}]')
+            logger.debug(f'selected schema [{progress_id}]: {schema} [eff. value: {effective_value}]')
 
             result_state, is_terminal = env.step(action)
 
@@ -194,9 +187,10 @@ def run() -> None:
             if is_paused():
                 display_item_values()
                 display_known_schemas(schema_mechanism)
+
                 # display_schema_info(sym_schema(f'/USE[EXIT]/'))
                 if episode > 1:
-                    display_performance_summary(max_steps, steps_in_episode)
+                    display_performance_summary(episode_summaries)
 
                 try:
                     while is_paused():
@@ -206,34 +200,36 @@ def run() -> None:
 
             selection_state = result_state
 
-        steps_in_episode.append(step)
-        display_performance_summary(max_steps, steps_in_episode)
+            # update episode summary
+            episode_summary.steps_taken = step
+            episode_summary.agent_escaped = env.agent.has_escaped
+            episode_summary.agent_dead = env.agent.health
+            episode_summary.wumpus_dead = env.wumpus.health if env.wumpus else 0
+            episode_summary.gold_in_possession = env.agent.n_gold
+            episode_summary.arrows_in_possession = env.agent.n_arrows
+
+        episode_summaries.append(episode_summary)
 
         # GlobalStats().delegated_value_helper.eligibility_trace.clear()
 
-    display_summary(schema_mechanism)
-
-    if SERIALIZATION_ENABLED:
-        save(
-            modules=[schema_mechanism],
-            path=SAVE_DIR,
-        )
+    return episode_summaries
 
 
-def display_performance_summary(max_steps: int, steps_in_episode: Iterable[int]) -> None:
-    steps_in_episode = list(steps_in_episode)
+def display_performance_summary(episode_summaries: Collection[EpisodeSummary]) -> None:
+    steps_in_episode = [episode_summary.steps_taken for episode_summary in episode_summaries]
 
     steps_in_last_episode = steps_in_episode[-1]
-    n_episodes = len(steps_in_episode)
-    n_episodes_agent_escaped = sum(1 for steps in steps_in_episode if steps < max_steps)
+    n_episodes = len(episode_summaries)
+    n_episodes_agent_escaped = sum(1 for episode_summary in episode_summaries if episode_summary.agent_escaped)
+    n_episodes_agent_has_gold = sum(1 for episode_summary in episode_summaries if episode_summary.gold_in_possession)
     avg_steps_per_episode = mean(steps_in_episode)
     min_steps_per_episode = min(steps_in_episode)
     max_steps_per_episode = max(steps_in_episode)
     total_steps = sum(steps_in_episode)
 
-    logger.info(f'**** EPISODE {n_episodes} SUMMARY ****')
     logger.info(f'\tepisodes: {n_episodes}')
     logger.info(f'\tepisodes in which agent escaped: {n_episodes_agent_escaped}')
+    logger.info(f'\tepisodes in which agent had gold: {n_episodes_agent_has_gold}')
     logger.info(f'\tcumulative steps: {total_steps}')
     logger.info(f'\tsteps in last episode: {steps_in_last_episode}')
     logger.info(f'\taverage steps per episode: {avg_steps_per_episode}')
@@ -241,9 +237,146 @@ def display_performance_summary(max_steps: int, steps_in_episode: Iterable[int])
     logger.info(f'\tmaximum steps per episode: {max_steps_per_episode}')
 
 
-if __name__ == "__main__":
-    # TODO: Add code to load a serialized instance that was saved to disk
+def optimize(env: WumpusWorldMDP,
+             sampler: str,
+             pruner: str,
+             n_trials: int,
+             n_runs_per_trial: int,
+             n_episodes_per_run: int,
+             n_steps_per_episode: int,
+             optimizer_study_name: str = None,
+             optimizer_use_db: bool = False
+             ) -> DataFrame:
+    seed = int(time())
+
+    if sampler == 'random':
+        sampler = RandomSampler(seed=seed)
+    elif sampler == 'tpe':
+        sampler = TPESampler(n_startup_trials=5, seed=seed)
+    elif sampler == 'skopt':
+        sampler = SkoptSampler(skopt_kwargs={'base_estimator': "GP", 'acq_func': 'gp_hedge'})
+    else:
+        raise ValueError('Unknown sampler: {}'.format(sampler))
+
+    if pruner == 'halving':
+        pruner = SuccessiveHalvingPruner(min_resource=1, reduction_factor=4, min_early_stopping_rate=0)
+    elif pruner == 'median':
+        pruner = MedianPruner(n_startup_trials=5)
+    elif pruner == 'none':
+        # Do not prune
+        pruner = MedianPruner(n_startup_trials=n_trials)
+    else:
+        raise ValueError('Unknown pruner: {}'.format(pruner))
+
+    study_name = optimizer_study_name or f'wumpus-small-world-{int(time())}-optimizer_study'
+    storage = f'sqlite:///{study_name}.db'
+
+    study = optuna.create_study(study_name=study_name,
+                                storage=storage if optimizer_use_db else None,
+                                load_if_exists=True,
+                                sampler=sampler,
+                                pruner=pruner)
+
+    try:
+        objective = get_objective_function(
+            env=env,
+            run=run,
+            n_runs_per_trial=n_runs_per_trial,
+            n_episodes_per_run=n_episodes_per_run,
+            n_steps_per_episode=n_steps_per_episode,
+        )
+        study.optimize(objective, n_trials)
+    except KeyboardInterrupt:
+        pass
+
+    logger.info(f'Number of finished trials: {len(study.trials)}')
+    logger.info('Best trial:')
+    best_trial = study.best_trial
+
+    logger.info(f'\tValue: {-best_trial.value}')
+    logger.info('\tParams: ')
+    for key, value in best_trial.params.items():
+        logger.info(f'\t\t{key}: {value}')
+
+    return study.trials_dataframe()
+
+
+def load_schema_mechanism(model_filepath: Path) -> SchemaMechanism:
+    schema_mechanism: Optional[SchemaMechanism] = None
+    try:
+        schema_mechanism = load(model_filepath)
+    except FileNotFoundError as e:
+        logger.error(e)
+
+    return schema_mechanism
+
+
+def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
+    primitive_items = [
+        sym_item('EVENT[AGENT ESCAPED]', primitive_value=1.0),
+        # sym_item('(EVENT[AGENT ESCAPED],AGENT.HAS[GOLD])', primitive_value=1.0),
+    ]
+
+    schema_mechanism = init(
+        items=primitive_items,
+        actions=env.actions,
+        global_params=init_params()
+    )
+
+    return schema_mechanism
+
+
+def main():
     # configure logger
     logging.config.fileConfig('config/logging.conf')
 
-    run()
+    args = parse_args()
+
+    env = create_world()
+
+    if args.optimize:
+        data_frame = optimize(
+            env=env,
+            sampler=args.optimizer_sampler,
+            pruner=args.optimizer_pruner,
+            n_trials=args.optimizer_trials,
+            n_runs_per_trial=args.optimizer_n_runs_per_trial,
+            n_episodes_per_run=args.episodes,
+            n_steps_per_episode=args.steps,
+            optimizer_study_name=args.optimizer_study_name,
+            optimizer_use_db=args.optimizer_use_db,
+        )
+
+        report_name = f'optimizer_results_{int(time())}-{args.optimizer_sampler}-{args.optimizer_pruner}.csv'
+        report_path = f'local/optimize/wumpus_small_world/{report_name}'
+        logger.info("Writing report to {}".format(report_path))
+
+        data_frame.to_csv(report_path)
+    else:
+        load_path: Path = args.load_path
+        schema_mechanism = (
+            load_schema_mechanism(load_path)
+            if load_path
+            else create_schema_mechanism(env)
+        )
+
+        episode_summaries = run(
+            env=env,
+            schema_mechanism=schema_mechanism,
+            max_steps=args.steps,
+            max_episodes=args.episodes,
+            render_env=args.render_env,
+        )
+
+        display_performance_summary(episode_summaries)
+
+        save_path: Path = args.save_path
+        if save_path:
+            save(
+                modules=[schema_mechanism],
+                path=save_path,
+            )
+
+
+if __name__ == '__main__':
+    main()

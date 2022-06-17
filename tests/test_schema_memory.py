@@ -462,6 +462,7 @@ class TestSchemaMemory(TestCase):
 
             self.assertEqual(self.schema_memory, recovered_schema_memory)
 
+            # test: all restored schemas should have been added to the schema pool
             schema_pool = SchemaPool()
             for schema in recovered_schema_memory:
                 self.assertTrue(schema in schema_pool)

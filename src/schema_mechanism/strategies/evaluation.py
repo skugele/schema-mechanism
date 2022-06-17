@@ -219,9 +219,11 @@ class PendingFocusEvaluationStrategy(EvaluationStrategy):
     pending schema's goal state fails to obtain after repeated, consecutive selection.
     """
 
-    def __init__(self,
-                 max_value: float = 1.0,
-                 decay_strategy: Optional[DecayStrategy] = None) -> None:
+    def __init__(
+            self,
+            max_value: float = 1.0,
+            decay_strategy: Optional[DecayStrategy] = None
+    ) -> None:
         self.max_value = max_value
         self.decay_strategy = decay_strategy
 
@@ -540,11 +542,13 @@ class CompositeEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the EvaluationStrategy protocol based on a weighted-sum over a collection of evaluation
     strategies. """
 
-    def __init__(self,
-                 strategies: Sequence[EvaluationStrategy],
-                 weights: Sequence[float] = None,
-                 post_process: Sequence[EvaluationPostProcess] = None,
-                 strategy_alias: str = None) -> None:
+    def __init__(
+            self,
+            strategies: Sequence[EvaluationStrategy],
+            weights: Sequence[float] = None,
+            post_process: Sequence[EvaluationPostProcess] = None,
+            strategy_alias: str = None
+    ) -> None:
         self.strategies: Sequence[EvaluationStrategy] = strategies
         self.weights: Sequence[float] = (
             np.array(weights)
@@ -621,12 +625,14 @@ class DefaultExploratoryEvaluationStrategy(CompositeEvaluationStrategy):
 
     """
 
-    def __init__(self,
-                 epsilon: float = 0.99,
-                 epsilon_min: float = 0.2,
-                 epsilon_decay_rate: float = 0.9999,
-                 post_process: Sequence[EvaluationPostProcess] = None,
-                 ):
+    def __init__(
+            self,
+            epsilon: float = 0.99,
+            epsilon_min: float = 0.2,
+            epsilon_decay_rate: float = 0.9999,
+            post_process: Sequence[EvaluationPostProcess] = None,
+            **kwargs,
+    ):
         # TODO: add an evaluation strategy for the following
         # "a component of exploration value promotes underrepresented levels of actions, where a structure's level is
         # defined as follows: primitive items and actions are of level zero; any structure defined in terms of other
@@ -700,6 +706,7 @@ class DefaultGoalPursuitEvaluationStrategy(CompositeEvaluationStrategy):
             pending_focus_max_value: float = 1.0,
             pending_focus_decay_rate: float = 0.5,
             post_process: Sequence[EvaluationPostProcess] = None,
+            **kwargs,
     ) -> None:
         # basic item value functions
         self._primitive_value_strategy = TotalPrimitiveValueEvaluationStrategy()
@@ -775,9 +782,10 @@ class DefaultEvaluationStrategy(CompositeEvaluationStrategy):
             self,
             goal_pursuit_strategy: EvaluationStrategy = None,
             exploratory_strategy: EvaluationStrategy = None,
-            weights: Sequence[float] = None) -> None:
-        self.goal_pursuit_strategy = goal_pursuit_strategy or DefaultGoalPursuitEvaluationStrategy()
-        self.exploratory_strategy = exploratory_strategy or DefaultExploratoryEvaluationStrategy()
+            weights: Sequence[float] = None,
+            **kwargs) -> None:
+        self.goal_pursuit_strategy = goal_pursuit_strategy or DefaultGoalPursuitEvaluationStrategy(**kwargs)
+        self.exploratory_strategy = exploratory_strategy or DefaultExploratoryEvaluationStrategy(**kwargs)
 
         weights = weights or equal_weights(2)
 

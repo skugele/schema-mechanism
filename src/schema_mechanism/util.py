@@ -48,6 +48,11 @@ class UniqueIdRegistry:
         cls._allocated_uids.add(uid)
         return uid
 
+    @classmethod
+    def clear(cls) -> None:
+        UniqueIdRegistry._last_uid = 0
+        UniqueIdRegistry._allocated_uids.clear()
+
 
 class UniqueIdMixin:
     def __init__(self, uid: Optional[int] = None, **kwargs) -> None:

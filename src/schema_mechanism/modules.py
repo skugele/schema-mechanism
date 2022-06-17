@@ -38,6 +38,7 @@ from schema_mechanism.core import default_delegated_value_helper
 from schema_mechanism.core import default_global_params
 from schema_mechanism.core import default_global_stats
 from schema_mechanism.core import get_action_trace
+from schema_mechanism.core import get_controller_map
 from schema_mechanism.core import get_delegated_value_helper
 from schema_mechanism.core import get_global_params
 from schema_mechanism.core import get_global_stats
@@ -71,6 +72,7 @@ from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.selection import SelectionStrategy
 from schema_mechanism.strategies.trace import Trace
 from schema_mechanism.util import Observer
+from schema_mechanism.util import UniqueIdRegistry
 from schema_mechanism.util import rng
 
 logger = logging.getLogger(__name__)
@@ -770,12 +772,6 @@ class SchemaMechanism:
         self.schema_selection.save(
             path=path, manifest=manifest, overwrite=overwrite, encoder=encoder, object_registry=object_registry)
 
-        # update manifest with SchemaMechanism's sub-components
-        manifest['objects']['SchemaMechanism'] = {
-            'schema_memory': 'SchemaMemory',
-            'schema_selection': 'SchemaSelection',
-        }
-
     @classmethod
     def load(cls, manifest: dict, decoder: Callable = None, object_registry: dict[str, Any] = None) -> SchemaMechanism:
         """ Deserializes and returns an instance of this object based on the supplied manifest. """
@@ -790,6 +786,8 @@ class SchemaMechanism:
         )
 
 
+# TODO: The use of global variables, singletons, and class-level variables is re-initialization extremely difficult.
+# TODO: These should be replaced, if possible.
 def init(
         items: Iterable[Item],
         actions: Iterable[Action],
@@ -830,6 +828,14 @@ def init(
     action_trace.add(actions)
 
     item_pool: ItemPool = ItemPool()
+    item_pool.clear()
+
+    # clear controller map
+    controller_map: dict = get_controller_map()
+    controller_map.clear()
+
+    # reset ids
+    UniqueIdRegistry.clear()
 
     # ensure that all primitive items exist in the ItemPool
     for item in items:
@@ -839,6 +845,9 @@ def init(
                 primitive_value=item.primitive_value,
                 delegated_value=item.delegated_value
             )
+
+    schema_pool: SchemaPool = SchemaPool()
+    schema_pool.clear()
 
     # create bare schemas for primitive actions
     bare_schemas = {Schema(action=action) for action in actions}

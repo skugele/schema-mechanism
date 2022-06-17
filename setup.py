@@ -19,5 +19,7 @@ setup(
         'pyyaml==6.0',
         'scikit-learn==1.0.1',
         'scipy==1.7.3',
+        'optuna==2.10.1',
+        'pandas==1.4.2',
     ],
 )
