@@ -18,6 +18,8 @@ from examples import RANDOM_SEED
 from examples import display_schema_info
 from examples import display_summary
 from examples import is_paused
+from examples import parse_optimizer_args
+from examples import parser_serialization_args
 from examples import run_decorator
 from examples.optimizer.multi_arm_bandits import get_objective_function
 from schema_mechanism.core import Action
@@ -44,7 +46,7 @@ set_random_seed(RANDOM_SEED)
 
 # global constants
 N_MACHINES = 16
-N_STEPS = 25000
+N_STEPS = 8000
 
 
 class Machine:
@@ -185,34 +187,24 @@ class BanditEnvironment(Observable):
         return self._current_state
 
 
+def parse_env_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument('--machines', type=int, required=False, default=N_MACHINES,
+                        help=f'the id of the agent to which this action will be sent (default: {N_MACHINES})')
+    parser.add_argument('--steps', type=int, required=False, default=N_STEPS,
+                        help=f'the id of the agent to which this action will be sent (default: {N_STEPS})')
+
+    return parser
+
+
 def parse_args():
     """ Parses command line arguments.
     :return: argparse parser with parsed command line args
     """
     parser = argparse.ArgumentParser(description='Multi-Armed Bandit Example Environment (Schema Mechanism)')
 
-    parser.add_argument('--machines', type=int, required=False, default=N_MACHINES,
-                        help=f'the id of the agent to which this action will be sent (default: {N_MACHINES})')
-    parser.add_argument('--steps', type=int, required=False, default=N_STEPS,
-                        help=f'the id of the agent to which this action will be sent (default: {N_STEPS})')
-
-    # optimizer arguments
-    parser.add_argument('--optimize', required=False, action="store_true", default=False,
-                        help=f'execute a study to optimize hyper-parameters (default: {False})')
-    parser.add_argument('--optimizer_sampler', help='sampler to use when optimizing hyper-parameters', type=str,
-                        default='tpe', choices=['random', 'tpe', 'skopt'])
-    parser.add_argument('--optimizer_pruner', help='pruner to use when optimizing hyper-parameters', type=str,
-                        default='median', choices=['halving', 'median', 'none'])
-    parser.add_argument('--optimizer_trials', metavar='N', type=int, required=False, default=50,
-                        help='the number of optimizer trials to run')
-    parser.add_argument('--optimizer_n_runs_per_trial', metavar='N', type=int, required=False, default=10,
-                        help='the number of separate environment runs executed per optimizer trial')
-
-    # serialization arguments
-    parser.add_argument('--save_path', metavar='FILE', type=Path, required=False, default=None,
-                        help='the filepath to a directory that will be used to save the learned schema mechanism')
-    parser.add_argument('--load_path', metavar='FILE', type=Path, required=False, default=None,
-                        help='the filepath to the manifest of a learned schema mechanism')
+    parser = parse_env_args(parser)
+    parser = parse_optimizer_args(parser)
+    parser = parser_serialization_args(parser)
 
     return parser.parse_args()
 
@@ -429,7 +421,7 @@ def main():
             pruner=args.optimizer_pruner,
             n_trials=args.optimizer_trials,
             n_steps_per_trial=args.steps,
-            n_runs_per_trial=args.optimizer_n_runs_per_trial,
+            n_runs_per_trial=args.optimizer_runs_per_trial,
         )
 
         report_name = f'optimizer_results_{int(time())}-{args.optimizer_sampler}-{args.optimizer_pruner}.csv'

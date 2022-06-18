@@ -20,6 +20,8 @@ from examples import display_item_values
 from examples import display_known_schemas
 from examples import is_paused
 from examples import is_running
+from examples import parse_optimizer_args
+from examples import parser_serialization_args
 from examples import run_decorator
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
@@ -62,42 +64,26 @@ def init_params() -> GlobalParams:
     return params
 
 
+def parse_env_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument('--steps', type=int, required=False, default=MAX_STEPS,
+                        help=f'the maximum number of steps before terminating an episode (default: {MAX_STEPS})')
+    parser.add_argument('--episodes', type=int, required=False, default=MAX_EPISODES,
+                        help=f'the maximum number of episodes (default: {MAX_EPISODES})')
+    parser.add_argument('--render_env', required=False, action="store_true", default=False,
+                        help=f'display an ASCII rendering of the environment (default: {False})')
+
+    return parser
+
+
 def parse_args():
     """ Parses command line arguments.
     :return: argparse parser with parsed command line args
     """
     parser = argparse.ArgumentParser(description='Wumpus World Example Environment (Schema Mechanism)')
 
-    parser.add_argument('--steps', type=int, required=False, default=MAX_STEPS,
-                        help=f'the maximum number of steps before terminating an episode (default: {MAX_STEPS})')
-    parser.add_argument('--episodes', type=int, required=False, default=MAX_EPISODES,
-                        help=f'the maximum number of episodes (default: {MAX_EPISODES})')
-
-    # optimizer arguments
-    parser.add_argument('--optimize', required=False, action="store_true", default=False,
-                        help=f'execute a study to optimize hyper-parameters (default: {False})')
-    parser.add_argument('--optimizer_sampler', help='sampler to use when optimizing hyper-parameters', type=str,
-                        default='tpe', choices=['random', 'tpe', 'skopt'])
-    parser.add_argument('--optimizer_pruner', help='pruner to use when optimizing hyper-parameters', type=str,
-                        default='median', choices=['halving', 'median', 'none'])
-    parser.add_argument('--optimizer_trials', metavar='N', type=int, required=False, default=50,
-                        help='the number of optimizer trials to run')
-    parser.add_argument('--optimizer_n_runs_per_trial', metavar='N', type=int, required=False, default=10,
-                        help='the number of separate environment runs executed per optimizer trial')
-    parser.add_argument('--optimizer_study_name',
-                        help='name used for the optimizer study', type=str, default=None)
-    parser.add_argument('--optimizer_use_db', action="store_true", default=None,
-                        help='saves results from optimizer study to a database to allow resuming an interrupted study')
-
-    # serialization arguments
-    parser.add_argument('--save_path', metavar='FILE', type=Path, required=False, default=None,
-                        help='the filepath to a directory that will be used to save the learned schema mechanism')
-    parser.add_argument('--load_path', metavar='FILE', type=Path, required=False, default=None,
-                        help='the filepath to the manifest of a learned schema mechanism')
-
-    # other arguments
-    parser.add_argument('--render_env', required=False, action="store_true", default=False,
-                        help=f'display an ASCII rendering of the environment (default: {False})')
+    parser = parse_env_args(parser)
+    parser = parse_optimizer_args(parser)
+    parser = parser_serialization_args(parser)
 
     return parser.parse_args()
 
@@ -340,7 +326,7 @@ def main():
             sampler=args.optimizer_sampler,
             pruner=args.optimizer_pruner,
             n_trials=args.optimizer_trials,
-            n_runs_per_trial=args.optimizer_n_runs_per_trial,
+            n_runs_per_trial=args.optimizer_runs_per_trial,
             n_episodes_per_run=args.episodes,
             n_steps_per_episode=args.steps,
             optimizer_study_name=args.optimizer_study_name,

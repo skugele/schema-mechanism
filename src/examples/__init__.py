@@ -1,4 +1,6 @@
+import argparse
 import logging.config
+from pathlib import Path
 from time import time
 from typing import Callable
 
@@ -149,4 +151,87 @@ def run_decorator(run: Callable):
         logger.info(f'elapsed time: {end - start}s')
 
         return results
+
     return _run_wrapper
+
+
+DEFAULT_OPTIMIZER_PRUNER = 'median'
+DEFAULT_OPTIMIZER_SAMPLER = 'tpe'
+DEFAULT_OPTIMIZER_TRIALS = 50
+DEFAULT_OPTIMIZER_RUNS_PER_TRIAL = 10
+
+
+def parse_optimizer_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument(
+        '--optimize',
+        required=False,
+        action="store_true",
+        default=False,
+        help=f'execute a study to optimize hyper-parameters (default: {False})'
+    )
+    parser.add_argument(
+        '--optimizer_sampler',
+        type=str,
+        default=DEFAULT_OPTIMIZER_SAMPLER,
+        choices=['random', 'tpe', 'skopt'],
+        help=f'sampler to use when optimizing hyper-parameters (default: {DEFAULT_OPTIMIZER_SAMPLER}'
+    )
+    parser.add_argument(
+        '--optimizer_pruner',
+        type=str,
+        default=DEFAULT_OPTIMIZER_PRUNER,
+        choices=['halving', 'median', 'none'],
+        help=f'pruner to use when optimizing hyper-parameters (default: {DEFAULT_OPTIMIZER_PRUNER}'
+    )
+    parser.add_argument(
+        '--optimizer_trials',
+        metavar='N',
+        type=int,
+        required=False,
+        default=DEFAULT_OPTIMIZER_TRIALS,
+        help=f'the number of optimizer trials to run (default: {DEFAULT_OPTIMIZER_TRIALS})'
+    )
+    parser.add_argument(
+        '--optimizer_runs_per_trial',
+        metavar='N',
+        type=int,
+        required=False,
+        default=DEFAULT_OPTIMIZER_RUNS_PER_TRIAL,
+        help=f'the number of separate environment runs executed per optimizer trial '
+             + f'(default: {DEFAULT_OPTIMIZER_RUNS_PER_TRIAL})'
+    )
+    parser.add_argument(
+        '--optimizer_study_name',
+        type=str,
+        default=None,
+        help=f'name used for the optimizer study (default: {None}'
+    )
+    parser.add_argument(
+        '--optimizer_use_db',
+        action="store_true",
+        default=None,
+        help='saves results from optimizer study to a database to allow resuming an interrupted study'
+    )
+
+    return parser
+
+
+def parser_serialization_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument(
+        '--save_path',
+        metavar='FILE',
+        type=Path,
+        required=False,
+        default=None,
+        help='the filepath to a directory that will be used to save the learned schema mechanism'
+    )
+    parser.add_argument(
+        '--load_path',
+        metavar='FILE',
+        type=Path,
+        required=False,
+        default=None,
+        help='the filepath to the manifest of a learned schema mechanism'
+    )
+
+    return parser
