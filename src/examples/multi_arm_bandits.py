@@ -21,7 +21,7 @@ from examples import is_paused
 from examples import parse_optimizer_args
 from examples import parser_serialization_args
 from examples import run_decorator
-from examples.optimizer.multi_arm_bandits import get_objective_function
+from examples.optimizers.multi_arm_bandits import get_objective_function
 from schema_mechanism.core import Action
 from schema_mechanism.core import State
 from schema_mechanism.core import get_global_params
@@ -280,8 +280,7 @@ def calculate_score(env: BanditEnvironment) -> float:
 @run_decorator
 def run(env: BanditEnvironment,
         schema_mechanism: SchemaMechanism,
-        n_steps: int,
-        save_path: Path = None) -> float:
+        n_steps: int) -> float:
     env.reset()
 
     for n in range(n_steps):
@@ -328,12 +327,7 @@ def run(env: BanditEnvironment,
     display_machine_info(env.machines)
     display_summary(schema_mechanism)
 
-    if save_path:
-        save(
-            modules=[schema_mechanism],
-            path=save_path,
-            encoding=DEFAULT_ENCODING,
-        )
+    logger.info(f'winnings: {env.winnings}')
 
     return calculate_score(env)
 
@@ -343,7 +337,9 @@ def optimize(env: BanditEnvironment,
              pruner: str,
              n_trials: int,
              n_steps_per_trial: int,
-             n_runs_per_trial: int) -> DataFrame:
+             n_runs_per_trial: int,
+             show_progress_bar: bool = False,
+             ) -> DataFrame:
     seed = int(time())
 
     if sampler == 'random':
@@ -383,7 +379,7 @@ def optimize(env: BanditEnvironment,
             n_steps_per_trial=n_steps_per_trial,
             n_runs_per_trial=n_runs_per_trial
         )
-        study.optimize(objective, n_trials)
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=show_progress_bar)
     except KeyboardInterrupt:
         pass
 
@@ -400,9 +396,9 @@ def optimize(env: BanditEnvironment,
 
 
 def display_machine_info(machines):
-    logger.info(f'machines ({len(machines)}):')
+    logger.debug(f'machines ({len(machines)}):')
     for m in machines:
-        logger.info(f'\t{repr(m)}')
+        logger.debug(f'\t{repr(m)}')
 
 
 def main():
@@ -436,8 +432,14 @@ def main():
         if not schema_mechanism:
             schema_mechanism = create_schema_mechanism(env)
 
-        winnings = run(env=env, schema_mechanism=schema_mechanism, n_steps=args.steps, save_path=save_path)
-        logger.info(f'Agent\'s winnings: {winnings}')
+        run(env=env, schema_mechanism=schema_mechanism, n_steps=args.steps)
+
+        if save_path:
+            save(
+                modules=[schema_mechanism],
+                path=save_path,
+                encoding=DEFAULT_ENCODING,
+            )
 
 
 if __name__ == '__main__':

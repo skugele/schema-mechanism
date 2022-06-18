@@ -2,12 +2,12 @@ import logging
 import statistics
 import traceback
 from copy import copy
-from dataclasses import dataclass
 from typing import Callable
 
 import optuna
 from optuna import Trial
 
+from examples.optimizers import display_hyper_parameters
 from schema_mechanism.core import default_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.modules import init
@@ -16,24 +16,16 @@ from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
 logger = logging.getLogger(__name__)
 
 
-def init_optimizer_trial(env, trial: Trial):
-    logger.info('\thyper-parameters:')
-    sampled_global_params = sample_global_params(trial)
-    for param, value in sampled_global_params.items():
-        logger.info(f'\t\t{param}:{value}')
-
-    sampled_strategy_params = sample_strategy_params(trial)
-    for param, value in sampled_strategy_params.items():
-        logger.info(f'\t\t{param}:{value}')
-
+def init_optimizer_trial(env, trial_global_params: dict, trial_strategy_params: dict):
     primitive_items = [
-        sym_item('EVENT[AGENT ESCAPED]', primitive_value=0.75),
-        sym_item('AGENT.HAS[GOLD]', primitive_value=0.25),
+        sym_item('W', primitive_value=1.0),
+        sym_item('L', primitive_value=-1.0),
+        sym_item('P', primitive_value=-0.5),
     ]
 
     # override default global parameters with sampled global parameters for this trial
     global_params = copy(default_global_params)
-    for param, value in sampled_global_params.items():
+    for param, value in trial_global_params.items():
         global_params.set(param, value)
 
     schema_mechanism = init(
@@ -43,70 +35,50 @@ def init_optimizer_trial(env, trial: Trial):
     )
 
     # override default evaluation strategy parameters with sampled strategy parameters for this trial
-    schema_mechanism.schema_selection.evaluation_strategy = DefaultEvaluationStrategy(**sampled_strategy_params)
+    schema_mechanism.schema_selection.evaluation_strategy = DefaultEvaluationStrategy(**trial_strategy_params)
 
     return schema_mechanism
-
-
-@dataclass
-class EpisodeSummary:
-    steps_taken: int = 0
-    agent_escaped: bool = False
-    agent_dead: bool = False
-    wumpus_dead: bool = False
-    gold_in_possession: int = 0
-    arrows_in_possession: int = 0
-
-
-def calculate_score(episode_summary: EpisodeSummary) -> float:
-    # TODO: add the following into the score
-    #    agent has gold
-    #    wumpus dead
-    #    agent dead
-    weight_steps = 0.75
-    weight_gold = 0.25
-
-    return weight_steps * (1.0 / episode_summary.steps_taken) + weight_gold * episode_summary.gold_in_possession
 
 
 # the objective function called by optimizer during each trial
 def get_objective_function(env,
                            run: Callable,
-                           n_runs_per_trial: int,
-                           n_episodes_per_run: int,
-                           n_steps_per_episode: int) -> Callable:
+                           n_steps_per_trial: int,
+                           n_runs_per_trial: int
+                           ) -> Callable:
     def objective(trial: Trial):
-        logger.info(f'*** beginning trial {trial.number}')
+        logger.info(f'*** beginning trial {trial.number} ***')
+
+        sampled_global_params = sample_global_params(trial)
+        sampled_strategy_params = sample_strategy_params(trial)
+
+        display_hyper_parameters(trial)
 
         try:
             # begin trial
-            scores = []
+            winnings = []
             for run_id in range(n_runs_per_trial):
-                schema_mechanism = init_optimizer_trial(env, trial)
-                episode_summaries = run(
+                schema_mechanism = init_optimizer_trial(
                     env,
-                    schema_mechanism,
-                    max_steps=n_steps_per_episode,
-                    max_episodes=n_episodes_per_run,
+                    trial_global_params=sampled_global_params,
+                    trial_strategy_params=sampled_strategy_params,
                 )
 
-                score = statistics.mean([calculate_score(summary) for summary in episode_summaries])
-                scores.append(score)
+                run_winnings = run(schema_mechanism=schema_mechanism, env=env, n_steps=n_steps_per_trial)
+                winnings.append(run_winnings)
 
-                logger.info(f'\trun {run_id}\'s score {score}')
+            average_winnings = statistics.mean(winnings)
+            median_winnings = statistics.median(winnings)
+            std_dev_winnings = statistics.stdev(winnings)
 
-            average_score = statistics.mean(scores)
-            median_score = statistics.median(scores)
-            std_dev_score = statistics.stdev(scores)
+            logger.info(f'\ttrial {trial.number}\'s results')
 
-            logger.info(f'trial number {trial.number}\'s results')
-
-            logger.info(f'\taverage score: {average_score}')
-            logger.info(f'\tmedian score: {median_score}')
-            logger.info(f'\tstd_dev score: {std_dev_score}')
+            logger.info(f'\t\taverage winnings: {average_winnings}')
+            logger.info(f'\t\tmedian winnings: {median_winnings}')
+            logger.info(f'\t\tstd_dev winnings: {std_dev_winnings}')
 
             # optuna minimizes the objective by default, so we need to flip the sign to maximize
-            cost = -1 * average_score
+            cost = -1 * average_winnings
 
             return cost
 

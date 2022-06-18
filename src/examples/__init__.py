@@ -20,9 +20,9 @@ RANDOM_SEED = 8675309
 
 def display_known_schemas(sm: SchemaMechanism, composite_only: bool = False) -> None:
     if composite_only:
-        logger.info(f'composite schemas: (n = {sum(1 for s in sm.schema_memory if s.action.is_composite())})')
+        logger.debug(f'composite schemas: (n = {sum(1 for s in sm.schema_memory if s.action.is_composite())})')
     else:
-        logger.info(f'known schemas: (n = {len(sm.schema_memory)})')
+        logger.debug(f'known schemas: (n = {len(sm.schema_memory)})')
 
     schemas = sorted([schema for schema in sm.schema_memory], key=lambda s: int(s.uid))
     for i, schema in enumerate(schemas):
@@ -31,7 +31,7 @@ def display_known_schemas(sm: SchemaMechanism, composite_only: bool = False) -> 
         if composite_only and not is_composite:
             continue
 
-        logger.info(f'\t{i} ->  {str(schema)} [composite? {is_composite}][uid = {schema.uid}]')
+        logger.debug(f'\t{i} ->  {str(schema)} [composite? {is_composite}][uid = {schema.uid}]')
         if is_composite:
             display_components(schema)
 
@@ -40,44 +40,44 @@ def display_components(schema: Schema) -> None:
     if not schema.action.is_composite():
         return
 
-    logger.info(f'\t\tcontroller components: (n = {len(schema.action.controller.components)})')
+    logger.debug(f'\t\tcontroller components: (n = {len(schema.action.controller.components)})')
     for component in schema.action.controller.components:
-        logger.info(f'\t\t\t{str(component)} [proximity: {schema.action.controller.proximity(component)}]')
+        logger.debug(f'\t\t\t{str(component)} [proximity: {schema.action.controller.proximity(component)}]')
 
 
 def display_item_values() -> None:
     global_stats: GlobalStats = get_global_stats()
-    logger.info(f'baseline value: {global_stats.baseline_value}')
+    logger.debug(f'baseline value: {global_stats.baseline_value}')
 
     pool = ReadOnlyItemPool()
-    logger.info(f'known items: (n = {len(pool)})')
+    logger.debug(f'known items: (n = {len(pool)})')
     for item in sorted(pool, key=lambda i: -i.delegated_value):
-        logger.info(f'\t{repr(item)}')
+        logger.debug(f'\t{repr(item)}')
 
 
 def display_schema_info(schema: Schema) -> None:
     try:
-        logger.info(f'schema [uid = {schema.uid}]: {schema}')
-        logger.info(f'schema stats: {schema.stats}')
+        logger.debug(f'schema [uid = {schema.uid}]: {schema}')
+        logger.debug(f'schema stats: {schema.stats}')
         if schema.extended_context:
-            logger.info('EXTENDED_CONTEXT')
-            logger.info(f'relevant items: {schema.extended_context.relevant_items}')
+            logger.debug('EXTENDED_CONTEXT')
+            logger.debug(f'relevant items: {schema.extended_context.relevant_items}')
             for k, v in schema.extended_context.stats.items():
-                logger.info(f'item: {k} -> {repr(v)}')
+                logger.debug(f'item: {k} -> {repr(v)}')
 
         if schema.extended_result:
-            logger.info('EXTENDED_RESULT')
-            logger.info(f'relevant items: {schema.extended_result.relevant_items}')
+            logger.debug('EXTENDED_RESULT')
+            logger.debug(f'relevant items: {schema.extended_result.relevant_items}')
             for k, v in schema.extended_result.stats.items():
-                logger.info(f'item: {k} -> {repr(v)}')
+                logger.debug(f'item: {k} -> {repr(v)}')
     except ValueError:
         return
 
 
 def display_schema_memory(sm: SchemaMechanism) -> None:
-    logger.info(f'schema memory:')
+    logger.debug(f'schema memory:')
     for line in str(sm.schema_memory).split('\n'):
-        logger.info(line)
+        logger.debug(line)
 
 
 def display_summary(sm: SchemaMechanism) -> None:
@@ -159,6 +159,8 @@ DEFAULT_OPTIMIZER_PRUNER = 'median'
 DEFAULT_OPTIMIZER_SAMPLER = 'tpe'
 DEFAULT_OPTIMIZER_TRIALS = 50
 DEFAULT_OPTIMIZER_RUNS_PER_TRIAL = 10
+DEFAULT_SHOW_PROGRESS_BAR = False
+DEFAULT_OPTIMIZER_USE_DATABASE = False
 
 
 def parse_optimizer_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -174,14 +176,14 @@ def parse_optimizer_args(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
         type=str,
         default=DEFAULT_OPTIMIZER_SAMPLER,
         choices=['random', 'tpe', 'skopt'],
-        help=f'sampler to use when optimizing hyper-parameters (default: {DEFAULT_OPTIMIZER_SAMPLER}'
+        help=f'sampler to use when optimizing hyper-parameters (default: {DEFAULT_OPTIMIZER_SAMPLER})'
     )
     parser.add_argument(
         '--optimizer_pruner',
         type=str,
         default=DEFAULT_OPTIMIZER_PRUNER,
         choices=['halving', 'median', 'none'],
-        help=f'pruner to use when optimizing hyper-parameters (default: {DEFAULT_OPTIMIZER_PRUNER}'
+        help=f'pruner to use when optimizing hyper-parameters (default: {DEFAULT_OPTIMIZER_PRUNER})'
     )
     parser.add_argument(
         '--optimizer_trials',
@@ -204,13 +206,20 @@ def parse_optimizer_args(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
         '--optimizer_study_name',
         type=str,
         default=None,
-        help=f'name used for the optimizer study (default: {None}'
+        help=f'name used for the optimizer study (default: {None})'
     )
     parser.add_argument(
         '--optimizer_use_db',
         action="store_true",
-        default=None,
-        help='saves results from optimizer study to a database to allow resuming an interrupted study'
+        default=DEFAULT_OPTIMIZER_USE_DATABASE,
+        help=f'saves results from optimizer study to a database to allow resuming an interrupted study ' +
+             f'(default: {DEFAULT_OPTIMIZER_USE_DATABASE})'
+    )
+    parser.add_argument(
+        '--show_progress_bar',
+        action="store_true",
+        default=DEFAULT_SHOW_PROGRESS_BAR,
+        help=f'show a progress bar for optimizer on standard error (default: {DEFAULT_SHOW_PROGRESS_BAR})'
     )
 
     return parser

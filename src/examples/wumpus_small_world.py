@@ -25,8 +25,8 @@ from examples import parser_serialization_args
 from examples import run_decorator
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMDP
-from examples.optimizer.wumpus_small_world import EpisodeSummary
-from examples.optimizer.wumpus_small_world import get_objective_function
+from examples.optimizers.wumpus_small_world import EpisodeSummary
+from examples.optimizers.wumpus_small_world import get_objective_function
 from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.modules import SchemaMechanism
@@ -198,6 +198,8 @@ def run(env: WumpusWorldMDP,
 
         # GlobalStats().delegated_value_helper.eligibility_trace.clear()
 
+    display_performance_summary(episode_summaries)
+
     return episode_summaries
 
 
@@ -231,7 +233,8 @@ def optimize(env: WumpusWorldMDP,
              n_episodes_per_run: int,
              n_steps_per_episode: int,
              optimizer_study_name: str = None,
-             optimizer_use_db: bool = False
+             optimizer_use_db: bool = False,
+             show_progress_bar: bool = False
              ) -> DataFrame:
     seed = int(time())
 
@@ -271,7 +274,7 @@ def optimize(env: WumpusWorldMDP,
             n_episodes_per_run=n_episodes_per_run,
             n_steps_per_episode=n_steps_per_episode,
         )
-        study.optimize(objective, n_trials)
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=show_progress_bar)
     except KeyboardInterrupt:
         pass
 
@@ -346,15 +349,13 @@ def main():
             else create_schema_mechanism(env)
         )
 
-        episode_summaries = run(
+        run(
             env=env,
             schema_mechanism=schema_mechanism,
             max_steps=args.steps,
             max_episodes=args.episodes,
             render_env=args.render_env,
         )
-
-        display_performance_summary(episode_summaries)
 
         save_path: Path = args.save_path
         if save_path:
