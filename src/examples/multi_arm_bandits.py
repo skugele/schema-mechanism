@@ -32,6 +32,7 @@ from schema_mechanism.modules import load
 from schema_mechanism.modules import save
 from schema_mechanism.parameters import GlobalParams
 from schema_mechanism.serialization import DEFAULT_ENCODING
+from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
 from schema_mechanism.util import Observable
 from schema_mechanism.util import rng
 from schema_mechanism.util import set_random_seed
@@ -42,8 +43,8 @@ logger = logging.getLogger('examples.environments.multi_arm_bandits')
 set_random_seed(RANDOM_SEED)
 
 # global constants
-N_MACHINES = 8
-N_STEPS = 5000
+N_MACHINES = 16
+N_STEPS = 25000
 
 
 class Machine:
@@ -219,20 +220,20 @@ def parse_args():
 def init_params() -> GlobalParams:
     params = get_global_params()
 
-    params.set('learning_rate', 0.9)
+    params.set('learning_rate', 0.001)
 
     params.set('composite_actions.update_frequency', 0.01)
-    params.set('composite_actions.backward_chains.max_length', 1)
-    params.set('composite_actions.min_baseline_advantage', 0.55)
+    params.set('composite_actions.backward_chains.max_length', 2)
+    params.set('composite_actions.min_baseline_advantage', 0.4)
 
-    params.set('schema.reliability_threshold', 0.6)
+    params.set('schema.reliability_threshold', 0.8)
 
     # item correlation test used for determining relevance of extended context items
-    params.set('ext_context.correlation_test', 'FisherExactCorrelationTest')
+    params.set('ext_context.correlation_test', 'DrescherCorrelationTest')
 
     # thresholds for determining the relevance of extended result items
     #     from 0.0 [weakest correlation] to 1.0 [strongest correlation]
-    params.set('ext_context.positive_correlation_threshold', 0.95)
+    params.set('ext_context.positive_correlation_threshold', 0.9)
 
     # item correlation test used for determining relevance of extended result items
     params.set('ext_result.correlation_test', 'CorrelationOnEncounter')
@@ -266,6 +267,15 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
         items=primitive_items,
         actions=env.actions,
         global_params=init_params()
+    )
+
+    schema_mechanism.schema_selection.evaluation_strategy = DefaultEvaluationStrategy(
+        epsilon=0.9999,
+        epsilon_min=0.025,
+        epsilon_decay_rate=0.9999,
+        reliability_max_penality=0.6,
+        pending_focus_max_value=0.9,
+        pending_focus_decay_rate=0.4
     )
 
     return schema_mechanism
