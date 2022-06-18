@@ -290,9 +290,6 @@ class TestSchemaTree(TestCase):
         self.assertRaises(ValueError, lambda: tree.add(source=sym_schema('X,Y/A2/B,C'),
                                                        schemas=[sym_schema('X,Y,Z/A2/B,C')]))
 
-        # test: ValueError should be raised if spin-off contains a composite result without a corresponding tree node
-        self.assertRaises(ValueError, lambda: tree.add(source=sym_schema('/A1/'), schemas=[sym_schema('/A1/1,2,3')]))
-
     def _assert_schema_added_to_tree(self, schema: Schema, tree: SchemaTree):
         # test: schema should be contained in tree after add
         self.assertIn(schema, tree)

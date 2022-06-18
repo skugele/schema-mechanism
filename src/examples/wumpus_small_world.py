@@ -18,6 +18,7 @@ from pandas import DataFrame
 from examples import RANDOM_SEED
 from examples import display_item_values
 from examples import display_known_schemas
+from examples import display_schema_info
 from examples import is_paused
 from examples import is_running
 from examples import parse_optimizer_args
@@ -29,11 +30,15 @@ from examples.optimizers.wumpus_small_world import EpisodeSummary
 from examples.optimizers.wumpus_small_world import get_objective_function
 from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
+from schema_mechanism.func_api import sym_schema
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import init
 from schema_mechanism.modules import load
 from schema_mechanism.modules import save
 from schema_mechanism.parameters import GlobalParams
+from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
 from schema_mechanism.util import set_random_seed
 
 logger = logging.getLogger('examples.environments.wumpus_small_world')
@@ -41,8 +46,8 @@ logger = logging.getLogger('examples.environments.wumpus_small_world')
 # For reproducibility, we we also need to set PYTHONHASHSEED=RANDOM_SEED in the environment
 set_random_seed(RANDOM_SEED)
 
-MAX_EPISODES = 50
-MAX_STEPS = 25
+MAX_EPISODES = 100
+MAX_STEPS = 50
 
 
 def init_params() -> GlobalParams:
@@ -56,7 +61,7 @@ def init_params() -> GlobalParams:
     params.set('composite_actions.update_frequency', 0.005)
     params.set('composite_actions.min_baseline_advantage', 0.5)
 
-    params.set('ext_context.correlation_test', 'FisherExactCorrelationTest')
+    params.set('ext_context.correlation_test', 'DrescherCorrelationTest')
     params.set('ext_context.positive_correlation_threshold', 0.95)
     params.set('ext_result.correlation_test', 'CorrelationOnEncounter')
     params.set('ext_result.positive_correlation_threshold', 0.8)
@@ -173,8 +178,10 @@ def run(env: WumpusWorldMDP,
             if is_paused():
                 display_item_values()
                 display_known_schemas(schema_mechanism)
+                display_schema_info(sym_schema(f'/USE[EXIT]/'))
 
-                # display_schema_info(sym_schema(f'/USE[EXIT]/'))
+                logger.info(schema_mechanism.schema_memory)
+
                 if episode > 1:
                     display_performance_summary(episode_summaries)
 
@@ -210,6 +217,11 @@ def display_performance_summary(episode_summaries: Collection[EpisodeSummary]) -
     n_episodes = len(episode_summaries)
     n_episodes_agent_escaped = sum(1 for episode_summary in episode_summaries if episode_summary.agent_escaped)
     n_episodes_agent_has_gold = sum(1 for episode_summary in episode_summaries if episode_summary.gold_in_possession)
+    n_episodes_agent_escaped_and_has_gold = sum(
+        1
+        for episode_summary in episode_summaries
+        if episode_summary.gold_in_possession and episode_summary.agent_escaped
+    )
     avg_steps_per_episode = mean(steps_in_episode)
     min_steps_per_episode = min(steps_in_episode)
     max_steps_per_episode = max(steps_in_episode)
@@ -218,6 +230,7 @@ def display_performance_summary(episode_summaries: Collection[EpisodeSummary]) -
     logger.info(f'\tepisodes: {n_episodes}')
     logger.info(f'\tepisodes in which agent escaped: {n_episodes_agent_escaped}')
     logger.info(f'\tepisodes in which agent had gold: {n_episodes_agent_has_gold}')
+    logger.info(f'\tepisodes in which agent escaped AND had gold: {n_episodes_agent_escaped_and_has_gold}')
     logger.info(f'\tcumulative steps: {total_steps}')
     logger.info(f'\tsteps in last episode: {steps_in_last_episode}')
     logger.info(f'\taverage steps per episode: {avg_steps_per_episode}')
@@ -303,7 +316,7 @@ def load_schema_mechanism(model_filepath: Path) -> SchemaMechanism:
 def create_schema_mechanism(env: WumpusWorldMDP) -> SchemaMechanism:
     primitive_items = [
         sym_item('EVENT[AGENT ESCAPED]', primitive_value=1.0),
-        # sym_item('(EVENT[AGENT ESCAPED],AGENT.HAS[GOLD])', primitive_value=1.0),
+        sym_item('(EVENT[AGENT ESCAPED],AGENT.HAS[GOLD])', primitive_value=1.0),
     ]
 
     schema_mechanism = init(
@@ -343,10 +356,21 @@ def main():
         data_frame.to_csv(report_path)
     else:
         load_path: Path = args.load_path
+
         schema_mechanism = (
             load_schema_mechanism(load_path)
             if load_path
             else create_schema_mechanism(env)
+        )
+
+        # override the default or loaded evaluation strategy
+        schema_mechanism.schema_selection.evaluation_strategy = DefaultEvaluationStrategy(
+            goal_pursuit_strategy=DefaultGoalPursuitEvaluationStrategy(),
+            exploratory_strategy=DefaultExploratoryEvaluationStrategy(
+                epsilon=0.9999,
+                epsilon_min=0.1,
+                epsilon_decay_rate=0.9999
+            ),
         )
 
         run(

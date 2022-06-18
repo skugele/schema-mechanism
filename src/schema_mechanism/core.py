@@ -2270,8 +2270,8 @@ class SchemaTree(SchemaSearchCollection):
 
         else:
             # composite results must first exist as contexts in a schema
-            if len(schema.result.flatten()) != 1:
-                raise ValueError(f'Encountered an illegal composite result spin-off: {schema.result}')
+            # if len(schema.result.flatten()) != 1:
+            #     raise ValueError(f'Encountered an illegal composite result spin-off: {schema.result}')
 
             new_node = SchemaTreeNode(schema.result)
             new_node.schemas_would_satisfy.add(schema)
