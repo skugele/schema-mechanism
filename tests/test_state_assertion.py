@@ -168,7 +168,7 @@ class TestStateAssertion(TestCase):
         self.assertTrue(
             satisfies_equality_checks(
                 obj=self.state_assertion,
-                other=sym_state_assert('4,5,6'),
+                other_same_type=sym_state_assert('4,5,6'),
                 other_different_type=1.0)
         )
 
@@ -179,7 +179,7 @@ class TestStateAssertion(TestCase):
         self.assertTrue(
             satisfies_equality_checks(
                 obj=sym_state_assert('(4,5,6),'),
-                other=sym_state_assert('(7,8,9),'),
+                other_same_type=sym_state_assert('(7,8,9),'),
                 other_different_type=1.0)
         )
 

@@ -1,3 +1,4 @@
+from copy import copy
 from enum import Enum
 from enum import auto
 from typing import Any
@@ -18,6 +19,13 @@ from schema_mechanism.validate import RangeValidator
 from schema_mechanism.validate import SupportedFeatureValidator
 from schema_mechanism.validate import WhiteListValidator
 from test_share.test_func import common_test_setup
+from test_share.test_func import is_eq_consistent
+from test_share.test_func import is_eq_reflexive
+from test_share.test_func import is_eq_returns_not_implemented_given_object_of_different_type
+from test_share.test_func import is_eq_symmetric
+from test_share.test_func import is_eq_transitive
+from test_share.test_func import is_eq_with_null_is_false
+from test_share.test_func import is_neq_symmetric
 from test_share.test_func import satisfies_equality_checks
 from test_share.test_func import satisfies_hash_checks
 
@@ -43,9 +51,16 @@ class TestAcceptAllValidator(TestCase):
 
     def test_equals(self):
         obj = AcceptAllValidator()
-        other = AcceptAllValidator()
+        copy_ = copy(obj)
+        other = 'other'
 
-        self.assertTrue(satisfies_equality_checks(obj=obj, other=other, other_different_type=1.0))
+        is_eq_reflexive(obj),
+        is_eq_symmetric(x=obj, y=copy_)
+        is_neq_symmetric(x=obj, y=other)
+        is_eq_transitive(x=obj, y=copy_, z=copy(copy_))
+        is_eq_consistent(x=obj, y=copy_)
+        is_eq_with_null_is_false(obj)
+        is_eq_returns_not_implemented_given_object_of_different_type(x=obj, y=other)
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
@@ -125,7 +140,7 @@ class TestRangeValidator(TestCase):
         obj = RangeValidator(low=0.1, high=1.0, exclude=[self.high])
         other = RangeValidator(low=2.0, high=5.0, exclude=[self.low])
 
-        self.assertTrue(satisfies_equality_checks(obj=obj, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=obj, other_same_type=other, other_different_type=1.0))
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
@@ -184,7 +199,7 @@ class TestWhiteListValidator(TestCase):
         obj = WhiteListValidator(accept_set={1, 2, 3})
         other = WhiteListValidator(accept_set={3, 4, 5})
 
-        self.assertTrue(satisfies_equality_checks(obj=obj, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=obj, other_same_type=other, other_different_type=1.0))
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
@@ -241,7 +256,7 @@ class TestBlackListValidator(TestCase):
         obj = BlackListValidator(reject_set={1, 2, 3})
         other = BlackListValidator(reject_set={3, 4, 5})
 
-        self.assertTrue(satisfies_equality_checks(obj=obj, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=obj, other_same_type=other, other_different_type=1.0))
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
@@ -294,7 +309,7 @@ class TestMultiValidator(TestCase):
         obj = MultiValidator(validators=[RangeValidator(1, 2)])
         other = MultiValidator(validators=[RangeValidator(3, 4)])
 
-        self.assertTrue(satisfies_equality_checks(obj=obj, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=obj, other_same_type=other, other_different_type=1.0))
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
@@ -358,7 +373,7 @@ class TestElementWiseValidator(TestCase):
         obj = ElementWiseValidator(validator=RangeValidator(1, 2))
         other = ElementWiseValidator(validator=RangeValidator(3, 4))
 
-        self.assertTrue(satisfies_equality_checks(obj=obj, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=obj, other_same_type=other, other_different_type=1.0))
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))
@@ -408,10 +423,11 @@ class TestSupportedFeatureValidator(TestCase):
         self.assertRaises(ValueError, lambda: self.validator(all_but_ec_defer_feature))
 
     def test_equals(self):
-        obj = SupportedFeatureValidator()
-        other = SupportedFeatureValidator()
-
-        self.assertTrue(satisfies_equality_checks(obj=obj, other=other, other_different_type=1.0))
+        self.assertTrue(
+            satisfies_equality_checks(
+                obj=SupportedFeatureValidator(),
+                other_different_type=1.0)
+        )
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.validator))

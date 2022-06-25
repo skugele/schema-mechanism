@@ -2,7 +2,6 @@ import logging
 from abc import ABC
 from abc import abstractmethod
 from collections import Sequence
-from typing import Collection
 from typing import Optional
 from typing import Protocol
 from typing import runtime_checkable
@@ -17,6 +16,8 @@ from schema_mechanism.strategies.decay import DecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.scaling import ScalingStrategy
 from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
+from schema_mechanism.strategies.weight_update import NoOpWeightUpdateStrategy
+from schema_mechanism.strategies.weight_update import WeightUpdateStrategy
 from schema_mechanism.util import equal_weights
 from schema_mechanism.util import repr_str
 from schema_mechanism.util import rng
@@ -26,13 +27,17 @@ logger = logging.getLogger(__name__)
 
 @runtime_checkable
 class EvaluationPostProcess(Protocol):
-    def __call__(self, schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
+    def __call__(self,
+                 schemas: Optional[Sequence[Schema]],
+                 pending: Optional[Schema],
+                 values: Optional[np.ndarray]) -> np.ndarray:
         """ A callable invoked by evaluation strategies that performs post-evaluation operations.
 
         Note: these callables can be used to perform diagnostic messaging, value modifications (e.g., scaling), etc.
 
-        :param schemas: the schemas that were evaluated by the strategy
-        :param values: the values of the evaluated schemas
+        :param schemas: an optional sequence of schemas that were evaluated by the strategy
+        :param pending: an optional pending schema
+        :param values: an optional array of values for the evaluated schemas
 
         :return: the (potentially modified) schema values as a np.ndarray
         """
@@ -44,8 +49,8 @@ class EvaluationStrategy(ABC):
     def __call__(self,
                  schemas: Sequence[Schema],
                  pending: Optional[Schema] = None,
-                 post_process: Sequence[EvaluationPostProcess] = None,
-                 **kwargs) -> np.ndarray:
+                 post_process: Sequence[EvaluationPostProcess] = None
+                 ) -> np.ndarray:
         """ Returns the schemas' values and invokes an optional sequence of post-process callables (if requested).
 
         :param schemas: the schemas to be evaluated
@@ -54,7 +59,9 @@ class EvaluationStrategy(ABC):
 
         :return: an array containing the values of the schemas (according to this strategy)
         """
-        values = self.values(schemas=schemas, pending=pending, **kwargs)
+
+        # determines the values of the given schemas (may be based on internal state maintained by strategy)
+        values = self.values(schemas=schemas, pending=pending)
 
         if post_process:
             class_name = self.__class__.__name__
@@ -66,7 +73,10 @@ class EvaluationStrategy(ABC):
                     else ''
                 ).upper()
                 logger.debug(f'Post-Process Callable {i} "{operation_name}":')
-                values = operation(schemas=schemas, values=values)
+                values = operation(schemas=schemas, pending=pending, values=values)
+
+        # updates strategy's internal state AFTER schema value determination. (This may influence later evaluations.)
+        self.update(schemas=schemas, pending=pending)
 
         return values
 
@@ -74,13 +84,25 @@ class EvaluationStrategy(ABC):
         return repr_str(obj=self, attr_values=dict())
 
     @abstractmethod
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         """ Evaluates the given schema based on this strategy's evaluation criteria.
+
+        Note: This method should be idempotent until the update method is invoked.
 
         :param schemas: the schemas to be evaluated
         :param pending: an optional pending schema
 
         :return: an array containing the values of the schemas (according to this strategy)
+        """
+        pass
+
+    def update(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> None:
+        """ Updates any internal state maintained by the evaluation strategy, which may influence evaluation.
+
+        :param schemas: the schemas to be evaluated
+        :param pending: an optional pending schema
+
+        :return: None
         """
         pass
 
@@ -93,7 +115,7 @@ class NoOpEvaluationStrategy(EvaluationStrategy):
             return True
         return False if other is None else NotImplemented
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         return np.zeros_like(schemas)
 
 
@@ -111,7 +133,7 @@ class TotalPrimitiveValueEvaluationStrategy(EvaluationStrategy):
     def _calc_schema_value(self, schema: Schema) -> float:
         return sum(item.primitive_value for item in schema.result.items if schema.result)
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         return (
             np.array([])
             if schemas is None or len(schemas) == 0
@@ -133,7 +155,7 @@ class TotalDelegatedValueEvaluationStrategy(EvaluationStrategy):
     def _calc_schema_value(self, schema: Schema) -> float:
         return sum(item.delegated_value for item in schema.result.items if schema.result)
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         return (
             np.array([])
             if schemas is None or len(schemas) == 0
@@ -155,7 +177,7 @@ class MaxDelegatedValueEvaluationStrategy(EvaluationStrategy):
     def _calc_schema_value(self, schema: Schema) -> float:
         return max([item.delegated_value for item in schema.result.items if schema.result], default=0.0)
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         return (
             np.array([])
             if schemas is None or len(schemas) == 0
@@ -183,7 +205,7 @@ class InstrumentalValueEvaluationStrategy(EvaluationStrategy):
             return True
         return False if other is None else NotImplemented
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         if not schemas and pending:
             raise ValueError('A non-empty sequence of schemas must be provided whenever a pending schema is provided.')
 
@@ -219,11 +241,10 @@ class PendingFocusEvaluationStrategy(EvaluationStrategy):
     pending schema's goal state fails to obtain after repeated, consecutive selection.
     """
 
-    def __init__(
-            self,
-            max_value: float = 1.0,
-            decay_strategy: Optional[DecayStrategy] = None
-    ) -> None:
+    def __init__(self,
+                 max_value: float = 1.0,
+                 decay_strategy: Optional[DecayStrategy] = None
+                 ) -> None:
         self.max_value = max_value
         self.decay_strategy = decay_strategy
 
@@ -267,32 +288,41 @@ class PendingFocusEvaluationStrategy(EvaluationStrategy):
     def decay_strategy(self, value: DecayStrategy) -> None:
         self._decay_strategy = value
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         if schemas is None or len(schemas) == 0:
             return np.array([])
 
         # zero values (i.e., no pending focus) if pending schema is not set
         if not pending:
-            self._active_pending = None
             return np.zeros(len(schemas), dtype=np.float64)
 
-        if pending != self._active_pending:
-            self._active_pending = pending
-            self._n = 0
-
         values = self.max_value * np.ones_like(schemas, dtype=np.float64)
+        step_size = self._n if pending == self._active_pending else 0
 
         # decay focus value by steps equal to the number of repeated calls for this pending schema
         if self.decay_strategy:
-            values = self._decay_strategy.decay(values=values, step_size=self._n)
+            values = self._decay_strategy.decay(values=values, step_size=step_size)
 
         for i, schema in enumerate(schemas):
-            if schema not in self._active_pending.action.controller.components:
+            if schema not in pending.action.controller.components:
                 values[i] = 0.0
 
-        self._n += 1
-
         return values
+
+    def update(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> None:
+        if not pending:
+            self._active_pending = None
+
+        # new active pending
+        elif pending != self._active_pending:
+            self._active_pending = pending
+
+            # values would have been called once already with this pending, so next call should be with n == 1
+            self._n = 1
+
+        # previously set active pending occurred again
+        else:
+            self._n += 1
 
 
 class ReliabilityEvaluationStrategy(EvaluationStrategy):
@@ -351,7 +381,7 @@ class ReliabilityEvaluationStrategy(EvaluationStrategy):
             raise ValueError('Severity must be > 0.0')
         self._severity = value
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         # nans treated as 0.0 reliability
         reliabilities = np.array([0.0 if s.reliability is np.nan else s.reliability for s in schemas])
         return (
@@ -381,13 +411,12 @@ class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
 
     """
 
-    def __init__(
-            self,
-            epsilon: float = 0.99,
-            epsilon_min: float = 0.0,
-            decay_strategy: Optional[DecayStrategy] = None,
-            max_value=1.0
-    ) -> None:
+    def __init__(self,
+                 epsilon: float = 0.99,
+                 epsilon_min: float = 0.0,
+                 decay_strategy: Optional[DecayStrategy] = None,
+                 max_value=1.0
+                 ) -> None:
         self.epsilon = epsilon
         self.epsilon_min = epsilon_min
         self.decay_strategy = decay_strategy
@@ -449,7 +478,7 @@ class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
     def decay_strategy(self, value: DecayStrategy) -> None:
         self._decay_strategy = value
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         if not schemas:
             return np.array([])
 
@@ -457,9 +486,6 @@ class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
 
         # determine if taking exploratory or goal-directed action
         is_exploratory = rng().uniform(0.0, 1.0) < self.epsilon
-
-        if self.decay_strategy:
-            self._decay_epsilon()
 
         # non-exploratory evaluation - all returned values are zeros
         if not is_exploratory:
@@ -477,9 +503,10 @@ class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
 
         return values
 
-    def _decay_epsilon(self) -> None:
-        decayed_epsilon = self.decay_strategy.decay(np.array([self.epsilon]))
-        self.epsilon = np.maximum(decayed_epsilon, self.epsilon_min)[0]
+    def update(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> None:
+        if self.decay_strategy:
+            decayed_epsilon = self.decay_strategy.decay(np.array([self.epsilon]))
+            self.epsilon = np.maximum(decayed_epsilon, self.epsilon_min)[0]
 
 
 class HabituationEvaluationStrategy(EvaluationStrategy):
@@ -525,7 +552,7 @@ class HabituationEvaluationStrategy(EvaluationStrategy):
             )
         return False if other is None else NotImplemented
 
-    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None, **kwargs) -> np.ndarray:
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
         if not schemas:
             return np.array([])
 
@@ -542,14 +569,13 @@ class CompositeEvaluationStrategy(EvaluationStrategy):
     """ An implementation of the EvaluationStrategy protocol based on a weighted-sum over a collection of evaluation
     strategies. """
 
-    def __init__(
-            self,
-            strategies: Sequence[EvaluationStrategy],
-            weights: Sequence[float] = None,
-            post_process: Sequence[EvaluationPostProcess] = None,
-            strategy_alias: str = None
-    ) -> None:
-        self.strategies: Sequence[EvaluationStrategy] = strategies
+    def __init__(self,
+                 strategies: Sequence[EvaluationStrategy],
+                 weights: Sequence[float] = None,
+                 post_process: Sequence[EvaluationPostProcess] = None,
+                 strategy_alias: str = None
+                 ) -> None:
+        self.strategies: list[EvaluationStrategy] = list(strategies)
         self.weights: Sequence[float] = (
             np.array(weights)
             if weights is not None
@@ -587,14 +613,6 @@ class CompositeEvaluationStrategy(EvaluationStrategy):
         return False if other is None else NotImplemented
 
     @property
-    def strategies(self) -> Collection[EvaluationStrategy]:
-        return self._strategies
-
-    @strategies.setter
-    def strategies(self, values: Collection[EvaluationStrategy]) -> None:
-        self._strategies = values
-
-    @property
     def weights(self) -> np.ndarray:
         return self._weights
 
@@ -609,12 +627,45 @@ class CompositeEvaluationStrategy(EvaluationStrategy):
 
         self._weights = values
 
-    def values(self,
-               schemas: Sequence[Schema],
-               pending: Optional[Schema] = None,
-               **kwargs) -> np.ndarray:
-        return sum(weight * strategy(schemas=schemas, pending=pending, post_process=self.post_process)
-                   for weight, strategy in zip(self.weights, self.strategies))
+    def __call__(self,
+                 schemas: Sequence[Schema],
+                 pending: Optional[Schema] = None,
+                 post_process: Sequence[EvaluationPostProcess] = None,
+                 ) -> np.ndarray:
+        """ Returns the schemas' values as the weighted sum over each strategy's values and updates each strategy.
+
+        Note: by default, the instance's post-process callables are used; however, they can be overridden by sending
+        an alternate set of post-process callables as an argument to the method.
+
+        :param schemas: the schemas to be evaluated
+        :param pending: an optional pending schema
+        :param post_process: an optional collection of callables that will be invoked after schema value determination
+
+        :return: an array containing the values of the schemas (according to this strategy)
+        """
+        return super().__call__(
+            schemas=schemas,
+            pending=pending,
+            post_process=post_process or self.post_process,
+        )
+
+    def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
+        values_list = [
+            strategy.values(
+                schemas=schemas,
+                pending=pending,
+            )
+            for strategy in self.strategies
+        ]
+
+        return sum(weight * values for weight, values in zip(self.weights, values_list))
+
+    def update(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> None:
+        for strategy in self.strategies:
+            strategy.update(
+                schemas=schemas,
+                pending=pending,
+            )
 
 
 class DefaultExploratoryEvaluationStrategy(CompositeEvaluationStrategy):
@@ -625,14 +676,12 @@ class DefaultExploratoryEvaluationStrategy(CompositeEvaluationStrategy):
 
     """
 
-    def __init__(
-            self,
-            epsilon: float = 0.99,
-            epsilon_min: float = 0.2,
-            epsilon_decay_rate: float = 0.9999,
-            post_process: Sequence[EvaluationPostProcess] = None,
-            **kwargs,
-    ):
+    def __init__(self,
+                 epsilon: float = 0.99,
+                 epsilon_min: float = 0.2,
+                 epsilon_decay_rate: float = 0.9999,
+                 post_process: Sequence[EvaluationPostProcess] = None,
+                 ) -> None:
         # TODO: add an evaluation strategy for the following
         # "a component of exploration value promotes underrepresented levels of actions, where a structure's level is
         # defined as follows: primitive items and actions are of level zero; any structure defined in terms of other
@@ -700,14 +749,12 @@ class DefaultExploratoryEvaluationStrategy(CompositeEvaluationStrategy):
 
 
 class DefaultGoalPursuitEvaluationStrategy(CompositeEvaluationStrategy):
-    def __init__(
-            self,
-            reliability_max_penalty: float = 1.0,
-            pending_focus_max_value: float = 1.0,
-            pending_focus_decay_rate: float = 0.5,
-            post_process: Sequence[EvaluationPostProcess] = None,
-            **kwargs,
-    ) -> None:
+    def __init__(self,
+                 reliability_max_penalty: float = 1.0,
+                 pending_focus_max_value: float = 1.0,
+                 pending_focus_decay_rate: float = 0.5,
+                 post_process: Sequence[EvaluationPostProcess] = None,
+                 ) -> None:
         # basic item value functions
         self._primitive_value_strategy = TotalPrimitiveValueEvaluationStrategy()
         self._delegated_value_strategy = TotalDelegatedValueEvaluationStrategy()
@@ -778,34 +825,80 @@ class DefaultGoalPursuitEvaluationStrategy(CompositeEvaluationStrategy):
 
 
 class DefaultEvaluationStrategy(CompositeEvaluationStrategy):
-    def __init__(
-            self,
-            goal_pursuit_strategy: EvaluationStrategy = None,
-            exploratory_strategy: EvaluationStrategy = None,
-            weights: Sequence[float] = None,
-            **kwargs) -> None:
-        self.goal_pursuit_strategy = goal_pursuit_strategy or DefaultGoalPursuitEvaluationStrategy(**kwargs)
-        self.exploratory_strategy = exploratory_strategy or DefaultExploratoryEvaluationStrategy(**kwargs)
+    def __init__(self,
+                 goal_pursuit_strategy: EvaluationStrategy = None,
+                 exploratory_strategy: EvaluationStrategy = None,
+                 weights: Sequence[float] = None,
+                 weight_update_strategy: WeightUpdateStrategy = None,
+                 post_process: Sequence[EvaluationPostProcess] = None
+                 ) -> None:
+        self.weight_update_strategy = weight_update_strategy or NoOpWeightUpdateStrategy()
 
-        weights = weights or equal_weights(2)
+        # temporary objects. these are later accessed via the CompositeEvaluationStrategy
+        goal_pursuit_strategy = goal_pursuit_strategy or DefaultGoalPursuitEvaluationStrategy()
+        exploratory_strategy = exploratory_strategy or DefaultExploratoryEvaluationStrategy()
+        weights = equal_weights(2) if weights is None else weights
 
         super().__init__(
-            strategies=[self.goal_pursuit_strategy, self.exploratory_strategy],
+            strategies=[goal_pursuit_strategy, exploratory_strategy],
             weights=weights,
+            post_process=post_process,
+            strategy_alias='default_evaluation_strategy'
         )
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, DefaultEvaluationStrategy):
+            return all(
+                (
+                    # generator expression for conditions to allow lazy evaluation
+                    condition for condition in
+                    [
+                        super().__eq__(other),
+                        self.weight_update_strategy == other.weight_update_strategy,
+                    ]
+                )
+            )
+        return False if other is None else NotImplemented
+
+    @property
+    def goal_pursuit_strategy(self) -> EvaluationStrategy:
+        return self.strategies[0]
+
+    @goal_pursuit_strategy.setter
+    def goal_pursuit_strategy(self, value: EvaluationStrategy) -> None:
+        self.strategies[0] = value
+
+    @property
+    def exploratory_strategy(self) -> EvaluationStrategy:
+        return self.strategies[1]
+
+    @exploratory_strategy.setter
+    def exploratory_strategy(self, value: EvaluationStrategy) -> None:
+        self.strategies[1] = value
+
+    def update(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> None:
+        # update weights used for next evaluation
+        self.weights = self.weight_update_strategy.update(self.weights)
+
+        # update any internal state maintained by strategies
+        super().update(schemas=schemas, pending=pending)
 
 
 ####################
 # helper functions #
 ####################
-def display_values(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
+def display_values(schemas: Optional[Sequence[Schema]],
+                   pending: Optional[Schema],
+                   values: Optional[np.ndarray]) -> np.ndarray:
     for schema, value in zip(schemas, values):
         logger.debug(f'{schema} [{value}]')
 
     return values
 
 
-def display_minmax(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
+def display_minmax(schemas: Optional[Sequence[Schema]],
+                   pending: Optional[Schema],
+                   values: Optional[np.ndarray]) -> np.ndarray:
     if len(values) == 0:
         return values
 

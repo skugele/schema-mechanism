@@ -567,7 +567,7 @@ class TestEligibilityTraceDelegatedValueHelper(TestCase):
 
         self.assertTrue(satisfies_equality_checks(
             obj=delegated_value_helper,
-            other=other,
+            other_same_type=other,
             other_different_type=1.0)
         )
 

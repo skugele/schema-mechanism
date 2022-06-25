@@ -2,6 +2,7 @@ import itertools
 import logging
 import random
 from collections import Counter
+from copy import copy
 from typing import Optional
 from typing import Sequence
 from unittest import TestCase
@@ -27,6 +28,7 @@ from schema_mechanism.func_api import sym_schema
 from schema_mechanism.strategies.decay import ExponentialDecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
@@ -44,6 +46,7 @@ from schema_mechanism.strategies.evaluation import display_values
 from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
 from schema_mechanism.strategies.trace import AccumulatingTrace
 from schema_mechanism.strategies.trace import Trace
+from schema_mechanism.strategies.weight_update import CyclicWeightUpdateStrategy
 from schema_mechanism.util import equal_weights
 from schema_mechanism.util import repr_str
 from test_share import disable_test
@@ -141,9 +144,8 @@ class TestCommon(TestCase):
             self.assertIsInstance(strategy(schemas=self.schemas[:length], pending=None), np.ndarray)
             self.assertEqual(length, len(strategy(schemas=self.schemas[:length], pending=None)))
 
-    def assert_correctly_invokes_post_process_callables(self, strategy: EvaluationStrategy):
-        """ NOTE: The current implementation of this method only works if strategies are idempotent! """
-        values = strategy(schemas=self.schemas, pending=self.composite_action_schema)
+    def assert_call_correctly_invokes_post_process_callables(self, strategy: EvaluationStrategy):
+        values = strategy.values(schemas=self.schemas, pending=self.composite_action_schema)
 
         # mocking post-process callables
         mock = MagicMock()
@@ -155,44 +157,90 @@ class TestCommon(TestCase):
         post_process_list = [mock.post_process_1, mock.post_process_2]
         _ = strategy(
             schemas=self.schemas,
-            pending=None,
+            pending=self.composite_action_schema,
             post_process=post_process_list
         )
 
         # test: post-process callables should be invoked in order and called with the correct arguments
-        mock.assert_has_calls([call.post_process_1(schemas=ANY, values=ANY),
-                               call.post_process_2(schemas=ANY, values=ANY)])
+        mock.assert_has_calls([call.post_process_1(schemas=ANY, pending=ANY, values=ANY),
+                               call.post_process_2(schemas=ANY, pending=ANY, values=ANY)])
 
         # test: strategy should invoke post-process methods with the correct arguments
         for mock in post_process_list:
             self.assertListEqual(self.schemas, mock.call_args.kwargs['schemas'])
+            self.assertEqual(self.composite_action_schema, mock.call_args.kwargs['pending'])
             np.testing.assert_array_equal(values, mock.call_args.kwargs['values'])
 
-        # noinspection PyUnusedLocal, PyShadowingNames
-        # test: post-process callables should be capable of changing the values returned from strategy
-        def add_one_post_process(schemas: Sequence[Schema], values: np.ndarray) -> np.ndarray:
-            values += 1.0
-            return values
+    def assert_post_process_can_update_values(self, strategy):
+        values = strategy.values(schemas=self.schemas, pending=self.composite_action_schema)
 
-        expected_values = add_one_post_process(self.schemas, values)
-        actual_values = strategy(schemas=self.schemas, pending=None, post_process=[add_one_post_process])
+        # post-process callables used for this test
+        # noinspection PyShadowingNames,PyUnusedLocal
+        def add_one_post_process(values: np.ndarray, **kwargs) -> np.ndarray:
+            new_values = values + 1.0
+            return new_values
 
-        self.assertTrue(np.array_equal(expected_values, actual_values))
+        # noinspection PyShadowingNames,PyUnusedLocal
+        def divide_by_two_post_process(values: np.ndarray, **kwargs) -> np.ndarray:
+            new_values = values / 2.0
+            return new_values
+
+        # note that this example is also testing that post process callables are being called sequentially in the
+        # proper order
+        expected_values = values
+        expected_values = add_one_post_process(values=expected_values)
+        expected_values = divide_by_two_post_process(values=expected_values)
+
+        actual_values = strategy(
+            schemas=self.schemas,
+            pending=self.composite_action_schema,
+            post_process=[
+                add_one_post_process,
+                divide_by_two_post_process
+            ]
+        )
+
+        # test: post-process callables should be capable of changing the values returned from strategy and other
+        #       post-process callables (order matters!)
+        np.testing.assert_array_equal(expected_values, actual_values)
 
     def assert_values_consistent_with_call(self, strategy: EvaluationStrategy) -> None:
+        # the call to values MUST appear first because __call__ may update the strategy's internal state, changing
+        # the values
         np.testing.assert_array_equal(
-            strategy(self.schemas, pending=None),
-            strategy.values(self.schemas, pending=None)
+            strategy.values(self.schemas, pending=None),
+            strategy(self.schemas, pending=None)
         )
         np.testing.assert_array_equal(
-            strategy(self.schemas, pending=self.composite_action_schema),
-            strategy.values(self.schemas, pending=self.composite_action_schema)
+            strategy.values(self.schemas, pending=self.composite_action_schema),
+            strategy(self.schemas, pending=self.composite_action_schema)
         )
+
+    def assert_values_method_is_idempotent(self, strategy: EvaluationStrategy) -> None:
+        n_calls_to_check = 5
+
+        # test: values method should be idempotent when pending is None
+        values = strategy.values(self.schemas, pending=None)
+        for _ in range(n_calls_to_check):
+            new_values = strategy.values(self.schemas, pending=None)
+            np.testing.assert_array_equal(values, new_values)
+
+            values = new_values
+
+        # test: values method should be idempotent when pending is not None
+        values = strategy.values(self.schemas, pending=self.composite_action_schema)
+        for _ in range(n_calls_to_check):
+            new_values = strategy.values(self.schemas, pending=self.composite_action_schema)
+            np.testing.assert_array_equal(values, new_values)
+
+            values = new_values
 
     def assert_all_common_functionality(self, strategy: EvaluationStrategy) -> None:
         self.assert_implements_evaluation_strategy_protocol(strategy)
         self.assert_returns_array_of_correct_length(strategy)
-        self.assert_correctly_invokes_post_process_callables(strategy)
+        self.assert_values_method_is_idempotent(strategy)
+        self.assert_call_correctly_invokes_post_process_callables(strategy)
+        self.assert_post_process_can_update_values(strategy)
         self.assert_values_consistent_with_call(strategy)
 
 
@@ -554,16 +602,16 @@ class TestPendingFocusEvaluationStrategy(TestCommon):
             array[non_component_indexes] = 0.0
 
         for expected_values in expected_value_arrays:
-            values = self.strategy.values(schemas=self.schemas, pending=pending)
+            values = self.strategy(schemas=self.schemas, pending=pending)
             np.testing.assert_array_equal(expected_values, values)
 
     def test_unbounded_reduction_in_value(self):
         pending = self.s_s1
         pending_components = list(pending.action.controller.components)
 
-        old_values = self.strategy.values(schemas=pending_components, pending=pending)
+        old_values = self.strategy(schemas=pending_components, pending=pending)
         for _ in range(100):
-            new_values = self.strategy.values(schemas=pending_components, pending=pending)
+            new_values = self.strategy(schemas=pending_components, pending=pending)
             np.testing.assert_array_less(new_values, old_values)
 
     def test_repr(self):
@@ -586,6 +634,7 @@ class TestPendingFocusEvaluationStrategy(TestCommon):
 
         for i in range(1000):
             values = strategy(schemas=self.schemas, pending=self.s_s1, post_process=[display_values])
+            print(values)
 
 
 class TestReliabilityEvaluationStrategy(TestCommon):
@@ -621,17 +670,17 @@ class TestReliabilityEvaluationStrategy(TestCommon):
 
         # test: a reliability of 1.0 should result in penalty of 0.0
         schemas = [sym_schema('J,/A1/B,', schema_type=MockSchema, reliability=1.0)]
-        rvs = self.strategy(schemas, max_penalty=max_penalty)
+        rvs = self.strategy(schemas)
         self.assertTrue(np.array_equal(np.zeros_like(schemas), rvs))
 
         # test: a reliability of 0.0 should result in max penalty
         schemas = [sym_schema('K,/A1/C,', schema_type=MockSchema, reliability=0.0)]
-        rvs = self.strategy(schemas, max_penalty=max_penalty)
+        rvs = self.strategy(schemas)
         self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
 
         # test: a reliability of nan should result in max penalty
         schemas = [sym_schema('L,/A1/D,', schema_type=MockSchema, reliability=np.nan)]
-        rvs = self.strategy(schemas, max_penalty=max_penalty)
+        rvs = self.strategy(schemas)
         self.assertTrue(np.array_equal(-max_penalty * np.ones_like(schemas), rvs))
 
         # test: testing expected reliability values over a range of reliabilities between 0.0 and 1.0
@@ -1107,13 +1156,14 @@ class TestCompositeEvaluationStrategy(TestCommon):
             post_process=post_process,
         )
 
-        values = strategy(self.schemas)
+        values = strategy(schemas=self.schemas, pending=self.composite_action_schema)
         for mock in post_process:
             mock.assert_called_once()
             kwargs_to_mock = mock.call_args.kwargs
 
-            self.assertEqual(2, len(kwargs_to_mock))
+            self.assertEqual(3, len(kwargs_to_mock))
             self.assertListEqual(self.schemas, kwargs_to_mock['schemas'])
+            self.assertEqual(self.composite_action_schema, kwargs_to_mock['pending'])
             np.testing.assert_array_equal(values, kwargs_to_mock['values'])
 
     def test_values(self):
@@ -1245,13 +1295,14 @@ class TestDefaultExploratoryEvaluationStrategy(TestCommon):
             post_process=post_process,
         )
 
-        values = strategy(self.schemas)
+        values = strategy(schemas=self.schemas, pending=self.composite_action_schema)
         for mock in post_process:
             mock.assert_called_once()
             kwargs_to_mock = mock.call_args.kwargs
 
-            self.assertEqual(2, len(kwargs_to_mock))
+            self.assertEqual(3, len(kwargs_to_mock))
             self.assertListEqual(self.schemas, kwargs_to_mock['schemas'])
+            self.assertEqual(self.composite_action_schema, kwargs_to_mock['pending'])
             np.testing.assert_array_equal(values, kwargs_to_mock['values'])
 
     def test_values(self):
@@ -1373,13 +1424,14 @@ class TestDefaultGoalPursuitEvaluationStrategy(TestCommon):
             post_process=post_process,
         )
 
-        values = strategy(self.schemas)
+        values = strategy(schemas=self.schemas, pending=self.composite_action_schema)
         for mock in post_process:
             mock.assert_called_once()
             kwargs_to_mock = mock.call_args.kwargs
 
-            self.assertEqual(2, len(kwargs_to_mock))
+            self.assertEqual(3, len(kwargs_to_mock))
             self.assertListEqual(self.schemas, kwargs_to_mock['schemas'])
+            self.assertEqual(self.composite_action_schema, kwargs_to_mock['pending'])
             np.testing.assert_array_equal(values, kwargs_to_mock['values'])
 
     def test_values(self):
@@ -1422,3 +1474,101 @@ class TestDefaultGoalPursuitEvaluationStrategy(TestCommon):
 
         expected_str = repr_str(obj=self.strategy, attr_values=attr_values)
         self.assertEqual(expected_str, repr(self.strategy))
+
+
+class TestDefaultEvaluationStrategy(TestCommon):
+    def setUp(self) -> None:
+        super().setUp()
+
+        # In order to make testing deterministic, the epsilon-greedy component strategy must be suppressed.
+        self.strategy = DefaultEvaluationStrategy(
+            exploratory_strategy=DefaultExploratoryEvaluationStrategy(
+                epsilon_min=0.0,
+                epsilon=0.0,
+            )
+        )
+
+    def test_init(self):
+        goal_pursuit_strategy = TotalPrimitiveValueEvaluationStrategy()
+        exploratory_strategy = EpsilonGreedyEvaluationStrategy()
+        weights = [0.15, 0.85]
+        weight_update_strategy = CyclicWeightUpdateStrategy(step_size=1e-7)
+        post_process = [display_minmax]
+
+        strategy = DefaultEvaluationStrategy(
+            goal_pursuit_strategy=goal_pursuit_strategy,
+            exploratory_strategy=exploratory_strategy,
+            weights=weights,
+            weight_update_strategy=weight_update_strategy,
+            post_process=post_process,
+        )
+
+        # test: values should be set properly if they were explicitly provided to initializer
+        self.assertEqual(goal_pursuit_strategy, strategy.goal_pursuit_strategy)
+        self.assertEqual(exploratory_strategy, strategy.exploratory_strategy)
+        self.assertListEqual(list(weights), list(strategy.weights))
+        self.assertEqual(weight_update_strategy, strategy.weight_update_strategy)
+        self.assertEqual(post_process, strategy.post_process)
+
+        # test: default values should be properly set if they values were not explicitly provided to initializer
+        strategy = DefaultEvaluationStrategy()
+
+        self.assertEqual(DefaultGoalPursuitEvaluationStrategy(), strategy.goal_pursuit_strategy)
+        self.assertEqual(DefaultExploratoryEvaluationStrategy(), strategy.exploratory_strategy)
+        self.assertListEqual(list(equal_weights(2)), list(strategy.weights))
+        self.assertEqual(CyclicWeightUpdateStrategy(), strategy.weight_update_strategy)
+        self.assertListEqual(list(), list(strategy.post_process))
+
+    def test_mutators(self):
+        new_goal_pursuit_strategy = TotalDelegatedValueEvaluationStrategy()
+        new_exploratory_strategy = EpsilonGreedyEvaluationStrategy(
+            epsilon=0.78,
+            epsilon_min=0.12,
+            decay_strategy=ExponentialDecayStrategy(rate=0.1)
+        )
+        new_weight_update_strategy = CyclicWeightUpdateStrategy(step_size=1e-4)
+        new_weights = [0.35, 0.65]
+
+        self.strategy.goal_pursuit_strategy = new_goal_pursuit_strategy
+        self.strategy.exploratory_strategy = new_exploratory_strategy
+        self.strategy.weight_update_strategy = new_weight_update_strategy
+        self.strategy.weights = new_weights
+
+        self.assertEqual(new_goal_pursuit_strategy, self.strategy.goal_pursuit_strategy)
+        self.assertEqual(new_exploratory_strategy, self.strategy.exploratory_strategy)
+        self.assertEqual(new_weight_update_strategy, self.strategy.weight_update_strategy)
+        self.assertEqual(new_weights, self.strategy.weights)
+
+    def test_values(self):
+        # test: values should be the weighted sum of the goal-pursuit and exploratory strategies
+        strategies = [
+            self.strategy.goal_pursuit_strategy,
+            self.strategy.exploratory_strategy,
+        ]
+
+        expected_values = sum(
+            [
+                weight * strategy.values(self.schemas)
+                for weight, strategy in zip(self.strategy.weights, strategies)
+            ]
+        )
+
+        actual_values = self.strategy.values(self.schemas)
+        np.testing.assert_array_equal(expected_values, actual_values)
+
+    def test_common(self):
+        self.assert_all_common_functionality(self.strategy)
+
+    def test_weight_updates(self):
+        for _ in range(100):
+            before_weights = copy(self.strategy.weights)
+            self.strategy(schemas=self.schemas)
+            after_weights = copy(self.strategy.weights)
+
+            np.testing.assert_array_equal(
+                self.strategy.weight_update_strategy.update(before_weights),
+                after_weights
+            )
+
+    def test_repr(self):
+        pass

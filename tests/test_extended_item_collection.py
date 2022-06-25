@@ -63,7 +63,7 @@ class TestExtendedItemCollection(TestCase):
     def test_eq(self):
         self.assertTrue(satisfies_equality_checks(
             obj=self.eic,
-            other=ExtendedItemCollection(suppressed_items=sym_items('4;5;6')),
+            other_same_type=ExtendedItemCollection(suppressed_items=sym_items('4;5;6')),
             other_different_type=1.0))
 
     def test_hash(self):

@@ -10,7 +10,7 @@ class DecayStrategy(ABC):
 
     @abstractmethod
     def decay(self, values: np.ndarray, step_size: float = 1.0) -> np.ndarray:
-        """ Decays a value based on a decay function.
+        """ Decays values based on this DecayStrategy.
 
         :param values: an array of values to decayed
         :param step_size: a step size that indicates the magnitude of the decay

@@ -93,7 +93,7 @@ class TestAssociativeArrayList(TestCase):
         other = AssociativeArrayList(pre_allocated=50, block_size=100)
         other.add([2, 3, 4, 5, 6])
 
-        self.assertTrue(satisfies_equality_checks(obj=array_list, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=array_list, other_same_type=other, other_different_type=1.0))
 
         # test: different pre_allocated values should result in match_strategy returning False
         array_list_1 = AssociativeArrayList(pre_allocated=100, block_size=50)

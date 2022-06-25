@@ -1,32 +1,29 @@
 import argparse
 import logging.config
+from collections import Counter
+from collections.abc import Collection
 from collections.abc import Sequence
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
-from time import sleep
-from time import time
+from statistics import mean
+from typing import Iterable
 from typing import Optional
 
-import optuna
-from optuna.integration import SkoptSampler
-from optuna.pruners import MedianPruner
-from optuna.pruners import SuccessiveHalvingPruner
-from optuna.samplers import RandomSampler
-from optuna.samplers import TPESampler
-from pandas import DataFrame
-
+from examples import EpisodeSummary
 from examples import RANDOM_SEED
-from examples import display_schema_info
-from examples import display_summary
-from examples import is_paused
 from examples import parse_optimizer_args
+from examples import parse_run_args
 from examples import parser_serialization_args
-from examples import run_decorator
-from examples.optimizers.multi_arm_bandits import get_objective_function
+from examples import run
+from examples.environments import Environment
+from examples.optimizers import get_optimizer_report_filename
+from examples.optimizers import optimize
 from schema_mechanism.core import Action
+from schema_mechanism.core import Item
 from schema_mechanism.core import State
 from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
-from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import init
@@ -35,7 +32,9 @@ from schema_mechanism.modules import save
 from schema_mechanism.parameters import GlobalParams
 from schema_mechanism.serialization import DEFAULT_ENCODING
 from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
-from schema_mechanism.util import Observable
+from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
+from schema_mechanism.util import get_random_seed
 from schema_mechanism.util import rng
 from schema_mechanism.util import set_random_seed
 
@@ -51,27 +50,37 @@ N_STEPS = 8000
 
 class Machine:
     def __init__(self, id_: str, p_win: float) -> None:
-        self._id = id_
-        self._p_win = p_win
+        self.id = id_
+        self.p_win = p_win
+
         self._outcomes = ['L', 'W']
         self._weights = [1.0 - p_win, p_win]
         self._rng = rng()
 
+    def __str__(self) -> str:
+        return f'M{self.id}'
+
+    def __repr__(self) -> str:
+        return f'{self}[p_win={self.p_win:.2}]'
+
     def play(self, count: int = 1) -> Sequence[str]:
         return self._rng.choice(self._outcomes, size=count, p=self._weights)
 
+
+@dataclass
+class BanditEnvironmentEpisodeSummary(EpisodeSummary):
+    winnings: int = 0
+    times_won: int = 0
+    times_played: int = 0
+    states_visited: Optional[Counter] = field(default_factory=lambda: Counter())
+    machines_played: Optional[Counter] = field(default_factory=lambda: Counter())
+
     @property
-    def id(self) -> str:
-        return self._id
-
-    def __str__(self) -> str:
-        return f'M{self._id}'
-
-    def __repr__(self) -> str:
-        return f'{self}[p_win={self._p_win:.2}]'
+    def win_percentage(self) -> float:
+        return self.times_won / self.times_played
 
 
-class BanditEnvironment(Observable):
+class BanditEnvironment(Environment):
     DEFAULT_INIT_STATE = sym_state('S')  # standing
 
     def __init__(self,
@@ -84,14 +93,15 @@ class BanditEnvironment(Observable):
         if not machines:
             raise ValueError('Must supply at least one machine')
 
-        self.machines = machines
+        self._id = 'multi-arm-bandits'
+        self.machines: Sequence[Machine] = list(machines)
         self.currency_to_play = currency_to_play
         self.currency_on_win = currency_on_win
 
-        self.actions = [Action(a_str) for a_str in ['deposit', 'stand', 'play']]
+        self._actions = [Action(a_str) for a_str in ['deposit', 'stand', 'play']]
 
         self._sit_actions = [Action(f'sit({machine})') for machine in self.machines]
-        self.actions.extend(self._sit_actions)
+        self._actions.extend(self._sit_actions)
 
         self.states = [
             sym_state('W'),  # agent's last play won
@@ -120,13 +130,29 @@ class BanditEnvironment(Observable):
             raise ValueError(f'initial state is an invalid state: {self._init_state}')
 
         self.winnings: int = 0
+        self._episode_summary = BanditEnvironmentEpisodeSummary()
 
     @property
-    def current_state(self) -> State:
-        return self._current_state
+    def id(self) -> str:
+        return self._id
 
-    def step(self, action: Action) -> State:
-        if action not in self.actions:
+    @property
+    def actions(self) -> Iterable[Action]:
+        return self._actions
+
+    @property
+    def episode_summary(self) -> BanditEnvironmentEpisodeSummary:
+        return self._episode_summary
+
+    @property
+    def is_terminal(self) -> bool:
+        # currently, this environment is not episodic, so the is_terminal always returns false. A future iteration
+        # of the environment could make it episodic; for example, if the agent has a starting budget, that, if
+        # exhausted, would end the episode.
+        return False
+
+    def step(self, action: Action) -> tuple[State, bool]:
+        if action not in self._actions:
             raise ValueError(f'Invalid action: {action}')
 
         # standing
@@ -149,11 +175,18 @@ class BanditEnvironment(Observable):
         elif self._current_state in self._machine_play_states:
             if action == Action('play'):
                 m_ndx = self._machine_play_states.index(self._current_state)
+
                 if self.machines[m_ndx].play()[0] == 'W':
+                    self._episode_summary.times_won += 1
                     self.winnings += self.currency_on_win
                     self._current_state = self._machine_win_states[m_ndx]
                 else:
                     self._current_state = self._machine_lose_states[m_ndx]
+
+                self._episode_summary.times_played += 1
+                self._episode_summary.machines_played[m_ndx] += 1
+                self._episode_summary.winnings = self.winnings
+
             elif action == Action('stand'):
                 self._current_state = sym_state('S')
 
@@ -179,19 +212,26 @@ class BanditEnvironment(Observable):
             else:
                 self._current_state = self._machine_base_states[m_ndx]
 
-        return self._current_state
+        self._episode_summary.steps += 1
+        self._episode_summary.states_visited[self._current_state] += 1
 
-    def reset(self) -> State:
+        return self._current_state, self.is_terminal
+
+    def reset(self) -> tuple[State, bool]:
         self.winnings = 0
+
+        self._episode_summary = BanditEnvironmentEpisodeSummary()
         self._current_state = self._init_state
-        return self._current_state
+
+        return self._current_state, self.is_terminal
+
+    def render(self) -> str:
+        return f'{self._current_state} [{self.winnings}]'
 
 
 def parse_env_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument('--machines', type=int, required=False, default=N_MACHINES,
                         help=f'the id of the agent to which this action will be sent (default: {N_MACHINES})')
-    parser.add_argument('--steps', type=int, required=False, default=N_STEPS,
-                        help=f'the id of the agent to which this action will be sent (default: {N_STEPS})')
 
     return parser
 
@@ -202,6 +242,7 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description='Multi-Armed Bandit Example Environment (Schema Mechanism)')
 
+    parser = parse_run_args(parser)
     parser = parse_env_args(parser)
     parser = parse_optimizer_args(parser)
     parser = parser_serialization_args(parser)
@@ -241,20 +282,13 @@ def load_schema_mechanism(model_filepath: Path) -> SchemaMechanism:
     schema_mechanism: Optional[SchemaMechanism] = None
     try:
         schema_mechanism = load(model_filepath)
-        logger.info(f'Successfully schema mechanism from {str(model_filepath)}')
     except FileNotFoundError as e:
         logger.error(e)
 
     return schema_mechanism
 
 
-def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
-    primitive_items = [
-        sym_item('W', primitive_value=1.0),
-        sym_item('L', primitive_value=-1.0),
-        sym_item('P', primitive_value=-0.5),
-    ]
-
+def create_schema_mechanism(env: Environment, primitive_items: Iterable[Item]) -> SchemaMechanism:
     schema_mechanism = init(
         items=primitive_items,
         actions=env.actions,
@@ -262,143 +296,70 @@ def create_schema_mechanism(env: BanditEnvironment) -> SchemaMechanism:
     )
 
     schema_mechanism.schema_selection.evaluation_strategy = DefaultEvaluationStrategy(
-        epsilon=0.9999,
-        epsilon_min=0.025,
-        epsilon_decay_rate=0.9999,
-        reliability_max_penality=0.6,
-        pending_focus_max_value=0.9,
-        pending_focus_decay_rate=0.4
+        goal_pursuit_strategy=DefaultGoalPursuitEvaluationStrategy(
+            reliability_max_penalty=0.6,
+            pending_focus_max_value=0.9,
+            pending_focus_decay_rate=0.4
+        ),
+        exploratory_strategy=DefaultExploratoryEvaluationStrategy(
+            epsilon=0.9999,
+            epsilon_min=0.025,
+            epsilon_decay_rate=0.9999,
+        ),
     )
 
     return schema_mechanism
 
 
-def calculate_score(env: BanditEnvironment) -> float:
-    return env.winnings
+def calculate_score(episode_summary: BanditEnvironmentEpisodeSummary) -> float:
+    return episode_summary.winnings
 
 
-@run_decorator
-def run(env: BanditEnvironment,
-        schema_mechanism: SchemaMechanism,
-        n_steps: int) -> float:
-    env.reset()
+def display_environment_summary(env: BanditEnvironment):
+    logger.info(f'Environment Summary ({env.id}):')
 
-    for n in range(n_steps):
-        logger.debug(f'winnings: {env.winnings}')
-        logger.debug(f'state[{n}]: {env.current_state}')
+    logger.info(f'\tRandom Seed: {get_random_seed()}')
+    logger.info(f'\tMachines:')
+    for machine in env.machines:
+        logger.info(f'\t\t{repr(machine)}')
 
-        current_composite_schema = schema_mechanism.schema_selection.pending_schema
-        if current_composite_schema:
-            logger.debug(f'active composite action schema: {current_composite_schema} ')
-
-        selection_details = schema_mechanism.select(env.current_state)
-
-        schema = selection_details.selected
-        action = schema.action
-        effective_value = selection_details.effective_value
-        terminated_composite_schemas = selection_details.terminated_pending
-
-        if terminated_composite_schemas:
-            i = 0
-            for pending_details in terminated_composite_schemas:
-                logger.debug(f'terminated schema [{i}]: {pending_details.schema}')
-                logger.debug(f'termination status [{i}]: {pending_details.status}')
-                logger.debug(f'selection state [{i}]: {pending_details.selection_state}')
-                logger.debug(f'duration [{i}]: {pending_details.duration}')
-            i += 1
-
-        if is_paused():
-            display_machine_info(env.machines)
-            display_summary(schema_mechanism)
-            display_schema_info(sym_schema('/play/'))
-
-            try:
-                while is_paused():
-                    sleep(0.1)
-            except KeyboardInterrupt:
-                pass
-
-        logger.debug(f'selected schema[{n}]: {schema} [eff. value: {effective_value}]')
-
-        state = env.step(action)
-
-        schema_mechanism.learn(selection_details=selection_details, result_state=state)
-
-    display_machine_info(env.machines)
-    display_summary(schema_mechanism)
-
-    logger.info(f'winnings: {env.winnings}')
-
-    return calculate_score(env)
+    logger.info(f'\tMean Probability of Win: {mean(machine.p_win for machine in env.machines)}')
 
 
-def optimize(env: BanditEnvironment,
-             sampler: str,
-             pruner: str,
-             n_trials: int,
-             n_steps_per_trial: int,
-             n_runs_per_trial: int,
-             show_progress_bar: bool = False,
-             ) -> DataFrame:
-    seed = int(time())
+def display_performance_summary(episode_summaries: Collection[BanditEnvironmentEpisodeSummary]) -> None:
+    logger.info(f'Performance Summary:')
 
-    if sampler == 'random':
-        sampler = RandomSampler(seed=seed)
-    elif sampler == 'tpe':
-        sampler = TPESampler(n_startup_trials=5, seed=seed)
-    elif sampler == 'skopt':
-        sampler = SkoptSampler(skopt_kwargs={'base_estimator': "GP", 'acq_func': 'gp_hedge'})
-    else:
-        raise ValueError('Unknown sampler: {}'.format(sampler))
+    steps_in_episode = [episode_summary.steps for episode_summary in episode_summaries]
+    winnings_in_episode = [episode_summary.winnings for episode_summary in episode_summaries]
+    times_won_in_episode = [episode_summary.times_won for episode_summary in episode_summaries]
+    times_played_in_episode = [episode_summary.times_played for episode_summary in episode_summaries]
+    machines_played_in_episode = [episode_summary.machines_played for episode_summary in episode_summaries]
+    states_visited_in_episode = [episode_summary.states_visited for episode_summary in episode_summaries]
 
-    if pruner == 'halving':
-        pruner = SuccessiveHalvingPruner(min_resource=1, reduction_factor=4, min_early_stopping_rate=0)
-    elif pruner == 'median':
-        pruner = MedianPruner(n_startup_trials=5)
-    elif pruner == 'none':
-        # Do not prune
-        pruner = MedianPruner(n_startup_trials=n_trials)
-    else:
-        raise ValueError('Unknown pruner: {}'.format(pruner))
+    cumulative_steps = sum(steps_in_episode)
+    win_percentage = (sum(times_won_in_episode) / sum(times_played_in_episode)) * 100.0
 
-    env_id = 'multi-arm_bandits'
-    session_id = int(time())
-    study_name = f'{env_id}-{session_id}-optimizer_study'
-    storage = f'sqlite:///{study_name}.db'
+    avg_winnings_per_episode = mean(winnings_in_episode)
+    min_winnings_per_episode = min(winnings_in_episode)
+    max_winnings_per_episode = max(winnings_in_episode)
 
-    study = optuna.create_study(study_name=study_name,
-                                storage=storage,
-                                load_if_exists=True,
-                                sampler=sampler,
-                                pruner=pruner)
+    # aggregate episode specific counters
+    machines_played_all_episodes = Counter()
+    for counter in machines_played_in_episode:
+        machines_played_all_episodes.update(counter)
 
-    try:
-        objective = get_objective_function(
-            env=env,
-            run=run,
-            n_steps_per_trial=n_steps_per_trial,
-            n_runs_per_trial=n_runs_per_trial
-        )
-        study.optimize(objective, n_trials=n_trials, show_progress_bar=show_progress_bar)
-    except KeyboardInterrupt:
-        pass
+    states_visited_all_episodes = Counter()
+    for counter in states_visited_in_episode:
+        states_visited_all_episodes.update(counter)
 
-    logger.info(f'Number of finished trials: {len(study.trials)}')
-    logger.info('Best trial:')
-    best_trial = study.best_trial
-
-    logger.info(f'\tValue: {-best_trial.value}')
-    logger.info('\tParams: ')
-    for key, value in best_trial.params.items():
-        logger.info(f'\t\t{key}: {value}')
-
-    return study.trials_dataframe()
-
-
-def display_machine_info(machines):
-    logger.debug(f'machines ({len(machines)}):')
-    for m in machines:
-        logger.debug(f'\t{repr(m)}')
+    logger.info(f'\t\tEpisodes: {len(episode_summaries)}')
+    logger.info(f'\t\tSteps (over all episodes): {cumulative_steps}')
+    logger.info(f'\t\tAverage winnings: {avg_winnings_per_episode}')
+    logger.info(f'\t\tMinimum winnings: {min_winnings_per_episode}')
+    logger.info(f'\t\tMaximum winnings: {max_winnings_per_episode}')
+    logger.info(f'\t\tWin percentage (over all episodes): {win_percentage:.2f}%')
+    logger.info(f'\t\tMachines played (over all episodes): {machines_played_all_episodes}')
+    logger.info(f'\t\tStates visited (over all episodes): {states_visited_all_episodes}')
 
 
 def main():
@@ -410,19 +371,37 @@ def main():
     machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.machines)]
     env = BanditEnvironment(machines)
 
+    primitive_items = [
+        sym_item('W', primitive_value=1.0),
+        sym_item('L', primitive_value=-1.0),
+        sym_item('P', primitive_value=-0.5),
+    ]
+
     if args.optimize:
         data_frame = optimize(
             env=env,
+            run=run,
+            primitive_items=primitive_items,
+            calculate_score=calculate_score,
             sampler=args.optimizer_sampler,
             pruner=args.optimizer_pruner,
             n_trials=args.optimizer_trials,
-            n_steps_per_trial=args.steps,
             n_runs_per_trial=args.optimizer_runs_per_trial,
+            n_episodes_per_run=args.episodes,
+            n_steps_per_episode=args.steps,
+            study_name=args.optimizer_study_name,
+            use_database=args.optimizer_use_db,
         )
 
-        report_name = f'optimizer_results_{int(time())}-{args.optimizer_sampler}-{args.optimizer_pruner}.csv'
-        report_path = f'local/optimize/multi_arm_bandits/{report_name}'
+        report_filename = get_optimizer_report_filename(
+            study_name=args.optimizer_study_name,
+            sampler=args.optimizer_sampler,
+            pruner=args.optimizer_pruner,
+        )
+
+        report_path = f'local/optimize/{env.id}/{report_filename}'
         logger.info("Writing report to {}".format(report_path))
+
         data_frame.to_csv(report_path)
     else:
         load_path: Path = args.load_path
@@ -430,10 +409,22 @@ def main():
 
         schema_mechanism = load_schema_mechanism(load_path) if load_path else None
         if not schema_mechanism:
-            schema_mechanism = create_schema_mechanism(env)
+            schema_mechanism = create_schema_mechanism(
+                env=env,
+                primitive_items=primitive_items,
+            )
 
-        run(env=env, schema_mechanism=schema_mechanism, n_steps=args.steps)
+        episode_summary: BanditEnvironmentEpisodeSummary = run(
+            env=env,
+            schema_mechanism=schema_mechanism,
+            max_steps=args.steps,
+            render_env=False
+        )
 
+        display_environment_summary(env)
+        display_performance_summary([episode_summary])
+
+        # TODO: move this into run, to save model as we go
         if save_path:
             save(
                 modules=[schema_mechanism],

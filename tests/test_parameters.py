@@ -99,7 +99,7 @@ class TestGlobalParams(TestCase):
         params = default_global_params
         other = GlobalParams()
 
-        self.assertTrue(satisfies_equality_checks(obj=params, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=params, other_same_type=other, other_different_type=1.0))
 
     def test_encode_and_decode(self):
         global_params: GlobalParams = default_global_params

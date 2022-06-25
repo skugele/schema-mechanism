@@ -49,6 +49,8 @@ from schema_mechanism.strategies.selection import RandomizeBestSelectionStrategy
 from schema_mechanism.strategies.selection import RandomizeSelectionStrategy
 from schema_mechanism.strategies.trace import AccumulatingTrace
 from schema_mechanism.strategies.trace import ReplacingTrace
+from schema_mechanism.strategies.weight_update import CyclicWeightUpdateStrategy
+from schema_mechanism.strategies.weight_update import NoOpWeightUpdateStrategy
 from schema_mechanism.validate import AcceptAllValidator
 from schema_mechanism.validate import BlackListValidator
 from schema_mechanism.validate import ElementWiseValidator
@@ -755,6 +757,7 @@ def encode_default_evaluation_strategy(
         '__type__': 'DefaultEvaluationStrategy',
         'goal_pursuit_strategy': strategy.goal_pursuit_strategy,
         'exploratory_strategy': strategy.exploratory_strategy,
+        'weight_update_strategy': strategy.weight_update_strategy,
     }
     return attrs
 
@@ -819,6 +822,29 @@ def encode_randomize_best_selection_strategy(
     return attrs
 
 
+def encode_no_op_weight_update_strategy(
+        strategy: NoOpWeightUpdateStrategy,
+        object_registry: dict[str, Any] = None,
+        read_only_object_registry: bool = False,
+        **kwargs) -> dict:
+    attrs = {
+        '__type__': 'NoOpWeightUpdateStrategy',
+    }
+    return attrs
+
+
+def encode_cyclic_weight_update_strategy(
+        strategy: CyclicWeightUpdateStrategy,
+        object_registry: dict[str, Any] = None,
+        read_only_object_registry: bool = False,
+        **kwargs) -> dict:
+    attrs = {
+        '__type__': 'CyclicWeightUpdateStrategy',
+        'step_size': strategy.step_size,
+    }
+    return attrs
+
+
 def encode_accumulating_trace(
         strategy: AccumulatingTrace,
         object_registry: dict[str, Any] = None,
@@ -861,9 +887,10 @@ encoder_map: dict[Type, Callable] = {
     CompositeEvaluationStrategy: encode_composite_evaluation_strategy,
     CompositeItem: encode_composite_item,
     Controller: encode_controller,
+    CyclicWeightUpdateStrategy: encode_cyclic_weight_update_strategy,
+    DefaultEvaluationStrategy: encode_default_evaluation_strategy,
     DefaultExploratoryEvaluationStrategy: encode_default_exploratory_evaluation_strategy,
     DefaultGoalPursuitEvaluationStrategy: encode_default_global_pursuit_evaluation_strategy,
-    DefaultEvaluationStrategy: encode_default_evaluation_strategy,
     ECItemStats: encode_ec_item_stats,
     ERItemStats: encode_er_item_stats,
     ElementWiseValidator: encode_element_wise_validator,
@@ -885,6 +912,7 @@ encoder_map: dict[Type, Callable] = {
     MultiValidator: encode_multi_validator,
     NoDecayStrategy: encode_no_decay_strategy,
     NoOpEvaluationStrategy: encode_no_op_evaluation_strategy,
+    NoOpWeightUpdateStrategy: encode_no_op_weight_update_strategy,
     PendingFocusEvaluationStrategy: encode_pending_focus_evaluation_strategy,
     RandomizeBestSelectionStrategy: encode_randomize_best_selection_strategy,
     RandomizeSelectionStrategy: encode_randomize_selection_strategy,

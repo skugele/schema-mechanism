@@ -100,12 +100,14 @@ def save_manifest(manifest: Manifest, /, path: Path, overwrite: bool = False) ->
 
     with manifest_filepath.open(mode='w') as fp:
         yaml.dump(stream=fp, data=manifest, Dumper=yaml.Dumper, sort_keys=False)
+        logger.info(f'Manifest successfully saved to {manifest_filepath}')
 
 
 def load_manifest(path: Path) -> Manifest:
     manifest_filepath: Path = path / get_manifest_filename()
     with manifest_filepath.open(mode='r') as fp:
         manifest = yaml.load(stream=fp, Loader=yaml.Loader)
+        logger.info(f'Manifest successfully loaded from {manifest_filepath}')
         return manifest
 
 

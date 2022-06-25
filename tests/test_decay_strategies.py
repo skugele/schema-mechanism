@@ -136,7 +136,7 @@ class TestLinearDecayStrategy(TestCommon):
             minimum=0.1
         )
 
-        self.assertTrue(satisfies_equality_checks(obj=linear_strategy, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=linear_strategy, other_same_type=other, other_different_type=1.0))
 
         # test: strategies with different rates are not equal
         linear_strategy_1 = LinearDecayStrategy(
@@ -232,7 +232,8 @@ class TestGeometricDecayStrategy(TestCommon):
         geometric_strategy = GeometricDecayStrategy(rate=0.001)
         other = GeometricDecayStrategy(rate=0.002)
 
-        self.assertTrue(satisfies_equality_checks(obj=geometric_strategy, other=other, other_different_type=1.0))
+        self.assertTrue(
+            satisfies_equality_checks(obj=geometric_strategy, other_same_type=other, other_different_type=1.0))
 
         # test: strategies with different rates are not equal
         geometric_strategy_1 = GeometricDecayStrategy(rate=0.001)
@@ -347,7 +348,8 @@ class TestExponentialDecayStrategy(TestCommon):
             minimum=0.2
         )
 
-        self.assertTrue(satisfies_equality_checks(obj=exponential_strategy, other=other, other_different_type=1.0))
+        self.assertTrue(
+            satisfies_equality_checks(obj=exponential_strategy, other_same_type=other, other_different_type=1.0))
 
         # test: strategies with different rates are not equal
         exponential_strategy_1 = ExponentialDecayStrategy(
@@ -448,10 +450,7 @@ class TestNoDecayStrategy(TestCommon):
         self.assertRaises(ValueError, lambda: self.strategy.decay(self.ONES, step_size=-1e10))
 
     def test_equals(self):
-        no_decay_strategy = NoDecayStrategy()
-        other = NoDecayStrategy()
-
-        self.assertTrue(satisfies_equality_checks(obj=no_decay_strategy, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(NoDecayStrategy(), other_different_type='other'))
 
 
 class TestImmediateDecayStrategy(TestCommon):
@@ -493,7 +492,8 @@ class TestImmediateDecayStrategy(TestCommon):
         immediate_decay_strategy = ImmediateDecayStrategy(minimum=-0.35)
         other = ImmediateDecayStrategy(minimum=-0.2)
 
-        self.assertTrue(satisfies_equality_checks(obj=immediate_decay_strategy, other=other, other_different_type=1.0))
+        self.assertTrue(
+            satisfies_equality_checks(obj=immediate_decay_strategy, other_same_type=other, other_different_type=1.0))
 
         # test: strategies with different minimum values should not be equal
         immediate_decay_strategy_1 = ImmediateDecayStrategy(minimum=-0.35)

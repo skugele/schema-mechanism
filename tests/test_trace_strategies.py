@@ -208,7 +208,7 @@ class TestAccumulatingTrace(TestCommon):
             block_size=1
         )
 
-        self.assertTrue(satisfies_equality_checks(obj=trace, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=trace, other_same_type=other, other_different_type=1.0))
 
         # test: traces with different decay strategies should not be equal
         trace_1 = AccumulatingTrace(
@@ -528,7 +528,7 @@ class TestReplacingTrace(TestCommon):
             block_size=1
         )
 
-        self.assertTrue(satisfies_equality_checks(obj=trace, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=trace, other_same_type=other, other_different_type=1.0))
 
         # test: traces with different decay strategies should not be equal
         trace_1 = ReplacingTrace(

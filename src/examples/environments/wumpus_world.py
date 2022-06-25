@@ -3,12 +3,14 @@ from __future__ import annotations
 import copy
 import logging
 import re
+from dataclasses import dataclass
 from random import choice
 from typing import NamedTuple
 from typing import Optional
 
 import numpy as np
 
+from examples import Environment
 from schema_mechanism.core import Action
 from schema_mechanism.core import State
 
@@ -59,8 +61,8 @@ class WumpusWorldAgent:
         self.position = position
         self.direction = direction
         self.health = health
-        self.n_arrows = n_arrows
-        self.n_gold = 0
+        self.arrows = n_arrows
+        self.gold = 0
 
         self.has_escaped = False
 
@@ -79,15 +81,15 @@ class WumpusWorldAgent:
     @property
     def as_array(self) -> np.ndarray:
         return np.array([self.position[0], self.position[1], direction_as_int(self.direction),
-                         self.health, self.n_arrows, self.n_gold], dtype=np.int)
+                         self.health, self.arrows, self.gold], dtype=np.int)
 
     def __repr__(self) -> str:
         return str(self)
 
     def __str__(self) -> str:
         return 'position: {}\ndirection: {}\nhealth: {}\narrows: {}\ngold: {}'.format(self.position, self.direction,
-                                                                                      self.health, self.n_arrows,
-                                                                                      self.n_gold)
+                                                                                      self.health, self.arrows,
+                                                                                      self.gold)
 
 
 class Wumpus:
@@ -195,7 +197,7 @@ def pickup_gold(mdp):
     if mdp.agent.position in mdp.env.locations_of(GOLD):
         logger.debug("Gold Found!")
 
-        mdp.agent.n_gold += 1
+        mdp.agent.gold += 1
 
         # Remove gold from environment at agent position
         mdp.env.clear(mdp.agent.position)
@@ -257,7 +259,7 @@ actions_avail_dict = {
     TURN_RIGHT: lambda mdp: True,
     PICKUP_GOLD: lambda mdp: mdp.agent.position in mdp.env.locations_of(GOLD),
     # PICKUP_ARROW: lambda mdp: mdp.agent.position in mdp.env.locations_of(ARROW),
-    # FIRE_ARROW: lambda mdp: mdp.agent.n_arrows > 0,
+    # FIRE_ARROW: lambda mdp: mdp.agent.arrows > 0,
     USE_EXIT: lambda mdp: mdp.agent.position in mdp.env.locations_of(EXIT)
 }
 
@@ -299,10 +301,10 @@ def get_agent_observation(world: WumpusWorld, agent: WumpusWorldAgent, wumpus: W
         # f'AGENT.HEALTH={agent.health}',
 
         # agent's possessions
-        # f'AGENT.HAS[ARROWS:{agent.n_arrows}]',
+        # f'AGENT.HAS[ARROWS:{agent.arrows}]',
     ]
 
-    if agent.n_gold > 0:
+    if agent.gold > 0:
         state_elements.append(f'AGENT.HAS[GOLD]', )
 
     # objects/entities in agent's cell
@@ -329,20 +331,34 @@ def get_agent_observation(world: WumpusWorld, agent: WumpusWorldAgent, wumpus: W
     return tuple(state_elements)
 
 
-class WumpusWorldMDP:
+@dataclass
+class WumpusWorldMdpEpisodeSummary:
+    steps: int = 0
+    agent_escaped: bool = False
+    agent_health: bool = False
+    wumpus_health: bool = False
+    gold: int = 0
+    arrows: int = 0
+
+
+class WumpusWorldMdp(Environment):
 
     def __init__(self,
-                 worldmap: str,
+                 world_id: str,
+                 world_map: str,
                  agent: WumpusWorldAgent,
                  wumpus: Optional[Wumpus] = None,
                  randomized_start: bool = False) -> None:
-        """Initialize a WumpusWorldMDP for the specified WumpusWorld and MDP attributes.
+        """Initialize a WumpusWorldMdp for the specified WumpusWorld and MDP attributes.
 
-        :param worldmap: a string representations that depicts the wumpus world and its objects
+        :param world_id: a string identifier for this instance of wumpus world
+        :param world_map: a string representations that depicts the wumpus world and its objects
         :param agent: a WumpusWorldAgent object to serve as an agent specification
         :param wumpus: a Wumpus object to serve as a Wumpus specification
         """
-        self.worldmap = worldmap
+
+        self.world_id = world_id
+        self.world_map = world_map
         self.agent_spec = agent
         self.wumpus_spec = wumpus
         self.randomized_start = randomized_start
@@ -350,6 +366,22 @@ class WumpusWorldMDP:
         self.env: Optional[WumpusWorld] = None
         self.agent: Optional[WumpusWorldAgent] = None
         self.wumpus: Optional[Wumpus] = None
+
+        self._episode_summary = WumpusWorldMdpEpisodeSummary()
+
+    @property
+    def id(self) -> str:
+        return self.world_id
+
+    @property
+    def episode_summary(self) -> WumpusWorldMdpEpisodeSummary:
+        self._episode_summary.agent_escaped = self.agent.has_escaped
+        self._episode_summary.agent_health = self.agent.health
+        self._episode_summary.wumpus_health = self.wumpus.health if self.wumpus else 0
+        self._episode_summary.gold = self.agent.gold
+        self._episode_summary.arrows = self.agent.arrows
+
+        return self._episode_summary
 
     @property
     def state(self) -> State:
@@ -386,6 +418,8 @@ class WumpusWorldMDP:
             raise ValueError("MDP is in a terminal state. reset() must be called to reinitialize the mdp.")
             # return state, 0.0, done
 
+        self._episode_summary.steps += 1
+
         # Update MDP from action
         actions_dict[action](self)
 
@@ -393,7 +427,9 @@ class WumpusWorldMDP:
         return self.state, self.is_terminal
 
     def reset(self) -> tuple[State, bool]:
-        self.env = WumpusWorld(self.worldmap)
+        self._episode_summary = WumpusWorldMdpEpisodeSummary()
+
+        self.env = WumpusWorld(self.world_map)
         self.agent = copy.deepcopy(self.agent_spec)
 
         if self.randomized_start:

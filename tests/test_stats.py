@@ -72,7 +72,7 @@ class TestGlobalStats(TestCase):
         other.baseline_value = 4.56
         other.n = 17
 
-        self.assertTrue(satisfies_equality_checks(obj=stats, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=stats, other_same_type=other, other_different_type=1.0))
 
     def test_update(self):
         # setting learning rate to 1.0 to simplify testing (baseline value update depends on learning rate)
@@ -286,7 +286,12 @@ class TestECItemStatistics(TestCase):
         self.item_stats.update(on=True, success=True)
         self.item_stats.update(on=False, success=False)
 
-        self.assertTrue(satisfies_equality_checks(obj=self.item_stats, other=ECItemStats(), other_different_type=1.0))
+        self.assertTrue(
+            satisfies_equality_checks(
+                obj=self.item_stats,
+                other_same_type=ECItemStats(),
+                other_different_type='other')
+        )
 
     def test_hash(self):
         self.item_stats.update(on=True, success=True)
@@ -482,7 +487,12 @@ class TestERItemStatistics(TestCase):
         self.item_stats.update(on=True, activated=True)
         self.item_stats.update(on=False, activated=False)
 
-        self.assertTrue(satisfies_equality_checks(obj=self.item_stats, other=ECItemStats(), other_different_type=1.0))
+        self.assertTrue(
+            satisfies_equality_checks(
+                obj=self.item_stats,
+                other_same_type=ERItemStats(),
+                other_different_type='other')
+        )
 
     def test_hash(self):
         self.item_stats.update(on=True, activated=True)

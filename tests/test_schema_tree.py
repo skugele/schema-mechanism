@@ -777,7 +777,7 @@ class TestSchemaTree(TestCase):
         other = SchemaTree()
         other.add(schemas=[sym_schema('/A1/'), sym_schema('/A2/')])
 
-        self.assertTrue(satisfies_equality_checks(obj=tree, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=tree, other_same_type=other, other_different_type=1.0))
 
     def test_find_all_satisfied(self):
         # case 1: blank state should only return root node's schemas_satisfied_by
@@ -974,7 +974,7 @@ class TestSchemaTreeNode(TestCase):
         node = sym_schema_tree_node('1,2,3')
         other = sym_schema_tree_node('4,5,6')
 
-        self.assertTrue(satisfies_equality_checks(obj=node, other=other, other_different_type=1.0))
+        self.assertTrue(satisfies_equality_checks(obj=node, other_same_type=other, other_different_type=1.0))
 
     def test_repr(self):
         node = sym_schema_tree_node('1,2,3')

@@ -808,7 +808,7 @@ class TestSchema(TestCase):
     def test_eq(self):
         self.assertTrue(satisfies_equality_checks(
             obj=self.schema,
-            other=sym_schema('1,2/A1/3,4,5'),
+            other_same_type=sym_schema('1,2/A1/3,4,5'),
             other_different_type=1.0))
 
     def test_hash(self):

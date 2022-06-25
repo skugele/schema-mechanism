@@ -225,7 +225,7 @@ class TestSymbolicItem(TestCase):
     def test_eq(self):
         self.assertTrue(satisfies_equality_checks(
             obj=self.item,
-            other=SymbolicItem('123'),
+            other_same_type=SymbolicItem('123'),
             other_different_type=1.0))
 
     def test_hash(self):
@@ -368,7 +368,7 @@ class TestCompositeItem(unittest.TestCase):
     def test_eq(self):
         self.assertTrue(satisfies_equality_checks(
             obj=self.item,
-            other=CompositeItem(source=['A', 'B']),
+            other_same_type=CompositeItem(source=['A', 'B']),
             other_different_type=1.0))
 
     def test_hash(self):

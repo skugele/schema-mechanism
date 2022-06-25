@@ -240,7 +240,7 @@ class TestCompositeAction(TestShared):
 
     def test_equals(self):
         self.assertTrue(
-            satisfies_equality_checks(obj=self.composite_action, other=self.other, other_different_type=1.0))
+            satisfies_equality_checks(obj=self.composite_action, other_same_type=self.other, other_different_type=1.0))
 
         # test: goal state is used to determine equality NOT labels
         ca_1 = CompositeAction(sym_state_assert('1,2'), label='CA1')
@@ -523,7 +523,8 @@ class TestController(TestShared):
         controller_1 = Controller(goal_state=sym_state_assert('D'))
         controller_2 = Controller(goal_state=sym_state_assert('E'))
 
-        self.assertTrue(satisfies_equality_checks(obj=controller_1, other=controller_2, other_different_type=1.0))
+        self.assertTrue(
+            satisfies_equality_checks(obj=controller_1, other_same_type=controller_2, other_different_type=1.0))
 
         # test: equal should function properly given controllers with components
         controller_1 = Controller(goal_state=sym_state_assert('D'))
@@ -532,7 +533,8 @@ class TestController(TestShared):
         controller_1.update([Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d])])
         controller_2.update([Chain([self.s1_a_b, self.s2_b_c, self.s3_c_d, self.s3_d_e])])
 
-        self.assertTrue(satisfies_equality_checks(obj=controller_1, other=controller_2, other_different_type=1.0))
+        self.assertTrue(
+            satisfies_equality_checks(obj=controller_1, other_same_type=controller_2, other_different_type=1.0))
 
     def test_hash(self):
         self.assertTrue(satisfies_hash_checks(obj=self.controller))

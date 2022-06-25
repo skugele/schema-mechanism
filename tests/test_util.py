@@ -6,6 +6,7 @@ import numpy as np
 from schema_mechanism.util import BoundedSet
 from schema_mechanism.util import DefaultDictWithKeyFactory
 from schema_mechanism.util import equal_weights
+from schema_mechanism.util import get_number_of_digits_after_decimal
 from test_share.test_classes import MockObservable
 from test_share.test_classes import MockObserver
 from test_share.test_func import common_test_setup
@@ -175,3 +176,17 @@ class TestDefaultDictWithKeyFactory(TestCase):
         dict_without_factory = DefaultDictWithKeyFactory()
 
         self.assertRaises(KeyError, lambda: dict_without_factory['missing'])
+
+    def test_get_number_of_digits_after_decimal(self):
+        self.assertEqual(get_number_of_digits_after_decimal(1), 0)
+        self.assertEqual(get_number_of_digits_after_decimal(10), 0)
+        self.assertEqual(get_number_of_digits_after_decimal(0.0), 0)
+        self.assertEqual(get_number_of_digits_after_decimal(10.0), 0)
+        self.assertEqual(get_number_of_digits_after_decimal(10.1), 1)
+        self.assertEqual(get_number_of_digits_after_decimal(0.001), 3)
+        self.assertEqual(get_number_of_digits_after_decimal(1001.12345), 5)
+        self.assertEqual(get_number_of_digits_after_decimal(1001.00000), 0)
+        self.assertEqual(get_number_of_digits_after_decimal(0.000456789000), 9)
+        self.assertEqual(get_number_of_digits_after_decimal(1e-13), 13)
+
+        self.assertRaises(ValueError, lambda: get_number_of_digits_after_decimal(1e-14))

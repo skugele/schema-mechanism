@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import decimal
 import itertools
 import logging
 import random
@@ -331,6 +332,15 @@ def get_random_seed() -> Optional[int]:
 
 
 _rng: Optional[np.random.Generator] = None
+
+
+def get_number_of_digits_after_decimal(number: float):
+    if number != 0.0 and abs(number) < 1e-13:
+        raise ValueError('Number\'s floating point precision exceeds safe value')
+
+    # scientific notation expanded into float point representation
+    number_as_string = '{:.13f}'.format(number).rstrip('0')
+    return -1 * decimal.Decimal(number_as_string).as_tuple().exponent
 
 
 def rng():

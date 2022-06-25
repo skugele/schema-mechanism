@@ -62,6 +62,23 @@ def is_eq_symmetric(x: Any, y: Any) -> bool:
     return y == x
 
 
+def is_neq_symmetric(x: Any, y: Any) -> bool:
+    """ Tests the symmetric property of the __neq__ method.
+
+    For any non-None objects x and y, x != y iff y != x.
+
+    :param x: any non-None object for which x != y
+    :param y: any non-None object for which x != y
+
+    :return: True if the __neq__ methods satisfy the symmetric property for these object instances
+    """
+    assert (x is not None)
+    assert (y is not None)
+    assert (x != y)
+
+    return y != x
+
+
 def is_eq_transitive(x: Any, y: Any, z: Any) -> bool:
     """ Tests the transitive property of the __eq__ method.
 
@@ -153,8 +170,20 @@ def is_hash_same_for_equal_objects(x: Hashable, y: Hashable) -> bool:
     return hash(x) == hash(y)
 
 
-def satisfies_equality_checks(obj: Any, other: Any, other_different_type: Any) -> bool:
-    assert not isinstance(other_different_type, type(other))
+def satisfies_equality_checks(obj: Any, other_same_type: Any = None, other_different_type: Any = None) -> bool:
+    """
+
+    :param obj: the primary object being tested
+    :param other_same_type: an optional object, not equal to obj, but of the same type
+    :param other_different_type: an optional object, not equal to obj, but of the different type
+
+    :return:
+    """
+    if other_same_type:
+        assert isinstance(obj, type(other_same_type))
+
+    if other_different_type:
+        assert not isinstance(obj, type(other_different_type))
 
     copy_ = copy(obj)
 
@@ -164,7 +193,26 @@ def satisfies_equality_checks(obj: Any, other: Any, other_different_type: Any) -
         is_eq_transitive(x=obj, y=copy_, z=copy(copy_)),
         is_eq_consistent(x=obj, y=copy_),
         is_eq_with_null_is_false(obj),
-        is_eq_returns_not_implemented_given_object_of_different_type(x=obj, y=other_different_type),
+        (
+            obj != other_same_type
+            if other_same_type
+            else True
+        ),
+        (
+            is_neq_symmetric(x=obj, y=other_same_type)
+            if other_same_type
+            else True
+        ),
+        (
+            obj != other_different_type
+            if other_different_type
+            else True
+        ),
+        (
+            is_eq_returns_not_implemented_given_object_of_different_type(x=obj, y=other_different_type)
+            if other_different_type
+            else True
+        ),
     })
 
 
