@@ -33,10 +33,12 @@ from schema_mechanism.core import SchemaUniqueKey
 from schema_mechanism.core import State
 from schema_mechanism.core import StateAssertion
 from schema_mechanism.core import advantage
+from schema_mechanism.core import composite_items
 from schema_mechanism.core import default_action_trace
 from schema_mechanism.core import default_delegated_value_helper
 from schema_mechanism.core import default_global_params
 from schema_mechanism.core import default_global_stats
+from schema_mechanism.core import generate_nodes_for_assertion
 from schema_mechanism.core import get_action_trace
 from schema_mechanism.core import get_controller_map
 from schema_mechanism.core import get_delegated_value_helper
@@ -855,9 +857,14 @@ def init(
     schema_collection = SchemaTree()
     schema_collection.add(schemas=bare_schemas)
 
+    # FIXME: this is a workaround to an issue that occurs with primitive composite items. Ordinarily, composite results
+    # FIXME: only occur AFTER that state assertion is discovered via a context spin-off. When they occur in built-ins,
+    # FIXME: the node must be added manually along with any intermediate, inner nodes.
+    for item in composite_items(items):
+        generate_nodes_for_assertion(assertion=StateAssertion([item]), tree=schema_collection)
+
     schema_memory = SchemaMemory(schema_collection=schema_collection)
     schema_selection = SchemaSelection()
-
     schema_mechanism = SchemaMechanism(
         schema_memory=schema_memory,
         schema_selection=schema_selection

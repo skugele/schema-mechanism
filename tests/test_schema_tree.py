@@ -1,6 +1,8 @@
 import itertools
 from collections import Counter
+from copy import deepcopy
 from typing import Any
+from typing import Iterable
 from unittest import TestCase
 
 from schema_mechanism.core import Action
@@ -9,6 +11,8 @@ from schema_mechanism.core import Schema
 from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.core import SchemaTreeNode
+from schema_mechanism.core import StateAssertion
+from schema_mechanism.core import generate_nodes_for_assertion
 from schema_mechanism.func_api import sym_schema
 from schema_mechanism.func_api import sym_schema_tree_node
 from schema_mechanism.func_api import sym_state
@@ -215,24 +219,24 @@ class TestSchemaTree(TestCase):
         self.assertNotIn(None, self.tree)
         self.assertNotIn(Action(), self.tree)
 
-    def test_get(self):
+    def test_lookup_node(self):
         # test: calling get with null assertion should return tree's root
-        self.assertIs(self.tree.root, self.tree.get(NULL_STATE_ASSERT))
+        self.assertIs(self.tree.root, self.tree.lookup_node(NULL_STATE_ASSERT))
 
         # test: lookup should performed as if composite items in state assertion were flattened into non-composite items
-        node = self.tree.get(sym_state_assert('1,3,7,9,13'))
+        node = self.tree.lookup_node(sym_state_assert('1,3,7,9,13'))
 
-        self.assertEqual(node, self.tree.get(sym_state_assert('(1,3),7,9,13')))
-        self.assertEqual(node, self.tree.get(sym_state_assert('(1,3,7),9,13')))
-        self.assertEqual(node, self.tree.get(sym_state_assert('(1,3,7,9),13')))
-        self.assertEqual(node, self.tree.get(sym_state_assert('(1,3,7,9,13)')))
-        self.assertEqual(node, self.tree.get(sym_state_assert('(1,3,7),(9,13)')))
-        self.assertEqual(node, self.tree.get(sym_state_assert('(1,3),(7,9),13')))
+        self.assertEqual(node, self.tree.lookup_node(sym_state_assert('(1,3),7,9,13')))
+        self.assertEqual(node, self.tree.lookup_node(sym_state_assert('(1,3,7),9,13')))
+        self.assertEqual(node, self.tree.lookup_node(sym_state_assert('(1,3,7,9),13')))
+        self.assertEqual(node, self.tree.lookup_node(sym_state_assert('(1,3,7,9,13)')))
+        self.assertEqual(node, self.tree.lookup_node(sym_state_assert('(1,3,7),(9,13)')))
+        self.assertEqual(node, self.tree.lookup_node(sym_state_assert('(1,3),(7,9),13')))
 
         # test: a node should be returned for the context and result assertions for each schema in tree
         for schema in self.tree:
-            context_node = self.tree.get(schema.context)
-            result_node = self.tree.get(schema.result)
+            context_node = self.tree.lookup_node(schema.context)
+            result_node = self.tree.lookup_node(schema.result)
 
             # test: the node corresponding to a schema's context should contain the schema in schemas_satisfied_by
             self.assertEqual(schema.context, context_node.context)
@@ -242,40 +246,40 @@ class TestSchemaTree(TestCase):
             self.assertEqual(schema.result, result_node.context)
             self.assertIn(schema, result_node.schemas_would_satisfy)
 
-    def test_set(self):
+    def test_add_node(self):
         tree = SchemaTree()
 
         node = sym_schema_tree_node('1,2,3,4')
         node.schemas_satisfied_by.add(sym_schema('1,2,3,4/A1/X,'))
         node.schemas_satisfied_by.add(sym_schema('A,B/A2/1,2,3,4'))
 
-        tree.set(node)
+        tree.add_node(node)
 
         # test: set should add node to node map
         self.assertIn(node.context, tree.nodes_map)
         self.assertIn(node, tree.nodes_map.values())
 
         # test: after set, get on node's context should return node
-        self.assertEqual(node, tree.get(node.context))
+        self.assertEqual(node, tree.lookup_node(node.context))
 
         # test: multiple sets with the same assertion should replace the earlier node
         new_node = sym_schema_tree_node('1,2,3,4')
         new_node.schemas_satisfied_by.add(sym_schema('1,2,3,4/A1/Y,Z'))
         new_node.schemas_satisfied_by.add(sym_schema('C,D/A2/1,2,3,4'))
 
-        tree.set(new_node)
+        tree.add_node(new_node)
 
-        self.assertNotEqual(node, tree.get(sym_state_assert('1,2,3,4')))
-        self.assertEqual(new_node, tree.get(sym_state_assert('1,2,3,4')))
+        self.assertNotEqual(node, tree.lookup_node(sym_state_assert('1,2,3,4')))
+        self.assertEqual(new_node, tree.lookup_node(sym_state_assert('1,2,3,4')))
 
         # test: set should performed as if composite items in state assertion were flattened into non-composite items
         another_node = sym_schema_tree_node('(1,2),(3,4)')
         another_node.schemas_satisfied_by.add(sym_schema('1,2,3,4/A1/J,K'))
         another_node.schemas_satisfied_by.add(sym_schema('J,K/A2/1,2,3,4'))
 
-        tree.set(another_node)
+        tree.add_node(another_node)
 
-        self.assertEqual(another_node, tree.get(sym_state_assert('1,2,3,4')))
+        self.assertEqual(another_node, tree.lookup_node(sym_state_assert('1,2,3,4')))
 
     # noinspection PyTypeChecker
     def test_add_raised_exceptions(self):
@@ -295,10 +299,10 @@ class TestSchemaTree(TestCase):
         self.assertIn(schema, tree)
 
         # test: schema should have been added to schemas_satisfied_by for context assertion's node
-        self.assertIn(schema, tree.get(schema.context).schemas_satisfied_by)
+        self.assertIn(schema, tree.lookup_node(schema.context).schemas_satisfied_by)
 
         # test: schema should have been added to schemas_would_satisfy for result assertion's node
-        self.assertIn(schema, tree.get(schema.result).schemas_would_satisfy)
+        self.assertIn(schema, tree.lookup_node(schema.result).schemas_would_satisfy)
 
         # test: schema should have been added to the SchemaPool
         schema_pool: SchemaPool = SchemaPool()
@@ -375,10 +379,10 @@ class TestSchemaTree(TestCase):
             self.assertIn(schema, tree)
 
             # test: result spin-off should have been added to schemas_satisfied_by for context assertion's node
-            self.assertIn(schema, tree.get(schema.context).schemas_satisfied_by)
+            self.assertIn(schema, tree.lookup_node(schema.context).schemas_satisfied_by)
 
             # test: result spin-off should have been added to schemas_would_satisfy for result assertion's node
-            self.assertIn(schema, tree.get(schema.result).schemas_would_satisfy)
+            self.assertIn(schema, tree.lookup_node(schema.result).schemas_would_satisfy)
 
         self.assertEqual(len(bare_schemas) + len(result_spin_offs), len(tree))
 
@@ -551,6 +555,59 @@ class TestSchemaTree(TestCase):
         self.assertRaises(ValueError, lambda: tree.add(schemas=[]))
         self.assertRaises(ValueError, lambda: tree.add(schemas=None))
 
+    def test_generate_nodes_for_assertion(self):
+
+        # test: adding new assertions to empty tree
+        tree = SchemaTree()
+
+        assertions = [
+            sym_state_assert('1'),
+            sym_state_assert('2,'),
+            sym_state_assert('1,2'),
+            sym_state_assert('1,2,3'),
+            sym_state_assert('4,5'),
+            sym_state_assert('7,8,9'),
+            sym_state_assert('8,9,10'),
+        ]
+
+        self._test_generate_nodes_for_assertion(tree=tree, assertions=assertions)
+
+        assertions = [
+            sym_state_assert('1,3,7,9,13,X,Y,Z'),
+            sym_state_assert('2,7,10'),
+            sym_state_assert('2,7,11,12,13'),
+            sym_state_assert('2,8'),
+            sym_state_assert('3,5'),
+            sym_state_assert('3,6'),
+            sym_state_assert('3,6,9'),
+            sym_state_assert('3,7'),
+            sym_state_assert('1,3,7,10,11,12'),
+        ]
+
+        self._test_generate_nodes_for_assertion(tree=self.tree, assertions=assertions)
+
+        tree_before = deepcopy(self.tree)
+        self._test_generate_nodes_for_assertion(tree=self.tree, assertions=assertions)
+
+        # test: adding same assertions 2x should not change tree
+        self.assertEqual(tree_before, self.tree)
+
+    def _test_generate_nodes_for_assertion(self, tree: SchemaTree, assertions: Iterable[StateAssertion]):
+        for assertion in assertions:
+            node_for_assertion = generate_nodes_for_assertion(tree=tree, assertion=assertion)
+
+            # test: lookup on assertion should find node returned from method
+            self.assertEqual(node_for_assertion, tree.lookup_node(assertion))
+
+            # test: node for assertion should be connected to root
+            self.assertIn(node_for_assertion, tree.root.descendants)
+
+            try:
+                # test: tree should still be valid after updates
+                tree.validate()
+            except ValueError as e:
+                self.fail(f'Unexpected exception raised during tree validation: {e}')
+
     def test_validate_on_test_tree(self):
         # sanity check: all nodes in the test tree should be valid
         try:
@@ -664,7 +721,7 @@ class TestSchemaTree(TestCase):
         tree = SchemaTree()
         tree.add(schemas=[s1])
 
-        node = tree.get(s1.context.flatten())
+        node = tree.lookup_node(s1.context.flatten())
         node.schemas_satisfied_by = [
             sym_schema('1,/A1/2,')
         ]
@@ -684,7 +741,7 @@ class TestSchemaTree(TestCase):
         s3 = sym_schema('2,/A1/1,')
         tree.add(source=s2, schemas=[s3])
 
-        node = tree.get(s3.context)
+        node = tree.lookup_node(s3.context)
 
         # adding invalid node
         s4 = sym_schema('3,/A1/1,')
@@ -708,7 +765,7 @@ class TestSchemaTree(TestCase):
         s4 = sym_schema('2,/A1/1,')
         s5 = sym_schema('2,/A1/1,2')
 
-        node = tree.get(s3.context)
+        node = tree.lookup_node(s3.context)
         node.schemas_satisfied_by |= {s4, s5}
 
         # test: validate should raise ValueError
@@ -720,7 +777,7 @@ class TestSchemaTree(TestCase):
         tree = SchemaTree()
         tree.add(schemas=[s1])
 
-        node = tree.get(s1.context)
+        node = tree.lookup_node(s1.context)
         node.schemas_satisfied_by.add(sym_schema('/A1/1,2'))
 
         # test: validate should raise ValueError
@@ -738,7 +795,7 @@ class TestSchemaTree(TestCase):
         s3 = sym_schema('2,/A1/1,')
         tree.add(source=s2, schemas=[s3])
 
-        node = tree.get(s3.context)
+        node = tree.lookup_node(s3.context)
 
         # adds an invalid schema (does not satisfy the node's context)
         node.schemas_would_satisfy.add(sym_schema('/A1/1,'))
@@ -797,7 +854,7 @@ class TestSchemaTree(TestCase):
         schemas = self.tree.find_all_satisfied(state=sym_state('3'))
         nodes = [
             self.tree.root,
-            self.tree.get(sym_state_assert('3,'))
+            self.tree.lookup_node(sym_state_assert('3,'))
         ]
         expected_schemas = itertools.chain.from_iterable(node.schemas_satisfied_by for node in nodes)
         self.assertSetEqual(set(schemas), set(expected_schemas))
@@ -806,13 +863,13 @@ class TestSchemaTree(TestCase):
         schemas = self.tree.find_all_satisfied(state=sym_state('1,2,3,7'))
         nodes = [
             self.tree.root,
-            self.tree.get(sym_state_assert('1,')),
-            self.tree.get(sym_state_assert('1,2,')),
-            self.tree.get(sym_state_assert('1,3')),
-            self.tree.get(sym_state_assert('1,3,7')),
-            self.tree.get(sym_state_assert('2,')),
-            self.tree.get(sym_state_assert('2,7')),
-            self.tree.get(sym_state_assert('3,')),
+            self.tree.lookup_node(sym_state_assert('1,')),
+            self.tree.lookup_node(sym_state_assert('1,2,')),
+            self.tree.lookup_node(sym_state_assert('1,3')),
+            self.tree.lookup_node(sym_state_assert('1,3,7')),
+            self.tree.lookup_node(sym_state_assert('2,')),
+            self.tree.lookup_node(sym_state_assert('2,7')),
+            self.tree.lookup_node(sym_state_assert('3,')),
         ]
         expected_schemas = itertools.chain.from_iterable(node.schemas_satisfied_by for node in nodes)
         self.assertSetEqual(set(schemas), set(expected_schemas))
@@ -821,8 +878,8 @@ class TestSchemaTree(TestCase):
         # case 1: state assertion that would be satisfied by an entire branch in tree starting with a child of root
         schemas = self.tree.find_all_would_satisfy(assertion=sym_state_assert('X'))
         expected_nodes = [
-            self.tree.get(sym_state_assert('X')),
-            *self.tree.get(sym_state_assert('X')).descendants,
+            self.tree.lookup_node(sym_state_assert('X')),
+            *self.tree.lookup_node(sym_state_assert('X')).descendants,
         ]
         expected_schemas = itertools.chain.from_iterable(node.schemas_would_satisfy for node in expected_nodes)
         self.assertSetEqual(set(expected_schemas), set(schemas))
@@ -834,7 +891,7 @@ class TestSchemaTree(TestCase):
         # case 3: state assertion that would be satisfied by schemas in a single leaf node
         schemas = self.tree.find_all_would_satisfy(assertion=sym_state_assert('1,3,5,7'))
         expected_nodes = [
-            self.tree.get(sym_state_assert('1,3,5,7')),
+            self.tree.lookup_node(sym_state_assert('1,3,5,7')),
         ]
         expected_schemas = itertools.chain.from_iterable(node.schemas_would_satisfy for node in expected_nodes)
         self.assertSetEqual(set(expected_schemas), set(schemas))
@@ -842,8 +899,8 @@ class TestSchemaTree(TestCase):
         # case 4: state assertion that would be satisfied by a branch starting in middle of tree
         schemas = self.tree.find_all_would_satisfy(assertion=sym_state_assert('1,3'))
         expected_nodes = [
-            self.tree.get(sym_state_assert('1,3')),
-            *self.tree.get(sym_state_assert('1,3')).descendants,
+            self.tree.lookup_node(sym_state_assert('1,3')),
+            *self.tree.lookup_node(sym_state_assert('1,3')).descendants,
         ]
         expected_schemas = itertools.chain.from_iterable(node.schemas_would_satisfy for node in expected_nodes)
         self.assertSetEqual(set(expected_schemas), set(schemas))

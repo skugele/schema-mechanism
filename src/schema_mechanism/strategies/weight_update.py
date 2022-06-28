@@ -30,6 +30,13 @@ class NoOpWeightUpdateStrategy(WeightUpdateStrategy):
 
 
 class CyclicWeightUpdateStrategy(WeightUpdateStrategy):
+    """
+        "The schema mechanism maintains a cyclic balance between emphasizing goal-directed value and exploration
+         value. The emphasis is achieved by changing the weights of the relative contributions of these components
+         to the importance asserted by each schema. Goal-directed value is emphasized most of the time, but a
+         significant part of the time, goal-directed value is diluted so that only very important goals take
+         precedence over exploration criteria." (See Drescher, 1991, p. 66)
+    """
     MIN_STEP_SIZE = 1e-13
 
     def __init__(self, step_size: float = 1e-3) -> None:
