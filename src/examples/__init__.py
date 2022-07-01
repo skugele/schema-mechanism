@@ -9,6 +9,7 @@ from typing import Any
 from typing import Callable
 from typing import Optional
 from typing import Protocol
+from typing import Sequence
 
 from pynput import keyboard
 
@@ -21,6 +22,9 @@ from schema_mechanism.core import State
 from schema_mechanism.core import get_global_stats
 from schema_mechanism.modules import SchemaMechanism
 from schema_mechanism.modules import SelectionDetails
+from schema_mechanism.modules import save
+from schema_mechanism.serialization import DEFAULT_ENCODING
+from schema_mechanism.share import Predicate
 
 logger = logging.getLogger(__name__)
 
@@ -97,16 +101,6 @@ def display_summary(sm: SchemaMechanism) -> None:
     display_schema_memory(sm)
 
 
-# TODO: fix this!
-def decrease_log_level() -> None:
-    pass
-
-
-# TODO: fix this!
-def increase_log_level() -> None:
-    pass
-
-
 _paused = False
 _running = True
 
@@ -144,39 +138,108 @@ def default_on_press(key: keyboard.Key):
         toggle_paused()
     if key == ESC_KEY:
         request_stop()
-    if key in (MINUS_KEY, UNDERSCORE_KEY):
-        decrease_log_level()
-    if key in (PLUS_KEY, EQUAL_KEY):
-        increase_log_level()
 
 
-class RunInformationDisplayer(Protocol):
+class RunnerCallback(Protocol):
     def __call__(self,
                  env: Environment,
                  schema_mechanism: SchemaMechanism,
                  step: int,
+                 episode: int,
                  state: State,
                  selection_details: Optional[SelectionDetails] = None,
+                 running: bool = True,
                  render_env: bool = True,
+                 **kwargs,
                  ) -> None: ...
+
+
+class SaveCallback:
+    def __init__(self,
+                 path: Path,
+                 conditions: Sequence[Predicate],
+                 encoding: str = DEFAULT_ENCODING,
+                 ) -> None:
+        self.path = path
+        self.conditions = conditions
+        self.encoding = encoding
+
+    def __call__(self, schema_mechanism: SchemaMechanism, **kwargs) -> None:
+        if any(condition(**kwargs) for condition in self.conditions):
+            save(
+                modules=[schema_mechanism],
+                path=self.path,
+                encoding=self.encoding,
+            )
+
+
+class SaveWhenTerminal:
+    def __call__(self, env: Environment, **kwargs) -> bool:
+        return True if env.is_terminal() else False
+
+
+class SaveEveryNSteps(Predicate):
+    def __init__(self, n: int):
+        self.n = n
+        self.cumulative_steps: int = 0
+
+    def __call__(self, **kwargs) -> bool:
+        self.cumulative_steps += 1
+        return self.cumulative_steps % self.n == 0
+
+
+class SaveEveryNEpisodes(Predicate):
+    def __init__(self, n: int):
+        self.n = n
+        self.cumulative_episodes: int = 0
+
+    def __call__(self, env: Environment, **kwargs) -> bool:
+        if env.is_terminal():
+            self.cumulative_episodes += 1
+
+        return self.cumulative_steps % self.n == 0 if self.cumulative_episodes > 0 else False
+
+
+save_when_terminal: Predicate = SaveWhenTerminal()
+
+
+def save_every_n_steps(n: int) -> Predicate:
+    return SaveEveryNSteps(n)
+
+
+def save_every_n_episodes(n: int) -> Predicate:
+    return SaveEveryNSteps(n)
+
+
+def no_op_callback(*_unused_args, **_unused_kwargs) -> None:
+    pass
 
 
 def default_display_on_step(env: Environment,
                             schema_mechanism: SchemaMechanism,
                             step: int,
+                            episode: int,
                             state: State,
                             selection_details: Optional[SelectionDetails] = None,
+                            render_env: bool = True,
+                            *_unused_args,
+                            **_unused_kwargs,
                             ) -> None:
+    progress_indicator: str = f'{episode}:{step}'
+
+    if render_env:
+        print(env.render())
+
     schema: Schema = selection_details.selected
     effective_value = selection_details.effective_value
 
-    logger.debug(f'selection state [{step}]: {selection_details.selection_state}')
-    logger.debug(f'selected schema [{step}]: {schema} [eff. value: {effective_value}]')
-    logger.debug(f'resulting state [{step}]: {state}')
+    logger.debug(f'selection state [{progress_indicator}]: {selection_details.selection_state}')
+    logger.debug(f'selected schema [{progress_indicator}]: {schema} [eff. value: {effective_value}]')
+    logger.debug(f'resulting state [{progress_indicator}]: {state}')
 
     current_composite_schema = schema_mechanism.schema_selection.pending_schema
     if current_composite_schema:
-        logger.debug(f'active composite action schema [{step}]: {current_composite_schema} ')
+        logger.debug(f'active composite action schema [{progress_indicator}]: {current_composite_schema} ')
 
     terminated_composite_schemas = selection_details.terminated_pending
     if terminated_composite_schemas:
@@ -194,6 +257,8 @@ def default_display_on_pause(env: Environment,
                              state: State,
                              selection_details: Optional[SelectionDetails] = None,
                              render_env: bool = True,
+                             *_unused_args,
+                             **_unused_kwargs,
                              ) -> None:
     display_item_values()
     display_known_schemas(schema_mechanism)
@@ -209,29 +274,34 @@ def default_display_on_pause(env: Environment,
     logger.info(f'selected schema [{step}]: {schema} [eff. value: {effective_value}]')
     logger.info(f'resulting state [{step}]: {state}')
 
+    # wait for keypress to resume operation
+    try:
+        while is_paused():
+            sleep(0.01)
+    except KeyboardInterrupt:
+        pass
+
 
 class Runner(Protocol):
     def __call__(self,
                  env: Environment,
                  schema_mechanism: SchemaMechanism,
                  max_steps: int,
-                 on_step: RunInformationDisplayer,
-                 on_pause: RunInformationDisplayer,
+                 episode: int = 0,
+                 on_step: Sequence[RunnerCallback] = None,
+                 on_pause: Sequence[RunnerCallback] = None,
                  render_env: bool = True
                  ) -> EpisodeSummary: ...
 
 
-def _runnable(run: Runner,
-              on_step: RunInformationDisplayer,
-              on_pause: RunInformationDisplayer,
-              on_press: Callable[[keyboard.Key], None]):
-    @wraps(run)
-    def _run_wrapper(on_step=on_step, on_pause=on_pause, **kwargs) -> Any:
+def _runner(_run: Runner, on_press: RunnerCallback = None) -> Callable[..., Runner]:
+    @wraps(_run)
+    def _run_wrapper(**kwargs) -> Any:
         listener = keyboard.Listener(on_press=on_press)
         listener.start()
 
         start = time()
-        results = run(**kwargs, on_step=on_step, on_pause=on_pause)
+        results = _run(**kwargs)
         end = time()
 
         logger.info(f'elapsed time: {end - start}s')
@@ -241,27 +311,26 @@ def _runnable(run: Runner,
     return _run_wrapper
 
 
-runner = partial(
-    _runnable,
-    on_step=default_display_on_step,
-    on_pause=default_display_on_pause,
-    on_press=default_on_press
-)
+runner: Callable[..., Runner] = partial(_runner, on_press=default_on_press)
 
 
 @runner
-def run(env: Environment,
-        schema_mechanism: SchemaMechanism,
-        max_steps: int,
-        on_step: RunInformationDisplayer = None,
-        on_pause: RunInformationDisplayer = None,
-        render_env: bool = True
-        ) -> Any:
+def run_episode(env: Environment,
+                schema_mechanism: SchemaMechanism,
+                max_steps: int,
+                episode: int = 0,
+                on_step: Sequence[RunnerCallback] = None,
+                on_pause: Sequence[RunnerCallback] = None,
+                render_env: bool = True
+                ) -> Any:
+    on_step = on_step if on_step else [default_display_on_step]
+    on_pause = on_pause if on_pause else [default_display_on_pause]
+
     # initialize the world
     state, is_terminal = env.reset()
 
     # episode loop
-    for step in range(1, max_steps + 1):
+    for step in range(max_steps):
         if is_terminal or not is_running():
             break
 
@@ -272,32 +341,30 @@ def run(env: Environment,
         state, is_terminal = env.step(selection_details.selected.action)
         schema_mechanism.learn(selection_details, result_state=state)
 
-        if is_paused():
-            # displays information about this step
-            if on_pause:
-                on_pause(
-                    env=env,
-                    schema_mechanism=schema_mechanism,
-                    step=step,
-                    state=state,
-                    selection_details=selection_details,
-                )
-
-            try:
-                while is_paused():
-                    sleep(0.1)
-            except KeyboardInterrupt:
-                pass
-
-        # displays status information at the beginning of each step
-        if on_step:
-            on_step(
+        for on_step_callback in on_step:
+            on_step_callback(
                 env=env,
                 schema_mechanism=schema_mechanism,
                 step=step,
+                episode=episode,
                 state=state,
+                running=is_running(),
                 selection_details=selection_details,
+                render_env=render_env,
             )
+
+        if is_paused():
+            for on_pause_callback in on_pause:
+                on_pause_callback(
+                    env=env,
+                    schema_mechanism=schema_mechanism,
+                    step=step,
+                    episode=episode,
+                    state=state,
+                    running=is_running(),
+                    selection_details=selection_details,
+                    render_env=render_env
+                )
 
     return env.episode_summary
 
@@ -311,6 +378,7 @@ DEFAULT_OPTIMIZER_USE_DATABASE = False
 
 DEFAULT_EPISODES = 1
 DEFAULT_STEPS_PER_EPISODE = 500
+DEFAULT_SAVE_FREQUENCY = 2500
 
 
 def parse_run_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -396,6 +464,14 @@ def parser_serialization_args(parser: argparse.ArgumentParser) -> argparse.Argum
         required=False,
         default=None,
         help='the filepath to a directory that will be used to save the learned schema mechanism'
+    )
+    parser.add_argument(
+        '--save_frequency',
+        metavar='STEPS',
+        type=int,
+        required=False,
+        default=DEFAULT_SAVE_FREQUENCY,
+        help='the save frequency in number of steps taken by agent'
     )
     parser.add_argument(
         '--load_path',

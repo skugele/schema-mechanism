@@ -1,5 +1,7 @@
 import argparse
 import logging.config
+import typing
+from functools import partial
 from pathlib import Path
 from statistics import mean
 from typing import Collection
@@ -7,10 +9,14 @@ from typing import Iterable
 from typing import Optional
 
 from examples import RANDOM_SEED
+from examples import Runner
+from examples import SaveCallback
+from examples import default_display_on_step
 from examples import parse_optimizer_args
 from examples import parse_run_args
 from examples import parser_serialization_args
-from examples import run
+from examples import run_episode
+from examples import save_every_n_steps
 from examples.environments.wumpus_world import WumpusWorldAgent
 from examples.environments.wumpus_world import WumpusWorldMdp
 from examples.environments.wumpus_world import WumpusWorldMdpEpisodeSummary
@@ -200,6 +206,9 @@ def main():
     # parse command line arguments
     args = parse_args()
 
+    load_path: Path = args.load_path
+    save_path: Path = args.save_path
+
     # initialize environment
     env = create_world()
 
@@ -209,16 +218,21 @@ def main():
     ]
 
     if args.optimize:
+        # this typing cast is a workaround to a current limitation in type inference for partials that affects PyCharm
+        # and likely other IDEs/static code analysis tools.
+        run: Runner = typing.cast(Runner, partial(run_episode, on_step=None))
+
         data_frame = optimize(
             env=env,
-            run=run,
             primitive_items=primitive_items,
+            run_episode=run,
             calculate_score=calculate_score,
             sampler=args.optimizer_sampler,
             pruner=args.optimizer_pruner,
             n_trials=args.optimizer_trials,
             n_runs_per_trial=args.optimizer_runs_per_trial,
             n_steps_per_episode=args.steps,
+            n_episodes_per_run=args.episodes,
             study_name=args.optimizer_study_name,
             use_database=args.optimizer_use_db,
         )
@@ -234,8 +248,17 @@ def main():
 
         data_frame.to_csv(report_path)
     else:
-        load_path: Path = args.load_path
-        save_path: Path = args.save_path
+        on_step_callbacks = [default_display_on_step]
+        if save_path:
+            on_step_callbacks.append(
+                SaveCallback(
+                    path=save_path,
+                    conditions=[save_every_n_steps(args.save_frequency)])
+            )
+
+        # this typing cast is a workaround to a current limitation in type inference for partials that affects PyCharm
+        # and likely other IDEs/static code analysis tools.
+        run: Runner = typing.cast(Runner, partial(run_episode, on_step=on_step_callbacks))
 
         schema_mechanism = load_schema_mechanism(load_path) if load_path else None
         if not schema_mechanism:
@@ -267,6 +290,7 @@ def main():
                 env=env,
                 schema_mechanism=schema_mechanism,
                 max_steps=args.steps,
+                episode=episode_id,
                 render_env=False
             )
 
@@ -275,7 +299,7 @@ def main():
             # displays a summary of partial results
             display_performance_summary(episode_summaries)
 
-        # TODO: move this into run, to save model as we go
+        # this save is in addition to any runner callbacks to make sure final model is persisted
         if save_path:
             save(
                 modules=[schema_mechanism],

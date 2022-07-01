@@ -233,7 +233,7 @@ def init_optimizer_trial(env: Environment,
 
 def optimize(env: Environment,
              primitive_items: Iterable[Item],
-             run: Runner,
+             run_episode: Runner,
              calculate_score: Callable[[Any], float],
              sampler: str,
              pruner: str,
@@ -283,7 +283,7 @@ def optimize(env: Environment,
         objective = get_objective_function(
             env=env,
             primitive_items=primitive_items,
-            run=run,
+            run_episode=run_episode,
             calculate_score=calculate_score,
             n_runs_per_trial=n_runs_per_trial,
             n_episodes_per_run=n_episodes_per_run,
@@ -309,7 +309,7 @@ def optimize(env: Environment,
 
 def get_objective_function(env: Environment,
                            primitive_items: Iterable[Item],
-                           run: Runner,
+                           run_episode: Runner,
                            calculate_score: Callable[[Any], float],
                            n_steps_per_episode: int,
                            n_runs_per_trial: int = 1,
@@ -319,7 +319,7 @@ def get_objective_function(env: Environment,
 
     :param env: the Environment for which the optimizer study will be run.
     :param primitive_items: an iterable containing the agent's primitive items
-    :param run: the callable that executes a trial's runs.
+    :param run_episode: the callable that executes a trial's run's episode(s).
     :param calculate_score: a callable that calculates an episode's score based on result returned by run.
     :param n_steps_per_episode: the maximum number of agent steps allowed for an episode.
     :param n_runs_per_trial: the number of runs per optimizer trial.
@@ -339,10 +339,11 @@ def get_objective_function(env: Environment,
         display_hyper_parameters(trial)
 
         try:
-            # begin trial
             scores = []
 
             for run_id in range(n_runs_per_trial):
+                logger.info(f'*** beginning run {run_id} for trial {trial.number}')
+
                 for episode_id in range(n_episodes_per_run):
                     schema_mechanism = init_optimizer_trial(
                         env,
@@ -351,17 +352,18 @@ def get_objective_function(env: Environment,
                         trial_strategy_params=sampled_strategy_params,
                     )
 
-                    results = run(
+                    results = run_episode(
                         env=env,
                         schema_mechanism=schema_mechanism,
                         max_steps=n_steps_per_episode,
+                        episode=episode_id,
                         render_env=False
                     )
 
                     score = calculate_score(results)
                     scores.append(score)
 
-                    logger.debug(f'\trun {run_id}\'s score {score}')
+                    logger.debug(f'episode {episode_id} score: {score}')
 
             best_score = max(scores)
             average_score = statistics.mean(scores)

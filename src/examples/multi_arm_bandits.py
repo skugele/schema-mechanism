@@ -1,10 +1,12 @@
 import argparse
 import logging.config
+import typing
 from collections import Counter
 from collections.abc import Collection
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
+from functools import partial
 from pathlib import Path
 from statistics import mean
 from typing import Iterable
@@ -12,10 +14,14 @@ from typing import Optional
 
 from examples import EpisodeSummary
 from examples import RANDOM_SEED
+from examples import Runner
+from examples import SaveCallback
+from examples import default_display_on_step
 from examples import parse_optimizer_args
 from examples import parse_run_args
 from examples import parser_serialization_args
-from examples import run
+from examples import run_episode
+from examples import save_every_n_steps
 from examples.environments import Environment
 from examples.optimizers import get_optimizer_report_filename
 from examples.optimizers import optimize
@@ -315,6 +321,10 @@ def calculate_score(episode_summary: BanditEnvironmentEpisodeSummary) -> float:
     return episode_summary.winnings
 
 
+def display_score(env: Environment, step: int, **kwargs) -> None:
+    logger.info(f'score [step: {step}]: {calculate_score(env.episode_summary)}')
+
+
 def display_environment_summary(env: BanditEnvironment):
     logger.info(f'Environment Summary ({env.id}):')
 
@@ -368,6 +378,9 @@ def main():
 
     args = parse_args()
 
+    load_path: Path = args.load_path
+    save_path: Path = args.save_path
+
     machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.machines)]
     env = BanditEnvironment(machines)
 
@@ -378,9 +391,13 @@ def main():
     ]
 
     if args.optimize:
+        # this typing cast is a workaround to a current limitation in type inference for partials that affects PyCharm
+        # and likely other IDEs/static code analysis tools.
+        run: Runner = typing.cast(Runner, partial(run_episode, on_step=None))
+
         data_frame = optimize(
             env=env,
-            run=run,
+            run_episode=run,
             primitive_items=primitive_items,
             calculate_score=calculate_score,
             sampler=args.optimizer_sampler,
@@ -404,8 +421,20 @@ def main():
 
         data_frame.to_csv(report_path)
     else:
-        load_path: Path = args.load_path
-        save_path: Path = args.save_path
+        on_step_callbacks = [
+            default_display_on_step,
+            display_score,
+        ]
+        if save_path:
+            on_step_callbacks.append(
+                SaveCallback(
+                    path=save_path,
+                    conditions=[save_every_n_steps(args.save_frequency)])
+            )
+
+        # this typing cast is a workaround to a current limitation in type inference for partials that affects PyCharm
+        # and likely other IDEs/static code analysis tools.
+        run: Runner = typing.cast(Runner, partial(run_episode, on_step=on_step_callbacks))
 
         schema_mechanism = load_schema_mechanism(load_path) if load_path else None
         if not schema_mechanism:
@@ -414,7 +443,7 @@ def main():
                 primitive_items=primitive_items,
             )
 
-        episode_summary: BanditEnvironmentEpisodeSummary = run(
+        episode_summary = run(
             env=env,
             schema_mechanism=schema_mechanism,
             max_steps=args.steps,
@@ -424,7 +453,7 @@ def main():
         display_environment_summary(env)
         display_performance_summary([episode_summary])
 
-        # TODO: move this into run, to save model as we go
+        # this save is in addition to any runner callbacks to make sure final model is persisted
         if save_path:
             save(
                 modules=[schema_mechanism],

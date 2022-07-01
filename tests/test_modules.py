@@ -3,8 +3,10 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from schema_mechanism.core import Action
+from schema_mechanism.core import ItemPool
 from schema_mechanism.core import NULL_STATE_ASSERT
 from schema_mechanism.core import Schema
+from schema_mechanism.core import SchemaPool
 from schema_mechanism.core import SchemaSpinOffType
 from schema_mechanism.core import SchemaTree
 from schema_mechanism.func_api import sym_item
@@ -108,11 +110,9 @@ class TestModuleFunctions(TestCase):
 
     def test_save_and_load(self):
         schema_collection = SchemaTree()
-        schema_collection.add(
-            schemas=[
-                Schema(Action(f'A{i}')) for i in range(10)
-            ]
-        )
+
+        bare_schemas = [Schema(Action(f'A{i}')) for i in range(10)]
+        schema_collection.add(schemas=bare_schemas)
         schema_collection.add(
             schemas=[
                 sym_schema(f'/A{i}/{i},') for i in range(10)
@@ -134,6 +134,24 @@ class TestModuleFunctions(TestCase):
                 path=path,
             )
 
+            # clear pools
+            item_pool: ItemPool = ItemPool()
+            schema_pool: SchemaPool = SchemaPool()
+
+            n_items_in_pool_before_load = len(item_pool)
+            n_schemas_in_pool_before_load = len(schema_pool)
+
+            # clear pools to ensure that load restores pool contents
+            item_pool.clear()
+            schema_pool.clear()
+
             recovered_schema_mechanism = load(path=path)
 
+            # test: the restored schemas mechanism should equal the previously saved schema mechanism
             self.assertEqual(schema_mechanism, recovered_schema_mechanism)
+
+            # test: the number of items in the item pool should match number of items before save
+            self.assertEqual(n_items_in_pool_before_load, len(item_pool))
+
+            # test: the number of schemas in the schema pool should match number of schemas before save
+            self.assertEqual(n_schemas_in_pool_before_load, len(schema_pool))

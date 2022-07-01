@@ -1,9 +1,18 @@
 import logging
 from enum import Enum
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
+#######################
+# shared type aliases #
+#######################
+Predicate = Callable[..., bool]
 
+
+################
+# shared enums #
+################
 class SupportedFeature(Enum):
     COMPOSITE_ACTIONS = 'COMPOSITE_ACTIONS'
 

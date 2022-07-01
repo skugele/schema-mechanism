@@ -55,3 +55,7 @@ class Environment(ABC):
     @abstractmethod
     def render(self) -> Any:
         """ Renders the environment in a format suitable for human consumption. """
+
+    @abstractmethod
+    def is_terminal(self) -> bool:
+        """ Returns a bool signifying whether the environment is in a terminal state. """
