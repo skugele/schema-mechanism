@@ -275,11 +275,13 @@ def default_display_on_pause(env: Environment,
     logger.info(f'resulting state [{step}]: {state}')
 
     # wait for keypress to resume operation
+    logger.warning('Environment paused!')
     try:
         while is_paused():
             sleep(0.01)
     except KeyboardInterrupt:
         pass
+    logger.warning('Environment resumed by keypress!')
 
 
 class Runner(Protocol):
@@ -389,6 +391,10 @@ def parse_run_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument(
         '--episodes', type=int, required=False, default=DEFAULT_EPISODES,
         help=f'the number of episodes (default: {DEFAULT_EPISODES})'
+    )
+    parser.add_argument(
+        '--greedy', required=False, action="store_true", default=False,
+        help=f'use a greedy evaluation strategy for schema selection (default: False)'
     )
 
     return parser

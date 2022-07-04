@@ -94,18 +94,18 @@ class TestCommon(TestCase):
         self.assertAlmostEqual(55.1, self.composite_item_abc.delegated_value)
 
         self.simple_result_schemas = [
-            sym_schema('X,/A1/A,'),
-            sym_schema('Y,/A1/B,'),
-            sym_schema('Z,/A1/C,'),
+            sym_schema('X,/A1/A,', schema_type=MockSchema, reliability=0.0),
+            sym_schema('Y,/A1/B,', schema_type=MockSchema, reliability=0.5),
+            sym_schema('Z,/A1/C,', schema_type=MockSchema, reliability=1.0),
         ]
 
         self.composite_result_schemas = [
-            sym_schema('X,/A1/(A,B),'),
-            sym_schema('Y,/A1/(B,C),'),
-            sym_schema('Z,/A1/(A,B,C),'),
+            sym_schema('X,/A1/(A,B),', schema_type=MockSchema, reliability=0.0),
+            sym_schema('Y,/A1/(B,C),', schema_type=MockSchema, reliability=0.5),
+            sym_schema('Z,/A1/(A,B,C),', schema_type=MockSchema, reliability=1.0),
         ]
 
-        self.composite_action_schema = sym_schema('X,/X,Y/A,B')
+        self.composite_action_schema = sym_schema('X,/X,Y/A,B', schema_type=MockSchema, reliability=0.75)
         self.composite_action_schema.action.controller.update([
             Chain([sym_schema('A,/CA1/B,'), sym_schema('B,/CA2/C,'), sym_schema('C,/CA3/X,Y')])
         ])
@@ -651,18 +651,24 @@ class TestReliabilityEvaluationStrategy(TestCommon):
         # test: attribute values should be set properly if values were given to initializer
         max_penalty = 10.75
         severity = 2.5
-        strategy = ReliabilityEvaluationStrategy(max_penalty=max_penalty, severity=severity)
+        threshold = 0.65
+
+        strategy = ReliabilityEvaluationStrategy(max_penalty=max_penalty, severity=severity, threshold=threshold)
 
         self.assertEqual(max_penalty, strategy.max_penalty)
         self.assertEqual(severity, strategy.severity)
+        self.assertEqual(threshold, strategy.threshold)
 
         # test: default attribute values should be set if values not given to initializer
         default_max_penalty = 1.0
         default_severity = 2.0
+        default_threshold = 0.0
+
         strategy = ReliabilityEvaluationStrategy()
 
         self.assertEqual(default_max_penalty, strategy.max_penalty)
         self.assertEqual(default_severity, strategy.severity)
+        self.assertEqual(default_threshold, strategy.threshold)
 
     def test_values(self):
         max_penalty = 1.0
@@ -724,10 +730,57 @@ class TestReliabilityEvaluationStrategy(TestCommon):
             _ = ReliabilityEvaluationStrategy(max_penalty=0.0)
             _ = ReliabilityEvaluationStrategy(max_penalty=-1.0)
 
+    def test_threshold(self):
+        max_penalty = 1000
+        strategy = ReliabilityEvaluationStrategy(
+            max_penalty=max_penalty,
+            severity=1.1,
+        )
+
+        try:
+            # test: threshold values between 0.0 (inclusive) and 1.0 (exclusive) should be allowed
+            for threshold in [0.0, 0.25, 0.5, 0.75, 0.999]:
+                strategy.threshold = threshold
+
+            # test: reliabilities <= threshold should have a value of max penalty
+        except ValueError as e:
+            self.fail(f'Unexpected ValueError: {e}')
+
+        # test: threshold values less than 0.0 or greater than or equal to 1.0 should raise a ValueError
+        with self.assertRaises(ValueError):
+            for threshold in [-100.0, 0.0 - 1e-10, 1.0, 10.0]:
+                strategy.threshold = threshold
+
+        threshold = 0.5
+        strategy.threshold = threshold
+
+        schemas = [
+            # reliability below threshold
+            sym_schema('1,/AThreshold/2,', schema_type=MockSchema, reliability=threshold - 1e-8),
+
+            # reliability at threshold
+            sym_schema('2,/AThreshold/3,', schema_type=MockSchema, reliability=threshold),
+
+            # reliability above threshold
+            sym_schema('3,/AThreshold/4,', schema_type=MockSchema, reliability=threshold + 1e-8),
+        ]
+
+        values = strategy(schemas)
+
+        # test: schemas with reliabilities under threshold should have values equal to -max_penalty
+        self.assertEqual(values[0], -max_penalty)
+
+        # test: schemas with reliabilities equal to threshold should have values equal to -max_penalty
+        self.assertEqual(values[1], -max_penalty)
+
+        # test: schemas with reliabilities greater than threshold should have values greater than -max_penalty
+        self.assertGreater(values[2], -max_penalty)
+
     def test_repr(self):
         attr_values = {
             'max_penalty': self.strategy.max_penalty,
-            'severity': self.strategy.severity
+            'severity': self.strategy.severity,
+            'threshold': self.strategy.threshold
         }
 
         expected_str = repr_str(obj=self.strategy, attr_values=attr_values)
@@ -1362,6 +1415,7 @@ class TestDefaultGoalPursuitEvaluationStrategy(TestCommon):
 
     def test_init(self):
         reliability_max_penalty = 0.765
+        reliability_threshold = 0.652
         pending_focus_max_value = 0.12
         pending_focus_decay_rate = 0.002
         post_process = [display_minmax, display_values]
@@ -1369,12 +1423,14 @@ class TestDefaultGoalPursuitEvaluationStrategy(TestCommon):
         # test: attributes should be set to given values when provided to initializer
         strategy = DefaultGoalPursuitEvaluationStrategy(
             reliability_max_penalty=reliability_max_penalty,
+            reliability_threshold=reliability_threshold,
             pending_focus_max_value=pending_focus_max_value,
             pending_focus_decay_rate=pending_focus_decay_rate,
             post_process=post_process
         )
 
         self.assertEqual(reliability_max_penalty, strategy.reliability_max_penalty)
+        self.assertEqual(reliability_threshold, strategy.reliability_threshold)
         self.assertEqual(pending_focus_max_value, strategy.pending_focus_max_value)
         self.assertEqual(pending_focus_decay_rate, strategy.pending_focus_decay_rate)
         self.assertListEqual(list(post_process), list(strategy.post_process))
@@ -1383,6 +1439,7 @@ class TestDefaultGoalPursuitEvaluationStrategy(TestCommon):
         strategy = DefaultGoalPursuitEvaluationStrategy()
 
         self.assertEqual(1.0, strategy.reliability_max_penalty)
+        self.assertEqual(0.0, strategy.reliability_threshold)
         self.assertEqual(1.0, strategy.pending_focus_max_value)
         self.assertEqual(0.5, strategy.pending_focus_decay_rate)
         self.assertListEqual(list(), list(strategy.post_process))
@@ -1392,6 +1449,7 @@ class TestDefaultGoalPursuitEvaluationStrategy(TestCommon):
 
     def test_mutators(self):
         reliability_max_penalty = 0.765
+        reliability_threshold = 0.127
         pending_focus_max_value = 0.12
         pending_focus_decay_rate = 0.002
         post_process = [display_minmax, display_values]
@@ -1400,11 +1458,13 @@ class TestDefaultGoalPursuitEvaluationStrategy(TestCommon):
         strategy = DefaultGoalPursuitEvaluationStrategy()
 
         strategy.reliability_max_penalty = reliability_max_penalty
+        strategy.reliability_threshold = reliability_threshold
         strategy.pending_focus_max_value = pending_focus_max_value
         strategy.pending_focus_decay_rate = pending_focus_decay_rate
         strategy.post_process = post_process
 
         self.assertEqual(reliability_max_penalty, strategy.reliability_max_penalty)
+        self.assertEqual(reliability_threshold, strategy.reliability_threshold)
         self.assertEqual(pending_focus_max_value, strategy.pending_focus_max_value)
         self.assertEqual(pending_focus_decay_rate, strategy.pending_focus_decay_rate)
         self.assertListEqual(list(post_process), list(strategy.post_process))

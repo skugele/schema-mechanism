@@ -962,6 +962,13 @@ def load(path: Path) -> SchemaMechanism:
     actions = {schema.action for schema in schema_mechanism.schema_memory}
     action_trace.add(actions)
 
+    for controller in get_controller_map().values():
+        chains = schema_mechanism.schema_memory.backward_chains(
+            goal_state=controller.goal_state,
+            max_len=global_params.get('composite_actions.backward_chains.max_length')
+        )
+        controller.update(chains)
+
     return schema_mechanism
 
 

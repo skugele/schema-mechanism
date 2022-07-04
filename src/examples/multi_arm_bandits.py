@@ -40,6 +40,7 @@ from schema_mechanism.serialization import DEFAULT_ENCODING
 from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
+from schema_mechanism.strategies.evaluation import DefaultGreedyEvaluationStrategy
 from schema_mechanism.util import get_random_seed
 from schema_mechanism.util import rng
 from schema_mechanism.util import set_random_seed
@@ -325,6 +326,16 @@ def display_score(env: Environment, step: int, **kwargs) -> None:
     logger.info(f'score [step: {step}]: {calculate_score(env.episode_summary)}')
 
 
+def display_weights(schema_mechanism: SchemaMechanism, step: int, **kwargs) -> None:
+    weights: Optional[Sequence[float]] = None
+    try:
+        weights = schema_mechanism.schema_selection.evaluation_strategy.weights
+    except AttributeError as e:
+        pass
+
+    logger.info(f'weights [step: {step}]: {weights} ')
+
+
 def display_environment_summary(env: BanditEnvironment):
     logger.info(f'Environment Summary ({env.id}):')
 
@@ -423,6 +434,7 @@ def main():
     else:
         on_step_callbacks = [
             default_display_on_step,
+            display_weights,
             display_score,
         ]
         if save_path:
@@ -441,6 +453,12 @@ def main():
             schema_mechanism = create_schema_mechanism(
                 env=env,
                 primitive_items=primitive_items,
+            )
+
+        # command-line argument overrides schema mechanism's strategy parameters
+        if args.greedy:
+            schema_mechanism.schema_selection.evaluation_strategy = DefaultGreedyEvaluationStrategy(
+                reliability_threshold=get_global_params().get('schema.reliability_threshold')
             )
 
         episode_summary = run(

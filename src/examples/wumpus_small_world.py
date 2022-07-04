@@ -34,8 +34,7 @@ from schema_mechanism.serialization import DEFAULT_ENCODING
 from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
-from schema_mechanism.strategies.evaluation import display_minmax
-from schema_mechanism.strategies.weight_update import CyclicWeightUpdateStrategy
+from schema_mechanism.strategies.evaluation import DefaultGreedyEvaluationStrategy
 from schema_mechanism.util import set_random_seed
 
 logger = logging.getLogger('examples.environments.wumpus_small_world')
@@ -267,17 +266,11 @@ def main():
                 primitive_items=primitive_items,
             )
 
-        # override the default or loaded evaluation strategy
-        schema_mechanism.schema_selection.evaluation_strategy = DefaultEvaluationStrategy(
-            goal_pursuit_strategy=DefaultGoalPursuitEvaluationStrategy(),
-            exploratory_strategy=DefaultExploratoryEvaluationStrategy(
-                epsilon=0.9999,
-                epsilon_min=0.1,
-                epsilon_decay_rate=0.9999
-            ),
-            weight_update_strategy=CyclicWeightUpdateStrategy(step_size=1e-3),
-            post_process=[display_minmax],
-        )
+        # command-line argument overrides schema mechanism's strategy parameters
+        if args.greedy:
+            schema_mechanism.schema_selection.evaluation_strategy = DefaultGreedyEvaluationStrategy(
+                reliability_threshold=get_global_params().get('schema.reliability_threshold')
+            )
 
         episode_summaries = []
 

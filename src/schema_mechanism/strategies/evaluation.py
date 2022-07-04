@@ -16,6 +16,7 @@ from schema_mechanism.strategies.decay import DecayStrategy
 from schema_mechanism.strategies.decay import GeometricDecayStrategy
 from schema_mechanism.strategies.scaling import ScalingStrategy
 from schema_mechanism.strategies.scaling import SigmoidScalingStrategy
+from schema_mechanism.strategies.weight_update import CyclicWeightUpdateStrategy
 from schema_mechanism.strategies.weight_update import NoOpWeightUpdateStrategy
 from schema_mechanism.strategies.weight_update import WeightUpdateStrategy
 from schema_mechanism.util import equal_weights
@@ -336,14 +337,16 @@ class ReliabilityEvaluationStrategy(EvaluationStrategy):
     reliability approaches 0.0.
     """
 
-    def __init__(self, max_penalty: float = 1.0, severity: float = 2.0) -> None:
+    def __init__(self, max_penalty: float = 1.0, severity: float = 2.0, threshold: float = 0.0) -> None:
         self.max_penalty = max_penalty
         self.severity = severity
+        self.threshold = threshold
 
     def __repr__(self):
         attr_values = {
             'max_penalty': self.max_penalty,
-            'severity': self.severity
+            'severity': self.severity,
+            'threshold': self.threshold,
         }
         return repr_str(obj=self, attr_values=attr_values)
 
@@ -356,6 +359,7 @@ class ReliabilityEvaluationStrategy(EvaluationStrategy):
                     [
                         self.max_penalty == other.max_penalty,
                         self.severity == other.severity,
+                        self.threshold == other.threshold
                     ]
                 )
             )
@@ -367,7 +371,7 @@ class ReliabilityEvaluationStrategy(EvaluationStrategy):
 
     @max_penalty.setter
     def max_penalty(self, value: float) -> None:
-        if value <= 0.0:
+        if not (value > 0.0):
             raise ValueError('Max penalty must be > 0.0')
         self._max_penalty = value
 
@@ -377,18 +381,36 @@ class ReliabilityEvaluationStrategy(EvaluationStrategy):
 
     @severity.setter
     def severity(self, value: float) -> None:
-        if value <= 0.0:
+        if not (value > 0.0):
             raise ValueError('Severity must be > 0.0')
         self._severity = value
 
+    @property
+    def threshold(self) -> float:
+        return self._threshold
+
+    @threshold.setter
+    def threshold(self, value: float) -> None:
+        if not (0.0 <= value < 1.0):
+            raise ValueError('Threshold must be be >= 0.0 and < 1.0')
+        self._threshold = value
+
     def values(self, schemas: Sequence[Schema], pending: Optional[Schema] = None) -> np.ndarray:
+        if schemas is None or len(schemas) == 0:
+            return np.array([])
+
         # nans treated as 0.0 reliability
         reliabilities = np.array([0.0 if s.reliability is np.nan else s.reliability for s in schemas])
-        return (
-            np.array([])
-            if schemas is None or len(schemas) == 0
-            else self.max_penalty * (np.power(reliabilities, self.severity) - 1.0)
-        )
+
+        over_threshold = reliabilities > self.threshold
+
+        # values <= threshold are set to max_penalty; otherwise, apply penalty function
+        result = np.full_like(reliabilities, -self.max_penalty)
+
+        if any(over_threshold):
+            result[over_threshold] = self.max_penalty * (np.power(reliabilities[over_threshold], self.severity) - 1.0)
+
+        return result
 
 
 class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
@@ -751,8 +773,10 @@ class DefaultExploratoryEvaluationStrategy(CompositeEvaluationStrategy):
 class DefaultGoalPursuitEvaluationStrategy(CompositeEvaluationStrategy):
     def __init__(self,
                  reliability_max_penalty: float = 1.0,
+                 reliability_threshold: float = 0.0,
                  pending_focus_max_value: float = 1.0,
                  pending_focus_decay_rate: float = 0.5,
+                 weights: Sequence[float] = None,
                  post_process: Sequence[EvaluationPostProcess] = None,
                  ) -> None:
         # basic item value functions
@@ -760,7 +784,10 @@ class DefaultGoalPursuitEvaluationStrategy(CompositeEvaluationStrategy):
         self._delegated_value_strategy = TotalDelegatedValueEvaluationStrategy()
 
         # penalty to unreliable schemas
-        self._reliability_value_strategy = ReliabilityEvaluationStrategy(max_penalty=reliability_max_penalty)
+        self._reliability_value_strategy = ReliabilityEvaluationStrategy(
+            max_penalty=reliability_max_penalty,
+            threshold=reliability_threshold,
+        )
 
         # composite-action-specific value functions
         self._instrumental_value_strategy = InstrumentalValueEvaluationStrategy()
@@ -779,8 +806,9 @@ class DefaultGoalPursuitEvaluationStrategy(CompositeEvaluationStrategy):
                 self._primitive_value_strategy,
                 self._reliability_value_strategy,
             ],
+            weights=weights,
             post_process=post_process,
-            strategy_alias='default-goal-pursuit-strategy'
+            strategy_alias='default-goal-pursuit-strategy',
         )
 
     def __eq__(self, other) -> bool:
@@ -808,6 +836,14 @@ class DefaultGoalPursuitEvaluationStrategy(CompositeEvaluationStrategy):
         self._reliability_value_strategy.max_penalty = value
 
     @property
+    def reliability_threshold(self) -> float:
+        return self._reliability_value_strategy.threshold
+
+    @reliability_threshold.setter
+    def reliability_threshold(self, value: float) -> None:
+        self._reliability_value_strategy.threshold = value
+
+    @property
     def pending_focus_max_value(self) -> float:
         return self._pending_focus_value_strategy.max_value
 
@@ -832,7 +868,7 @@ class DefaultEvaluationStrategy(CompositeEvaluationStrategy):
                  weight_update_strategy: WeightUpdateStrategy = None,
                  post_process: Sequence[EvaluationPostProcess] = None
                  ) -> None:
-        self.weight_update_strategy = weight_update_strategy or NoOpWeightUpdateStrategy()
+        self.weight_update_strategy = weight_update_strategy or CyclicWeightUpdateStrategy()
 
         # temporary objects. these are later accessed via the CompositeEvaluationStrategy
         goal_pursuit_strategy = goal_pursuit_strategy or DefaultGoalPursuitEvaluationStrategy()
@@ -882,6 +918,35 @@ class DefaultEvaluationStrategy(CompositeEvaluationStrategy):
 
         # update any internal state maintained by strategies
         super().update(schemas=schemas, pending=pending)
+
+    def configure_as_greedy(self) -> None:
+        self.weights = [1.0, 0.0]
+        self.weight_update_strategy = NoOpWeightUpdateStrategy()
+
+        self.goal_pursuit_strategy.reliability_max_penalty = 1.5
+
+
+class DefaultGreedyEvaluationStrategy(DefaultGoalPursuitEvaluationStrategy):
+    def __init__(self,
+                 reliability_threshold: float = 0.7,
+                 reliability_max_penalty: float = 1.0,
+                 weights: Sequence[float] = None,
+                 post_process: Sequence[EvaluationPostProcess] = None,
+                 ) -> None:
+        default_weights = [
+            0.35,  # delegated value
+            0.2,  # instrumental value
+            0.1,  # pending focus
+            0.1,  # primitive value
+            0.25,  # reliability
+        ]
+
+        super().__init__(
+            reliability_max_penalty=reliability_max_penalty,
+            reliability_threshold=reliability_threshold,
+            weights=default_weights if weights is None else weights,
+            post_process=post_process
+        )
 
 
 ####################
