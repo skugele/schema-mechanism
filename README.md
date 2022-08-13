@@ -1,4 +1,4 @@
-# Drescher's Schema Mechanism (Python Version)
+# Modified Drescher's Schema Mechanism (Python Version)
 
 ## References:
 
