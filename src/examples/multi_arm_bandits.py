@@ -17,6 +17,9 @@ from examples import RANDOM_SEED
 from examples import Runner
 from examples import SaveCallback
 from examples import default_display_on_step
+from examples import display_item_values
+from examples import display_known_schemas
+from examples import display_schema_memory
 from examples import parse_optimizer_args
 from examples import parse_run_args
 from examples import parser_serialization_args
@@ -237,8 +240,11 @@ class BanditEnvironment(Environment):
 
 
 def parse_env_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser.add_argument('--machines', type=int, required=False, default=N_MACHINES,
+    parser.add_argument('--n_machines', type=int, metavar='N', required=False, default=N_MACHINES,
                         help=f'the id of the agent to which this action will be sent (default: {N_MACHINES})')
+    parser.add_argument('-M', '--machine', metavar='MACHINE', dest='machines',
+                        type=float, action='append', required=False, default=None,
+                        help=f'specifies a new machine with a specific win probability (e.g., \'-M 0.75\')')
 
     return parser
 
@@ -263,7 +269,7 @@ def init_params() -> GlobalParams:
     params.set('learning_rate', 0.001)
 
     params.set('composite_actions.update_frequency', 0.01)
-    params.set('composite_actions.backward_chains.max_length', 2)
+    params.set('composite_actions.backward_chains.max_length', 3)
     params.set('composite_actions.min_baseline_advantage', 0.4)
 
     params.set('schema.reliability_threshold', 0.8)
@@ -383,6 +389,20 @@ def display_performance_summary(episode_summaries: Collection[BanditEnvironmentE
     logger.info(f'\t\tStates visited (over all episodes): {states_visited_all_episodes}')
 
 
+def create_machines(n: int, win_rates: list[float] = None) -> list[Machine]:
+    if win_rates is None:
+        return [Machine(str(i), p_win=rng().uniform(0, 1)) for i in range(n)]
+
+    machines = []
+    for i, p_win in enumerate(win_rates):
+        if p_win < 0.0 or p_win > 1.0:
+            raise ValueError('Machine win probabilities must be between 0.0 and 1.0 (inclusive)')
+
+        machines.append(Machine(str(i), p_win))
+
+    return machines
+
+
 def main():
     # configure logger
     logging.config.fileConfig('config/logging.conf')
@@ -392,7 +412,7 @@ def main():
     load_path: Path = args.load_path
     save_path: Path = args.save_path
 
-    machines = [Machine(str(id_), p_win=rng().uniform(0, 1)) for id_ in range(args.machines)]
+    machines = create_machines(args.n_machines, args.machines)
     env = BanditEnvironment(machines)
 
     primitive_items = [
@@ -470,6 +490,10 @@ def main():
 
         display_environment_summary(env)
         display_performance_summary([episode_summary])
+
+        display_item_values()
+        display_known_schemas(schema_mechanism)
+        display_schema_memory(schema_mechanism)
 
         # this save is in addition to any runner callbacks to make sure final model is persisted
         if save_path:
