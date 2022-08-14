@@ -7,6 +7,7 @@ from pathlib import Path
 from time import time
 from typing import Iterable
 from typing import Iterator
+from typing import Protocol
 
 logger = logging.getLogger('scripts')
 
@@ -21,11 +22,8 @@ EXPERIMENT_UID = str(int(time()))
 OUTPUT_DIR = Path(os.path.join('local/experiments', EXPERIMENT_UID))
 
 
-class TrialConfigurator:
+class TrialConfigurator(Protocol, Iterator[list[str]]):
     name: str
-
-    def __iter__(self) -> Iterator[list[str]]:
-        pass
 
 
 class SameStatsVariableMachinesTrialConfigurator(TrialConfigurator):
@@ -68,6 +66,40 @@ class SameStatsVariableMachinesTrialConfigurator(TrialConfigurator):
         return [*self.base_run_args, *machine_args]
 
 
+class NeedleInAHaystackTrialConfigurator(TrialConfigurator):
+    """ Single "good" machine. All others have a very small chance to win.
+        variable parameters: n_machines = {2, 4, ..., 2 ** max_exponent}
+    """
+
+    def __init__(self, base_run_args: list[str], max_exponent: int = 5):
+        self.base_run_args = base_run_args
+        self.max_exponent = max_exponent
+
+        self.name = 'NeedleInAHaystack'
+
+        self._n_machines = 1
+
+    def __iter__(self) -> Iterator[list[str]]:
+        self._n_machines = 1
+        return self
+
+    def __next__(self) -> list[str]:
+        self._n_machines *= 2
+
+        if self._n_machines >= 2 ** self.max_exponent:
+            raise StopIteration
+
+        # fill remaining machines, keeping max(p_win) = 1.0, min(p_win) = 0.0, and expected_value(p_win) = 0.5
+        p_wins = [0.1] * (self._n_machines - 1)
+        p_wins.append(0.9)
+
+        return self._generate_args(p_wins)
+
+    def _generate_args(self, p_wins: Iterable[float]) -> list[str]:
+        machine_args = itertools.chain.from_iterable([['-M', str(p_win)] for p_win in p_wins])
+        return [*self.base_run_args, *machine_args]
+
+
 def config_env() -> None:
     # setup environment variables
     os.environ['PYTHONPATH'] = os.pathsep.join([os.environ['PYTHONPATH'], *SOURCE_DIRS])
@@ -98,7 +130,7 @@ def execute_trial(trial_configurator: TrialConfigurator, runs_per_trial: int) ->
         run_output_path = trial_output_path / f'config{config_id}_results.txt'
 
         with run_output_path.open('w') as file:
-            file.write(f'\n***** trial configuration {config_id}: {run_args}')
+            file.write(f'***** trial configuration {config_id}: {run_args}')
 
         for run_id in range(runs_per_trial):
             execute_run(run_id, run_args, run_output_path)
@@ -110,12 +142,9 @@ def execute_experiment(steps_per_run: int = 100, runs_per_trial: int = 2) -> Non
 
     config_env()
 
-    base_run_args = [
-        '--steps', str(steps_per_run)
-    ]
-
     trials = [
-        SameStatsVariableMachinesTrialConfigurator(base_run_args, max_exponent=5)
+        SameStatsVariableMachinesTrialConfigurator(['--steps', str(steps_per_run)], max_exponent=5),
+        NeedleInAHaystackTrialConfigurator(['--steps', str(steps_per_run)], max_exponent=5)
     ]
 
     for trial in trials:
