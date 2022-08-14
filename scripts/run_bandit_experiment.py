@@ -1,10 +1,14 @@
 import itertools
+import logging
+import logging.config
 import os
 import subprocess
 from pathlib import Path
 from time import time
 from typing import Iterable
 from typing import Iterator
+
+logger = logging.getLogger('scripts')
 
 PYTHON_EXEC = 'venv/Scripts/python'
 SCRIPT = 'src/examples/multi_arm_bandits.py'
@@ -60,7 +64,7 @@ class SameStatsVariableMachinesTrialConfigurator(TrialConfigurator):
         return self._generate_args(p_wins)
 
     def _generate_args(self, p_wins: Iterable[float]) -> list[str]:
-        machine_args = itertools.chain.from_iterable([['-M', str(p_win)] for p_win in p_wins])
+        machine_args = itertools.chain.from_iterable([['-M', str(round(p_win, 4))] for p_win in p_wins])
         return [*self.base_run_args, *machine_args]
 
 
@@ -74,28 +78,36 @@ def config_env() -> None:
 
 
 def execute_run(run_id: int, run_args: list[str], output_path: Path) -> None:
+    logger.info(f'beginning run {run_id}: args:{run_args}')
+
     # 'python src/examples/multi_arm_bandits.py -M 1.0 -M 0.75 -M 0.25 -M 0.0 --steps 25000'
     with output_path.open('a') as file:
-        file.write(f'\n***** beginning run {run_id} *****\n')
+        file.write(f'\n***** start of run {run_id} *****\n')
         file.flush()
         _ = subprocess.run([PYTHON_EXEC, SCRIPT, *run_args], text=True, check=True, stdout=file)
-        file.write(f'\n***** ending run {run_id} *****\n')
+        file.write(f'\n***** end of run {run_id} *****\n')
 
 
 def execute_trial(trial_configurator: TrialConfigurator, runs_per_trial: int) -> None:
-    output_path = OUTPUT_DIR / f'{trial_configurator.name}.txt'
-    with output_path.open('a') as file:
-        file.write(f'\n***** beginning trial {trial_configurator.name} *****\n')
+    logger.info(f'beginning trial: {trial_configurator.name}')
+
+    trial_output_path = OUTPUT_DIR / trial_configurator.name
+    trial_output_path.mkdir(parents=True)
 
     for config_id, run_args in enumerate(trial_configurator):
-        with output_path.open('a') as file:
+        run_output_path = trial_output_path / f'config{config_id}_results.txt'
+
+        with run_output_path.open('w') as file:
             file.write(f'\n***** trial configuration {config_id}: {run_args}')
 
         for run_id in range(runs_per_trial):
-            execute_run(run_id, run_args, output_path)
+            execute_run(run_id, run_args, run_output_path)
 
 
 def execute_experiment(steps_per_run: int = 100, runs_per_trial: int = 2) -> None:
+    # configure logger
+    logging.config.fileConfig('config/logging.conf')
+
     config_env()
 
     base_run_args = [
