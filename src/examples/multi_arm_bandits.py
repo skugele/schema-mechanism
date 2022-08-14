@@ -16,7 +16,6 @@ from examples import EpisodeSummary
 from examples import RANDOM_SEED
 from examples import Runner
 from examples import SaveCallback
-from examples import default_display_on_step
 from examples import display_item_values
 from examples import display_known_schemas
 from examples import display_schema_memory
@@ -328,6 +327,10 @@ def calculate_score(episode_summary: BanditEnvironmentEpisodeSummary) -> float:
     return episode_summary.winnings
 
 
+def display_n_schemas(schema_mechanism: SchemaMechanism, step: int, **kwargs) -> None:
+    logger.info(f'known schemas [step: {step}]: {len(schema_mechanism.schema_memory)}')
+
+
 def display_score(env: Environment, step: int, **kwargs) -> None:
     logger.info(f'score [step: {step}]: {calculate_score(env.episode_summary)}')
 
@@ -340,6 +343,14 @@ def display_weights(schema_mechanism: SchemaMechanism, step: int, **kwargs) -> N
         pass
 
     logger.info(f'weights [step: {step}]: {weights} ')
+
+
+def display_combined_step(step: int, env: Environment, schema_mechanism: SchemaMechanism, **kwargs):
+    n_known_schemas = len(schema_mechanism.schema_memory)
+    score = calculate_score(env.episode_summary)
+    weights = schema_mechanism.schema_selection.evaluation_strategy.weights
+
+    logger.info(f'{step},{score},{n_known_schemas},{weights[0]}')
 
 
 def display_environment_summary(env: BanditEnvironment):
@@ -364,7 +375,11 @@ def display_performance_summary(episode_summaries: Collection[BanditEnvironmentE
     states_visited_in_episode = [episode_summary.states_visited for episode_summary in episode_summaries]
 
     cumulative_steps = sum(steps_in_episode)
-    win_percentage = (sum(times_won_in_episode) / sum(times_played_in_episode)) * 100.0
+
+    total_times_played = sum(times_played_in_episode)
+    total_times_won = sum(times_won_in_episode)
+
+    win_percentage = 0.0 if total_times_played == 0 else (total_times_won / total_times_played) * 100.0
 
     avg_winnings_per_episode = mean(winnings_in_episode)
     min_winnings_per_episode = min(winnings_in_episode)
@@ -453,9 +468,11 @@ def main():
         data_frame.to_csv(report_path)
     else:
         on_step_callbacks = [
-            default_display_on_step,
-            display_weights,
-            display_score,
+            # display_combined_step
+            # default_display_on_step,
+            # display_n_schemas,
+            # display_weights,
+            # display_score,
         ]
         if save_path:
             on_step_callbacks.append(
