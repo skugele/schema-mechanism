@@ -29,7 +29,7 @@ from schema_mechanism.share import Predicate
 logger = logging.getLogger(__name__)
 
 # configure random seed
-RANDOM_SEED = 8675309
+RANDOM_SEED = int(time())
 
 
 def display_known_schemas(sm: SchemaMechanism, composite_only: bool = False) -> None:
