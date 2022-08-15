@@ -1,3 +1,4 @@
+import argparse
 import itertools
 import logging
 import logging.config
@@ -100,6 +101,28 @@ class NeedleInAHaystackTrialConfigurator(TrialConfigurator):
         return [*self.base_run_args, *machine_args]
 
 
+DEFAULT_STEPS = 10000
+DEFAULT_RUNS_PER_TRIAL = 10
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='Multi-Armed Bandit Experiment Runner (Schema Mechanism)')
+    parser.add_argument(
+        '--steps_per_run', type=int, required=False, default=DEFAULT_STEPS,
+        help=f'the number of time steps before terminating experiment (default: {DEFAULT_STEPS})'
+    )
+    parser.add_argument(
+        '--runs_per_trial',
+        metavar='N',
+        type=int,
+        required=False,
+        default=DEFAULT_RUNS_PER_TRIAL,
+        help=f'the number of runs executed per experimental trial (default: {DEFAULT_RUNS_PER_TRIAL})'
+    )
+
+    return parser.parse_args()
+
+
 def config_env() -> None:
     # setup environment variables
     os.environ['PYTHONPATH'] = os.pathsep.join([os.environ['PYTHONPATH'], *SOURCE_DIRS])
@@ -136,19 +159,23 @@ def execute_trial(trial_configurator: TrialConfigurator, runs_per_trial: int) ->
             execute_run(run_id, run_args, run_output_path)
 
 
-def execute_experiment(steps_per_run: int = 100, runs_per_trial: int = 2) -> None:
+def execute_experiment() -> None:
     # configure logger
     logging.config.fileConfig('config/logging.conf')
 
+    # parse command line arguments
+    args = parse_args()
+
+    # configure environment variables
     config_env()
 
     trials = [
-        SameStatsVariableMachinesTrialConfigurator(['--steps', str(steps_per_run)], max_exponent=5),
-        NeedleInAHaystackTrialConfigurator(['--steps', str(steps_per_run)], max_exponent=5)
+        SameStatsVariableMachinesTrialConfigurator(['--steps', str(args.steps_per_run)], max_exponent=5),
+        NeedleInAHaystackTrialConfigurator(['--steps', str(args.steps_per_run)], max_exponent=5)
     ]
 
     for trial in trials:
-        execute_trial(trial, runs_per_trial)
+        execute_trial(trial, args.runs_per_trial)
 
 
 if __name__ == '__main__':
