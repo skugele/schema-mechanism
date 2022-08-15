@@ -386,7 +386,7 @@ DEFAULT_SAVE_FREQUENCY = 2500
 def parse_run_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument(
         '--steps', type=int, required=False, default=DEFAULT_STEPS_PER_EPISODE,
-        help=f'the id of the agent to which this action will be sent (default: {DEFAULT_STEPS_PER_EPISODE})'
+        help=f'the number of time steps per episode (default: {DEFAULT_STEPS_PER_EPISODE})'
     )
     parser.add_argument(
         '--episodes', type=int, required=False, default=DEFAULT_EPISODES,
