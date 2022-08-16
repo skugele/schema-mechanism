@@ -48,7 +48,7 @@ class SameStatsVariableMachinesTrialConfigurator(TrialConfigurator):
     def __next__(self) -> list[str]:
         self._n_machines *= 2
 
-        if self._n_machines >= 2 ** self.max_exponent:
+        if self._n_machines > 2 ** self.max_exponent:
             raise StopIteration
 
         # always have at least these 2 machines
@@ -87,7 +87,7 @@ class NeedleInAHaystackTrialConfigurator(TrialConfigurator):
     def __next__(self) -> list[str]:
         self._n_machines *= 2
 
-        if self._n_machines >= 2 ** self.max_exponent:
+        if self._n_machines > 2 ** self.max_exponent:
             raise StopIteration
 
         # fill remaining machines, keeping max(p_win) = 1.0, min(p_win) = 0.0, and expected_value(p_win) = 0.5
@@ -170,8 +170,8 @@ def execute_experiment() -> None:
     config_env()
 
     trials = [
-        SameStatsVariableMachinesTrialConfigurator(['--steps', str(args.steps_per_run)], max_exponent=5),
-        NeedleInAHaystackTrialConfigurator(['--steps', str(args.steps_per_run)], max_exponent=5)
+        SameStatsVariableMachinesTrialConfigurator(['--steps', str(args.steps_per_run)], max_exponent=7),
+        NeedleInAHaystackTrialConfigurator(['--steps', str(args.steps_per_run)], max_exponent=7)
     ]
 
     for trial in trials:
