@@ -33,22 +33,22 @@ class SameStatsVariableMachinesTrialConfigurator(TrialConfigurator):
         fixed parameters: max(p_win) = 1.0, min(p_win) = 0.0, and expected_value(p_win) = 0.5
     """
 
-    def __init__(self, base_run_args: list[str], max_exponent: int = 5):
+    def __init__(self, base_run_args: list[str], min_exponent: int = 2, max_exponent: int = 5):
         self.base_run_args = base_run_args
+        self.min_exponent = min_exponent
         self.max_exponent = max_exponent
 
         self.name = 'SameStatsVariableMachines'
 
-        self._n_machines = 1
+        self._n_machines = None
+        self._max_machines = 2 ** self.max_exponent
 
     def __iter__(self) -> Iterator[list[str]]:
-        self._n_machines = 1
+        self._n_machines = 2 ** self.min_exponent
         return self
 
     def __next__(self) -> list[str]:
-        self._n_machines *= 2
-
-        if self._n_machines > 2 ** self.max_exponent:
+        if self._n_machines > self._max_machines:
             raise StopIteration
 
         # always have at least these 2 machines
@@ -59,6 +59,8 @@ class SameStatsVariableMachinesTrialConfigurator(TrialConfigurator):
             p_win_increment = 1.0 / (self._n_machines - 2)
             p_wins.extend([p_win_increment / 2.0 + m * p_win_increment for m in range(self._n_machines - 2)])
             p_wins = sorted(p_wins)
+
+        self._n_machines *= 2
 
         return self._generate_args(p_wins)
 
@@ -72,27 +74,29 @@ class NeedleInAHaystackTrialConfigurator(TrialConfigurator):
         variable parameters: n_machines = {2, 4, ..., 2 ** max_exponent}
     """
 
-    def __init__(self, base_run_args: list[str], max_exponent: int = 5):
+    def __init__(self, base_run_args: list[str], min_exponent: int = 2, max_exponent: int = 5):
         self.base_run_args = base_run_args
+        self.min_exponent = min_exponent
         self.max_exponent = max_exponent
 
         self.name = 'NeedleInAHaystack'
 
-        self._n_machines = 1
+        self._n_machines = None
+        self._max_machines = 2 ** self.max_exponent
 
     def __iter__(self) -> Iterator[list[str]]:
-        self._n_machines = 1
+        self._n_machines = 2 ** self.min_exponent
         return self
 
     def __next__(self) -> list[str]:
-        self._n_machines *= 2
-
-        if self._n_machines > 2 ** self.max_exponent:
+        if self._n_machines > self._max_machines:
             raise StopIteration
 
         # fill remaining machines, keeping max(p_win) = 1.0, min(p_win) = 0.0, and expected_value(p_win) = 0.5
         p_wins = [0.1] * (self._n_machines - 1)
         p_wins.append(0.9)
+
+        self._n_machines *= 2
 
         return self._generate_args(p_wins)
 
@@ -170,8 +174,8 @@ def execute_experiment() -> None:
     config_env()
 
     trials = [
-        SameStatsVariableMachinesTrialConfigurator(['--steps', str(args.steps_per_run)], max_exponent=7),
-        NeedleInAHaystackTrialConfigurator(['--steps', str(args.steps_per_run)], max_exponent=7)
+        SameStatsVariableMachinesTrialConfigurator(['--steps', str(args.steps_per_run)], min_exponent=2, max_exponent=3),
+        NeedleInAHaystackTrialConfigurator(['--steps', str(args.steps_per_run)], min_exponent=3, max_exponent=4)
     ]
 
     for trial in trials:
