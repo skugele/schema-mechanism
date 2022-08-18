@@ -34,6 +34,7 @@ from schema_mechanism.core import get_global_params
 from schema_mechanism.func_api import sym_item
 from schema_mechanism.func_api import sym_state
 from schema_mechanism.modules import SchemaMechanism
+from schema_mechanism.modules import SelectionDetails
 from schema_mechanism.modules import init
 from schema_mechanism.modules import load
 from schema_mechanism.modules import save
@@ -94,8 +95,8 @@ class BanditEnvironment(Environment):
 
     def __init__(self,
                  machines: Sequence[Machine],
-                 currency_to_play: int = 50,
-                 currency_on_win: int = 100,
+                 currency_to_play: int = 1,
+                 currency_on_win: int = 2,
                  init_state: Optional[State] = None) -> None:
         super().__init__()
 
@@ -138,7 +139,6 @@ class BanditEnvironment(Environment):
         if self._init_state not in self.states:
             raise ValueError(f'initial state is an invalid state: {self._init_state}')
 
-        self.winnings: int = 0
         self._episode_summary = BanditEnvironmentEpisodeSummary()
 
     @property
@@ -174,7 +174,8 @@ class BanditEnvironment(Environment):
         # at machine
         elif self._current_state in self._machine_base_states:
             if action == Action('deposit'):
-                self.winnings -= self.currency_to_play
+                self._episode_summary.winnings -= self.currency_to_play
+
                 m_ndx = self._machine_base_states.index(self._current_state)
                 self._current_state = self._machine_play_states[m_ndx]
             elif action == Action('stand'):
@@ -187,14 +188,14 @@ class BanditEnvironment(Environment):
 
                 if self.machines[m_ndx].play()[0] == 'W':
                     self._episode_summary.times_won += 1
-                    self.winnings += self.currency_on_win
+                    self._episode_summary.winnings += self.currency_on_win
+
                     self._current_state = self._machine_win_states[m_ndx]
                 else:
                     self._current_state = self._machine_lose_states[m_ndx]
 
                 self._episode_summary.times_played += 1
                 self._episode_summary.machines_played[m_ndx] += 1
-                self._episode_summary.winnings = self.winnings
 
             elif action == Action('stand'):
                 self._current_state = sym_state('S')
@@ -203,7 +204,7 @@ class BanditEnvironment(Environment):
         elif self._current_state in self._machine_win_states:
             m_ndx = self._machine_win_states.index(self._current_state)
             if action == Action('deposit'):
-                self.winnings -= self.currency_to_play
+                self._episode_summary.winnings -= self.currency_to_play
                 self._current_state = self._machine_play_states[m_ndx]
             elif action == Action('stand'):
                 self._current_state = sym_state('S')
@@ -214,7 +215,7 @@ class BanditEnvironment(Environment):
         elif self._current_state in self._machine_lose_states:
             m_ndx = self._machine_lose_states.index(self._current_state)
             if action == Action('deposit'):
-                self.winnings -= self.currency_to_play
+                self._episode_summary.winnings -= self.currency_to_play
                 self._current_state = self._machine_play_states[m_ndx]
             elif action == Action('stand'):
                 self._current_state = sym_state('S')
@@ -227,15 +228,13 @@ class BanditEnvironment(Environment):
         return self._current_state, self.is_terminal
 
     def reset(self) -> tuple[State, bool]:
-        self.winnings = 0
-
         self._episode_summary = BanditEnvironmentEpisodeSummary()
         self._current_state = self._init_state
 
         return self._current_state, self.is_terminal
 
     def render(self) -> str:
-        return f'{self._current_state} [{self.winnings}]'
+        return f'{self._current_state} [{self._episode_summary.winnings}]'
 
 
 def parse_env_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -343,6 +342,14 @@ def display_weights(schema_mechanism: SchemaMechanism, step: int, **kwargs) -> N
         pass
 
     logger.info(f'weights [step: {step}]: {weights} ')
+
+
+def display_state(state: State, **kwargs):
+    logger.info(f'state: {state}')
+
+
+def display_action(selection_details: Optional[SelectionDetails], **kwargs):
+    logger.info(f'action: {selection_details.selected.action}')
 
 
 def display_combined_step(step: int, env: Environment, schema_mechanism: SchemaMechanism, **kwargs):
@@ -468,7 +475,9 @@ def main():
         data_frame.to_csv(report_path)
     else:
         on_step_callbacks = [
-            # display_combined_step
+            display_action,
+            display_state,
+            display_combined_step
             # default_display_on_step,
             # display_n_schemas,
             # display_weights,
