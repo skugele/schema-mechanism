@@ -33,7 +33,7 @@ from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
-from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
+from schema_mechanism.strategies.evaluation import EpsilonRandomEvaluationStrategy
 from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
 from schema_mechanism.strategies.evaluation import InstrumentalValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import MaxDelegatedValueEvaluationStrategy
@@ -677,13 +677,13 @@ def encode_reliability_evaluation_strategy(
     return attrs
 
 
-def encode_epsilon_greedy_evaluation_strategy(
-        strategy: EpsilonGreedyEvaluationStrategy,
+def encode_epsilon_random_evaluation_strategy(
+        strategy: EpsilonRandomEvaluationStrategy,
         object_registry: dict[str, Any] = None,
         read_only_object_registry: bool = False,
         **kwargs) -> dict:
     attrs = {
-        '__type__': 'EpsilonGreedyEvaluationStrategy',
+        '__type__': 'EpsilonRandomEvaluationStrategy',
         'epsilon': strategy.epsilon,
         'epsilon_min': strategy.epsilon_min,
         'max_value': strategy.max_value,
@@ -894,7 +894,7 @@ encoder_map: dict[Type, Callable] = {
     ECItemStats: encode_ec_item_stats,
     ERItemStats: encode_er_item_stats,
     ElementWiseValidator: encode_element_wise_validator,
-    EpsilonGreedyEvaluationStrategy: encode_epsilon_greedy_evaluation_strategy,
+    EpsilonRandomEvaluationStrategy: encode_epsilon_random_evaluation_strategy,
     EqualityMatchStrategy: encode_equality_match_strategy,
     ExponentialDecayStrategy: encode_exponential_decay_strategy,
     ExtendedContext: encode_extended_context,

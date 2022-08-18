@@ -31,7 +31,7 @@ from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
-from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
+from schema_mechanism.strategies.evaluation import EpsilonRandomEvaluationStrategy
 from schema_mechanism.strategies.evaluation import EvaluationStrategy
 from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
 from schema_mechanism.strategies.evaluation import InstrumentalValueEvaluationStrategy
@@ -787,15 +787,15 @@ class TestReliabilityEvaluationStrategy(TestCommon):
         self.assertEqual(expected_str, repr(self.strategy))
 
 
-class TestEpsilonGreedyEvaluationStrategy(TestCommon):
+class TestEpsilonRandomEvaluationStrategy(TestCommon):
     def setUp(self) -> None:
         super().setUp()
 
-        self.strategy = EpsilonGreedyEvaluationStrategy()
+        self.strategy = EpsilonRandomEvaluationStrategy()
 
-        self.eps_always_explore = EpsilonGreedyEvaluationStrategy(epsilon=1.0)
-        self.eps_never_explore = EpsilonGreedyEvaluationStrategy(epsilon=0.0)
-        self.eps_even_chance = EpsilonGreedyEvaluationStrategy(epsilon=0.5)
+        self.eps_always_explore = EpsilonRandomEvaluationStrategy(epsilon=1.0)
+        self.eps_never_explore = EpsilonRandomEvaluationStrategy(epsilon=0.0)
+        self.eps_even_chance = EpsilonRandomEvaluationStrategy(epsilon=0.5)
 
         self.schema = sym_schema('1,2/A/3,4')
 
@@ -814,7 +814,7 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
         decay_strategy = ExponentialDecayStrategy(rate=0.7)
         max_value = 1.72
 
-        strategy = EpsilonGreedyEvaluationStrategy(
+        strategy = EpsilonRandomEvaluationStrategy(
             epsilon=epsilon,
             epsilon_min=epsilon_min,
             decay_strategy=decay_strategy,
@@ -832,7 +832,7 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
         default_decay_strategy = None
         default_max_value = 1.0
 
-        strategy = EpsilonGreedyEvaluationStrategy()
+        strategy = EpsilonRandomEvaluationStrategy()
 
         self.assertEqual(default_epsilon, strategy.epsilon)
         self.assertEqual(default_epsilon_min, strategy.epsilon_min)
@@ -842,43 +842,43 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
         # test: epsilon values between 0.0 and 1.0 (inclusion) should be allowed
         for epsilon in np.linspace(0.0, 1.0, endpoint=True):
             try:
-                _ = EpsilonGreedyEvaluationStrategy(epsilon=epsilon)
+                _ = EpsilonRandomEvaluationStrategy(epsilon=epsilon)
             except ValueError:
                 self.fail(f'Raised unexpected value error for valid epsilon value: {epsilon}')
 
         # test: initializer should raise a ValueError if epsilon values are not between 0.0 and 1.0 (inclusion)
-        self.assertRaises(ValueError, lambda: EpsilonGreedyEvaluationStrategy(epsilon=-1e-5))
-        self.assertRaises(ValueError, lambda: EpsilonGreedyEvaluationStrategy(epsilon=1 + 1e-5))
+        self.assertRaises(ValueError, lambda: EpsilonRandomEvaluationStrategy(epsilon=-1e-5))
+        self.assertRaises(ValueError, lambda: EpsilonRandomEvaluationStrategy(epsilon=1 + 1e-5))
 
         # test: epsilon min values between 0.0 and 1.0 (inclusion) should be allowed
         for epsilon_min in np.linspace(0.0, 1.0, endpoint=True):
             try:
-                _ = EpsilonGreedyEvaluationStrategy(epsilon=1.0, epsilon_min=epsilon_min)
+                _ = EpsilonRandomEvaluationStrategy(epsilon=1.0, epsilon_min=epsilon_min)
             except ValueError:
                 self.fail(f'Raised unexpected value error for valid epsilon min value: {epsilon_min}')
 
         # test: initializer should raise a ValueError if epsilon values are not between 0.0 and 1.0 (inclusion)
-        self.assertRaises(ValueError, lambda: EpsilonGreedyEvaluationStrategy(epsilon=1.0, epsilon_min=-1e-5))
-        self.assertRaises(ValueError, lambda: EpsilonGreedyEvaluationStrategy(epsilon=1.0, epsilon_min=1 + 1e-5))
+        self.assertRaises(ValueError, lambda: EpsilonRandomEvaluationStrategy(epsilon=1.0, epsilon_min=-1e-5))
+        self.assertRaises(ValueError, lambda: EpsilonRandomEvaluationStrategy(epsilon=1.0, epsilon_min=1 + 1e-5))
 
         # test: a ValueError should be raised if epsilon is less than epsilon min
-        self.assertRaises(ValueError, lambda: EpsilonGreedyEvaluationStrategy(epsilon=0.1, epsilon_min=0.3))
+        self.assertRaises(ValueError, lambda: EpsilonRandomEvaluationStrategy(epsilon=0.1, epsilon_min=0.3))
 
     def test_common(self):
         self.assert_all_common_functionality(self.eps_never_explore)
 
     def test_epsilon_setter(self):
-        eps_greedy = EpsilonGreedyEvaluationStrategy(0.5)
+        epsilon_random = EpsilonRandomEvaluationStrategy(0.5)
 
-        eps_greedy.epsilon = 0.0
-        self.assertEqual(0.0, eps_greedy.epsilon)
+        epsilon_random.epsilon = 0.0
+        self.assertEqual(0.0, epsilon_random.epsilon)
 
-        eps_greedy.epsilon = 1.0
-        self.assertEqual(1.0, eps_greedy.epsilon)
+        epsilon_random.epsilon = 1.0
+        self.assertEqual(1.0, epsilon_random.epsilon)
 
         try:
-            eps_greedy.epsilon = -1.00001
-            eps_greedy.epsilon = 1.00001
+            epsilon_random.epsilon = -1.00001
+            epsilon_random.epsilon = 1.00001
             self.fail('ValueError expected on illegal assignment')
         except ValueError:
             pass
@@ -910,7 +910,7 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
         for epsilon in [0.1, 0.9]:
             n_exploration = 0
             for n_calls in range(0, n):
-                strategy = EpsilonGreedyEvaluationStrategy(epsilon=epsilon)
+                strategy = EpsilonRandomEvaluationStrategy(epsilon=epsilon)
                 values = strategy(self.schemas)
                 if strategy.max_value in values:
                     n_exploration += 1
@@ -930,15 +930,15 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
         rate = 0.99
 
         decay_strategy = GeometricDecayStrategy(rate=rate)
-        eps_greedy = EpsilonGreedyEvaluationStrategy(epsilon=epsilon, decay_strategy=decay_strategy)
+        epsilon_random = EpsilonRandomEvaluationStrategy(epsilon=epsilon, decay_strategy=decay_strategy)
 
         expected_epsilon_value = epsilon
         for i in range(100):
             # apply strategy to advance decay epsilon
-            _ = eps_greedy(schemas=self.schemas)
+            _ = epsilon_random(schemas=self.schemas)
 
             expected_epsilon_value = decay_strategy.decay(values=np.array([expected_epsilon_value]))[0]
-            actual_epsilon_value = eps_greedy.epsilon
+            actual_epsilon_value = epsilon_random.epsilon
 
             self.assertAlmostEqual(expected_epsilon_value, actual_epsilon_value)
 
@@ -947,16 +947,16 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
         epsilon_min = 0.5
 
         decay_strategy = GeometricDecayStrategy(rate=0.25)
-        eps_greedy = EpsilonGreedyEvaluationStrategy(epsilon=epsilon, epsilon_min=epsilon_min,
-                                                     decay_strategy=decay_strategy)
+        epsilon_random = EpsilonRandomEvaluationStrategy(epsilon=epsilon, epsilon_min=epsilon_min,
+                                                         decay_strategy=decay_strategy)
 
         for _ in range(100):
-            _ = eps_greedy(schemas=self.schemas)
+            _ = epsilon_random(schemas=self.schemas)
 
             if epsilon <= epsilon_min:
                 break
 
-        self.assertEqual(epsilon_min, eps_greedy.epsilon)
+        self.assertEqual(epsilon_min, epsilon_random.epsilon)
 
     def test_pending_schema_component_selection(self):
         # test: greedy selection should be limited to pending schema components when a pending schema is provided
@@ -996,8 +996,8 @@ class TestEpsilonGreedyEvaluationStrategy(TestCommon):
 
         for _ in range(1000):
             values = self.eps_always_explore(schemas=all_schemas, pending=pending_schema)
-            greedy_selection_index = np.argwhere(values == self.eps_always_explore.max_value)[0][0]
-            counter[greedy_selection_index] += 1
+            selection_index = np.argwhere(values == self.eps_always_explore.max_value)[0][0]
+            counter[selection_index] += 1
 
         for index in non_component_indexes:
             self.assertEqual(0, counter[index], msg=f'Non-component schema {all_schemas[index]} was selected')
@@ -1540,7 +1540,7 @@ class TestDefaultEvaluationStrategy(TestCommon):
     def setUp(self) -> None:
         super().setUp()
 
-        # In order to make testing deterministic, the epsilon-greedy component strategy must be suppressed.
+        # In order to make testing deterministic, the epsilon-random component strategy must be suppressed.
         self.strategy = DefaultEvaluationStrategy(
             exploratory_strategy=DefaultExploratoryEvaluationStrategy(
                 epsilon_min=0.0,
@@ -1550,7 +1550,7 @@ class TestDefaultEvaluationStrategy(TestCommon):
 
     def test_init(self):
         goal_pursuit_strategy = TotalPrimitiveValueEvaluationStrategy()
-        exploratory_strategy = EpsilonGreedyEvaluationStrategy()
+        exploratory_strategy = EpsilonRandomEvaluationStrategy()
         weights = [0.15, 0.85]
         weight_update_strategy = CyclicWeightUpdateStrategy(step_size=1e-7)
         post_process = [display_minmax]
@@ -1581,7 +1581,7 @@ class TestDefaultEvaluationStrategy(TestCommon):
 
     def test_mutators(self):
         new_goal_pursuit_strategy = TotalDelegatedValueEvaluationStrategy()
-        new_exploratory_strategy = EpsilonGreedyEvaluationStrategy(
+        new_exploratory_strategy = EpsilonRandomEvaluationStrategy(
             epsilon=0.78,
             epsilon_min=0.12,
             decay_strategy=ExponentialDecayStrategy(rate=0.1)
