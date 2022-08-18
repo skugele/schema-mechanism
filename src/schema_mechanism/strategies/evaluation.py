@@ -413,16 +413,15 @@ class ReliabilityEvaluationStrategy(EvaluationStrategy):
         return result
 
 
-class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
-    """ An EvaluationStrategy based on an epsilon-greedy mechanism.
+class EpsilonRandomEvaluationStrategy(EvaluationStrategy):
+    """ An EvaluationStrategy based on epsilon-random selection of schemas.
 
-    The values returned by this strategy will either be 0.0 or np.inf.
-    * np.inf is given to schemas chosen at random. All other values returned will be 0.0.
-    * At most one schema will be given the value of np.inf per strategy invocation.
+    The values returned by this strategy will either be 0.0 or max_value.
+    * At most one schema will be given the value of max_value per invocation. All other values will be 0.0.
 
-    An epsilon parameter is used to determine the probability of random selection.
+    An epsilon parameter is used to determine the probability of a random selection.
     * An epsilon of 1.0 indicates that values will always be randomly selected (i.e., one schema will always be given
-    the value of np.inf per invocation.
+    the value of max_value per invocation.)
     * An epsilon of 0.0 indicates that values will never be randomly selected (i.e., schemas will always be given
     zero values, resulting in this strategy functioning as a no-op for schema selection purposes).
 
@@ -457,7 +456,7 @@ class EpsilonGreedyEvaluationStrategy(EvaluationStrategy):
         return repr_str(obj=self, attr_values=attr_values)
 
     def __eq__(self, other) -> bool:
-        if isinstance(other, EpsilonGreedyEvaluationStrategy):
+        if isinstance(other, EpsilonRandomEvaluationStrategy):
             return all(
                 (
                     # generator expression for conditions to allow lazy evaluation
@@ -714,7 +713,7 @@ class DefaultExploratoryEvaluationStrategy(CompositeEvaluationStrategy):
         )
 
         self._epsilon_decay_strategy = GeometricDecayStrategy(rate=epsilon_decay_rate)
-        self._epsilon_greedy_value_strategy = EpsilonGreedyEvaluationStrategy(
+        self._epsilon_random_value_strategy = EpsilonRandomEvaluationStrategy(
             epsilon=epsilon,
             epsilon_min=epsilon_min,
             decay_strategy=self._epsilon_decay_strategy
@@ -723,7 +722,7 @@ class DefaultExploratoryEvaluationStrategy(CompositeEvaluationStrategy):
         super().__init__(
             strategies=[
                 self._habituation_value_strategy,
-                self._epsilon_greedy_value_strategy
+                self._epsilon_random_value_strategy
             ],
             post_process=post_process,
             strategy_alias='default-exploratory-strategy'
@@ -747,19 +746,19 @@ class DefaultExploratoryEvaluationStrategy(CompositeEvaluationStrategy):
 
     @property
     def epsilon(self) -> float:
-        return self._epsilon_greedy_value_strategy.epsilon
+        return self._epsilon_random_value_strategy.epsilon
 
     @epsilon.setter
     def epsilon(self, value: float) -> None:
-        self._epsilon_greedy_value_strategy.epsilon = value
+        self._epsilon_random_value_strategy.epsilon = value
 
     @property
     def epsilon_min(self) -> float:
-        return self._epsilon_greedy_value_strategy.epsilon_min
+        return self._epsilon_random_value_strategy.epsilon_min
 
     @epsilon_min.setter
     def epsilon_min(self, value: float) -> None:
-        self._epsilon_greedy_value_strategy.epsilon_min = value
+        self._epsilon_random_value_strategy.epsilon_min = value
 
     @property
     def epsilon_decay_rate(self) -> float:

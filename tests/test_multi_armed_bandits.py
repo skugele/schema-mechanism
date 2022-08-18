@@ -138,9 +138,9 @@ class TestMultiArmedBandits(unittest.TestCase):
         currency_to_play = 100
         env = BanditEnvironment(machines=self.machines, currency_to_play=currency_to_play, init_state=sym_state('M0'))
 
-        winnings_before_pay = env.winnings
+        winnings_before_pay = env.episode_summary.winnings
         env.step(action=Action('deposit'))
-        winnings_after_pay = env.winnings
+        winnings_after_pay = env.episode_summary.winnings
 
         self.assertEqual(winnings_before_pay - currency_to_play, winnings_after_pay)
 
@@ -149,9 +149,9 @@ class TestMultiArmedBandits(unittest.TestCase):
         currency_on_win = 100
         env = BanditEnvironment(machines=self.machines, currency_on_win=currency_on_win, init_state=sym_state('M0,P'))
 
-        winnings_before_play = env.winnings
+        winnings_before_play = env.episode_summary.winnings
         env.step(action=Action('play'))
-        winnings_after_play = env.winnings
+        winnings_after_play = env.episode_summary.winnings
 
         self.assertEqual(winnings_before_play + currency_on_win, winnings_after_play)
 

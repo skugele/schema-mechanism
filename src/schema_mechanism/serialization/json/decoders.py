@@ -40,7 +40,7 @@ from schema_mechanism.strategies.evaluation import CompositeEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultExploratoryEvaluationStrategy
 from schema_mechanism.strategies.evaluation import DefaultGoalPursuitEvaluationStrategy
-from schema_mechanism.strategies.evaluation import EpsilonGreedyEvaluationStrategy
+from schema_mechanism.strategies.evaluation import EpsilonRandomEvaluationStrategy
 from schema_mechanism.strategies.evaluation import HabituationEvaluationStrategy
 from schema_mechanism.strategies.evaluation import InstrumentalValueEvaluationStrategy
 from schema_mechanism.strategies.evaluation import MaxDelegatedValueEvaluationStrategy
@@ -315,8 +315,8 @@ def decode_reliability_evaluation_strategy(obj_dict: dict, **kwargs) -> Reliabil
     return ReliabilityEvaluationStrategy(**obj_dict)
 
 
-def decode_epsilon_greedy_evaluation_strategy(obj_dict: dict, **kwargs) -> EpsilonGreedyEvaluationStrategy:
-    return EpsilonGreedyEvaluationStrategy(**obj_dict)
+def decode_epsilon_random_evaluation_strategy(obj_dict: dict, **kwargs) -> EpsilonRandomEvaluationStrategy:
+    return EpsilonRandomEvaluationStrategy(**obj_dict)
 
 
 def decode_habituation_evaluation_strategy(obj_dict: dict, **kwargs) -> HabituationEvaluationStrategy:
@@ -405,7 +405,7 @@ decoder_map: dict[str, Callable] = {
     'ECItemStats': decode_ec_item_stats,
     'ERItemStats': decode_er_item_stats,
     'ElementWiseValidator': decode_element_wise_validator,
-    'EpsilonGreedyEvaluationStrategy': decode_epsilon_greedy_evaluation_strategy,
+    'EpsilonRandomEvaluationStrategy': decode_epsilon_random_evaluation_strategy,
     'EqualityMatchStrategy': decode_equality_match_strategy,
     'ExponentialDecayStrategy': decode_exponential_decay_strategy,
     'ExtendedContext': decode_extended_context,
