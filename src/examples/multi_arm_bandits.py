@@ -155,7 +155,7 @@ class BanditEnvironment(Environment):
 
     @property
     def is_terminal(self) -> bool:
-        # currently, this environment is not episodic, so the is_terminal always returns false. A future iteration
+        # currently, this environment is not episodic, so is_terminal always returns false. A future iteration
         # of the environment could make it episodic; for example, if the agent has a starting budget, that, if
         # exhausted, would end the episode.
         return False
