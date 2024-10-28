@@ -92,7 +92,6 @@ class NeedleInAHaystackTrialConfigurator(TrialConfigurator):
         if self._n_machines > self._max_machines:
             raise StopIteration
 
-        # fill remaining machines, keeping max(p_win) = 1.0, min(p_win) = 0.0, and expected_value(p_win) = 0.5
         p_wins = [0.1] * (self._n_machines - 1)
         p_wins.append(0.9)
 
@@ -174,8 +173,8 @@ def execute_experiment() -> None:
     config_env()
 
     trials = [
-        SameStatsVariableMachinesTrialConfigurator(['--steps', str(args.steps_per_run)], min_exponent=2, max_exponent=3),
-        NeedleInAHaystackTrialConfigurator(['--steps', str(args.steps_per_run)], min_exponent=3, max_exponent=4)
+        SameStatsVariableMachinesTrialConfigurator(['--steps', str(args.steps_per_run)], min_exponent=5, max_exponent=5),
+        # NeedleInAHaystackTrialConfigurator(['--steps', str(args.steps_per_run)], min_exponent=6, max_exponent=6)
     ]
 
     for trial in trials:
